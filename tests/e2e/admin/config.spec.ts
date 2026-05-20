@@ -28,8 +28,18 @@ test.describe('Config — gate password', () => {
     await loginAsOwner(page)
     await page.goto('/admin/config')
 
+    // dev mode puede perder sesión tras Server Actions del test anterior
+    if (page.url().includes('/admin/login')) {
+      await loginAsOwner(page)
+      await page.goto('/admin/config')
+    }
+
+    await expect(page.locator('h1', { hasText: 'Configuración' })).toBeVisible()
+
     const input = page.locator('input[type=password]')
+    await expect(input).toBeVisible()
     await input.fill('abc')
+
     const btn = page.locator('button:has-text("Guardar contraseña")')
     await expect(btn).toBeDisabled()
   })

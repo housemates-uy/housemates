@@ -306,6 +306,7 @@ export type Database = {
           quantity_total: number
           sales_end: string | null
           sales_start: string | null
+          sold_out_override: boolean
           sort_order: number
         }
         Insert: {
@@ -319,6 +320,7 @@ export type Database = {
           quantity_total: number
           sales_end?: string | null
           sales_start?: string | null
+          sold_out_override?: boolean
           sort_order?: number
         }
         Update: {
@@ -332,6 +334,7 @@ export type Database = {
           quantity_total?: number
           sales_end?: string | null
           sales_start?: string | null
+          sold_out_override?: boolean
           sort_order?: number
         }
         Relationships: [

@@ -307,3 +307,48 @@ Para **cambiar passwords**: desde el dashboard de Supabase o mediante `supabase.
 - Cualquier miembro del equipo con acceso al dashboard de Supabase puede crear admins. Controlar quién tiene acceso al proyecto de Supabase.
 - En v2, si el número de staff crece, considerar una UI de invitación desde el panel (`/admin/team`).
 - El campo `active` en la tabla `admins` permite desactivar un admin sin borrarlo de Supabase Auth.
+
+---
+
+## #015 — `getSession()` en Server Actions en lugar de `getUser()`
+
+**Fecha:** 2026-05-08
+**Autor:** Tato
+
+**Contexto:** `requireAdmin()` usaba `supabase.auth.getUser()`, que hace una call de red a
+Supabase Auth. El middleware ya ejecuta `getUser()` en cada request para refrescar el token.
+Dos calls de red por request causaban fallos bajo la carga de los tests e2e.
+
+**Decisión:** Cambiar `getAdminUser()` a `supabase.auth.getSession()`. Lee de la cookie sin
+red. Es seguro porque el middleware ya verificó el token antes de que el Server Action ejecute.
+
+**Alternativas descartadas:**
+- Mantener `getUser()`: correcta pero redundante, latencia adicional y fallos bajo carga.
+- Pasar el user como prop al Server Action: no es posible con `.bind()` en Next.js 14.
+
+**Consecuencias:**
+- Un único call a Supabase Auth por request (middleware). Server Actions confían en la cookie.
+- Si el middleware se bypasea, Server Actions podrían aceptar sesiones expiradas. Aceptable
+  porque el middleware está en la cadena de cada request admin sin excepción.
+
+---
+
+## #016 — `sold_out_override` para marcar tiers agotadas manualmente
+
+**Fecha:** 2026-05-08
+**Autor:** Tato
+
+**Contexto:** Los admins necesitan marcar una tanda como "agotada" antes de que se venda
+el stock real. Sirve para mostrar escasez y empujar compras de la tanda actual.
+
+**Decisión:** Columna `sold_out_override boolean NOT NULL DEFAULT false` en `ticket_tiers`.
+Lógica de agotada: `sold_out_override || quantity_sold >= quantity_total`.
+
+**Alternativas descartadas:**
+- Reutilizar `active = false`: pierde la distinción "inactiva" (no lista) vs "agotada" (sin stock).
+- `quantity_total = quantity_sold`: restaurar requiere recordar la cantidad original — destructivo.
+
+**Consecuencias:**
+- Requiere `ALTER TABLE ticket_tiers ADD COLUMN sold_out_override boolean NOT NULL DEFAULT false`
+  en cada entorno. Dev ya corrida; producción pendiente al deployar.
+- El checkout público deberá respetar este campo al validar disponibilidad de un tier.

@@ -4,14 +4,17 @@ import type { Admin, Json } from '@/types/database';
 
 export async function getAdminUser(): Promise<Admin | null> {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+  // getSession() avoids a redundant network call to Supabase Auth.
+  // The middleware already runs getUser() (which does the real verification)
+  // on every request before Server Actions execute — so the session here is safe.
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) return null;
 
   const db = createAdminClient();
   const { data } = await db
     .from('admins')
     .select('*')
-    .eq('id', user.id)
+    .eq('id', session.user.id)
     .eq('active', true)
     .single();
 

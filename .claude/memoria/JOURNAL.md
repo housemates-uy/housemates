@@ -205,3 +205,49 @@ Construir la base del panel de administración: auth con Supabase, layout proteg
 
 ### Estado al cerrar
 Panel admin navegable end-to-end con auth real y gate password configurable. Playwright listo para que cada feature siguiente agregue sus propios tests. Próxima rama: `feature/admin-events`.
+
+---
+
+## 2026-05-08 — Tato — `feature/admin-events` → `develop`
+
+### Contexto
+Primer feature de funcionalidad real post-skeleton. El objetivo era CRUD completo de eventos
+y tiers, completando las stub pages de `feature/admin-base`.
+
+### Qué se hizo
+
+**Gestión de eventos:**
+- Lista real con status badges y links por evento
+- Wizard de creación 2 pasos (info del evento → tiers iniciales)
+- Edición de evento y tiers con edición inline (TierEditRow con pencil hover)
+- Archivar evento (solo owner), toggle ventas globales
+
+**Tiers:**
+- Toggle activo/inactivo por tier
+- Marcar agotada manualmente con `sold_out_override` (columna nueva)
+- Badge "agotada" rojo, badge "inactiva" gris
+- Orden fijo por `sort_order` (estable tras mutaciones)
+- Unicidad de nombre case-insensitive: validación en app + unique index en DB
+
+**Auth:**
+- `getAdminUser()` migrado a `getSession()` (evita doble call a Supabase Auth)
+
+**Tests e2e:**
+- 3 tests de eventos (lista, crear, validación)
+- Config tests actualizados con re-login fallback
+
+### Decisiones clave tomadas
+- Ver **#015** — `getSession()` en Server Actions
+- Ver **#016** — `sold_out_override` column
+
+### Problemas / consideraciones
+- `requireAdmin()` sin capturar → Server Action retornaba `undefined` → cliente rompía con
+  `TypeError: Cannot use 'in' operator`. Fix: `.catch(() => null)` + null guard en cliente.
+- `CREATE UNIQUE INDEX` falló por duplicados preexistentes en dev DB. Se limpiaron a mano.
+- `sold_out_override` column: el botón no hacía nada hasta correr `ALTER TABLE` en Supabase.
+  Sin error visible porque el update fallaba silenciosamente.
+- Tests e2e fallaban por selectors ambiguos y sesión perdida en dev mode hot-reload.
+
+### Estado al cerrar
+Panel de admin completo para gestión de eventos. Listo para `feature/admin-whitelist` y
+`feature/admin-tickets` como próximas ramas.
