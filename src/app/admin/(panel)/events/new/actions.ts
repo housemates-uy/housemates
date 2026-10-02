@@ -3,13 +3,7 @@
 import { requireAdmin, logAdminAction } from '@/lib/auth/admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { eventSchema, tiersSchema, type EventInput, type TierInput } from '@/lib/validation/schemas'
-import { fromZonedTime } from 'date-fns-tz'
-
-const TZ = 'America/Montevideo'
-
-function toUTC(localDatetime: string): string {
-  return fromZonedTime(new Date(localDatetime), TZ).toISOString()
-}
+import { toUTC } from '@/lib/events'
 
 export async function createEventAction(
   eventData: EventInput,

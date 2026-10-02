@@ -1,6 +1,10 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import { Button } from '@/components/ui/button';
+import { Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { Logo } from '@/components/ui/logo';
 import { loginAction } from './actions';
 
 export default function LoginPage() {
@@ -15,7 +19,7 @@ export default function LoginPage() {
     startTransition(async () => {
       const result = await loginAction(
         formData.get('email') as string,
-        formData.get('password') as string
+        formData.get('password') as string,
       );
       if (result?.error) {
         setError(result.error);
@@ -24,53 +28,25 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-ink px-4">
+    <main id="contenido" className="flex min-h-[100dvh] items-center justify-center px-5 py-16">
       <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <p className="font-display text-2xl font-light tracking-widest text-bone">
-            HOUSE MATES
-          </p>
-          <p className="mt-1 text-xs tracking-widest text-bone/40 uppercase">Admin</p>
+        <div className="mb-10 flex flex-col items-center gap-4">
+          <Logo className="h-20" />
+          <h1 className="text-[11px] font-bold uppercase tracking-label text-bone/50">Admin</h1>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="mb-1.5 block text-xs tracking-widest text-bone/50 uppercase">
-              Email
-            </label>
-            <input
-              name="email"
-              type="email"
-              required
-              autoComplete="email"
-              className="w-full border border-white/10 bg-white/5 px-4 py-3 text-sm text-bone placeholder-bone/20 outline-none transition focus:border-bone/30"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-xs tracking-widest text-bone/50 uppercase">
-              Contraseña
-            </label>
-            <input
-              name="password"
-              type="password"
-              required
-              autoComplete="current-password"
-              className="w-full border border-white/10 bg-white/5 px-4 py-3 text-sm text-bone placeholder-bone/20 outline-none transition focus:border-bone/30"
-            />
-          </div>
-
-          {error && <p className="text-xs text-ember">{error}</p>}
-
-          <button
-            type="submit"
-            disabled={pending}
-            className="w-full border border-bone/20 bg-transparent px-4 py-3 text-xs tracking-widest text-bone uppercase transition hover:border-bone/50 hover:bg-white/5 disabled:opacity-40"
-          >
+          <Field label="Email">
+            <Input name="email" type="email" required autoComplete="email" />
+          </Field>
+          <Field label="Contraseña" error={error}>
+            <Input name="password" type="password" required autoComplete="current-password" />
+          </Field>
+          <Button type="submit" size="lg" disabled={pending} className="w-full">
             {pending ? 'Ingresando...' : 'Ingresar'}
-          </button>
+          </Button>
         </form>
       </div>
-    </div>
+    </main>
   );
 }

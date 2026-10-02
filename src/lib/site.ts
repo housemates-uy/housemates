@@ -5,8 +5,8 @@ const DEFAULT_IG_HANDLE = '@house__mates';
 
 export async function getIgHandle(): Promise<string> {
   try {
-    const db = createAdminClient();
-    const { data } = await db.from('site_config').select('value').eq('key', 'ig_handle').maybeSingle();
+    const db = createAdminClient({ timeoutMs: 2500 });
+    const { data } = await db.from('site_config').select('value').eq('key', 'ig_handle').maybeSingle().retry(false);
     return data?.value || DEFAULT_IG_HANDLE;
   } catch {
     return DEFAULT_IG_HANDLE;

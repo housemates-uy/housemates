@@ -1,43 +1,50 @@
-import { notFound } from 'next/navigation'
-import Link from 'next/link'
-import { requireAdmin } from '@/lib/auth/admin'
-import { createAdminClient } from '@/lib/supabase/admin'
-import { StatusBadge } from '@/components/admin/events/status-badge'
-import { toggleSalesAction, archiveEventAction, toggleTierActiveAction, toggleTierSoldOutAction } from './actions'
-import { toZonedTime } from 'date-fns-tz'
-import { format } from 'date-fns'
-import { es } from 'date-fns/locale'
-import type { TicketTier } from '@/types/database'
-
-const TZ = 'America/Montevideo'
+import { notFound } from 'next/navigation';
+import Link from 'next/link';
+import { requireAdmin } from '@/lib/auth/admin';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { StatusBadge } from '@/components/admin/events/status-badge';
+import { ConfirmSubmitButton, SubmitButton } from '@/components/admin/submit-button';
+import { Badge } from '@/components/ui/badge';
+import { buttonVariants } from '@/components/ui/button';
+import { Card, StatCard } from '@/components/ui/card';
+import { formatLocal, formatUYU } from '@/lib/events';
+import type { TicketTier } from '@/types/database';
+import {
+  toggleSalesAction,
+  archiveEventAction,
+  toggleTierActiveAction,
+  toggleTierSoldOutAction,
+} from './actions';
 
 export default async function EventOverviewPage({ params }: { params: { id: string } }) {
-  const admin = await requireAdmin()
-  const db = createAdminClient()
+  const admin = await requireAdmin();
+  const db = createAdminClient();
 
   const { data: event } = await db
     .from('events')
     .select('*, ticket_tiers(*)')
     .eq('id', params.id)
-    .single()
+    .single();
 
-  if (!event) notFound()
+  if (!event) notFound();
 
   const { count: ticketCount } = await db
     .from('tickets')
     .select('*', { count: 'exact', head: true })
     .eq('event_id', params.id)
-    .eq('status', 'paid')
+    .eq('status', 'paid');
 
-  const tiers = ((event.ticket_tiers as TicketTier[]) ?? []).sort((a, b) => a.sort_order - b.sort_order)
-  const local = toZonedTime(new Date(event.date_start), TZ)
+  const tiers = ((event.ticket_tiers as TicketTier[]) ?? []).sort(
+    (a, b) => a.sort_order - b.sort_order,
+  );
 
-  const toggleSales = toggleSalesAction.bind(null, event.id, event.sales_active)
-  const archive = archiveEventAction.bind(null, event.id)
+  const toggleSales = toggleSalesAction.bind(null, event.id, event.sales_active);
+  const archive = archiveEventAction.bind(null, event.id);
+  const editable = event.status !== 'archived';
 
   return (
     <div className="max-w-3xl space-y-6">
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           label="Tickets vendidos"
           value={ticketCount ?? 0}
@@ -45,106 +52,91 @@ export default async function EventOverviewPage({ params }: { params: { id: stri
         />
         <StatCard
           label="Fecha"
-          value={format(local, "d MMM yyyy", { locale: es })}
-          sub={format(local, "HH:mm 'hs'", { locale: es })}
+          value={<span className="text-2xl">{formatLocal(event.date_start, 'd MMM yyyy')}</span>}
+          sub={formatLocal(event.date_start, "HH:mm 'hs'")}
         />
-        <div className="border border-white/8 bg-white/3 p-5">
-          <p className="text-xs tracking-widest text-bone/40 uppercase">Estado</p>
-          <div className="mt-2">
+        <Card>
+          <p className="text-[13px] text-bone/50">Estado</p>
+          <div className="mt-3">
             <StatusBadge status={event.status} />
           </div>
-          <p className="mt-1 text-xs text-bone/30">
+          <p className="mt-2 text-xs text-bone/45">
             {event.sales_active ? 'Ventas activas' : 'Ventas pausadas'}
           </p>
-        </div>
+        </Card>
       </div>
 
       {tiers.length > 0 && (
-        <div className="border border-white/8 divide-y divide-white/8">
-          <p className="px-5 py-3 text-xs tracking-widest text-bone/40 uppercase">Tiers</p>
-          {tiers.map((tier) => {
-            const isSoldOut = tier.sold_out_override || tier.quantity_sold >= tier.quantity_total
-            const toggleActive = toggleTierActiveAction.bind(null, tier.id, params.id, tier.active)
-            const toggleSoldOut = toggleTierSoldOutAction.bind(null, tier.id, params.id, tier.sold_out_override)
-            return (
-              <div key={tier.id} className="flex items-center justify-between px-5 py-3 gap-4">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm text-bone">{tier.name}</p>
-                    {!tier.active && (
-                      <span className="text-xs text-bone/40 border border-white/10 px-1.5 py-0.5 leading-none">inactiva</span>
-                    )}
-                    {isSoldOut && (
-                      <span className="text-xs text-red-400/70 border border-red-400/30 px-1.5 py-0.5 leading-none">agotada</span>
-                    )}
+        <section className="rounded-card border border-bone/10">
+          <h2 className="border-b border-bone/10 px-5 py-3 text-sm font-medium text-bone/70">Tiers</h2>
+          <ul className="divide-y divide-bone/10">
+            {tiers.map((tier) => {
+              const isSoldOut = tier.sold_out_override || tier.quantity_sold >= tier.quantity_total;
+              const toggleActive = toggleTierActiveAction.bind(null, tier.id, params.id, tier.active);
+              const toggleSoldOut = toggleTierSoldOutAction.bind(
+                null,
+                tier.id,
+                params.id,
+                tier.sold_out_override,
+              );
+              return (
+                <li key={tier.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium">{tier.name}</p>
+                      {!tier.active && <Badge>Inactiva</Badge>}
+                      {isSoldOut && <Badge tone="alert">Sold out</Badge>}
+                    </div>
+                    <p className="mt-1 text-xs text-bone/55">
+                      {formatUYU(tier.price_uyu)} · {tier.quantity_sold}/{tier.quantity_total}
+                      {tier.description && ` · ${tier.description}`}
+                    </p>
                   </div>
-                  {tier.description && <p className="text-xs text-bone/35 mt-0.5">{tier.description}</p>}
-                </div>
-                <div className="flex items-center gap-4 shrink-0">
-                  <p className="text-sm text-bone/50 tabular-nums">
-                    ${tier.price_uyu.toLocaleString('es-UY')} · {tier.quantity_sold}/{tier.quantity_total}
-                  </p>
-                  {event.status !== 'archived' && (
-                    <div className="flex items-center gap-3">
+                  {editable && (
+                    <div className="flex items-center gap-1">
                       <form action={toggleActive}>
-                        <button type="submit" className="text-xs text-bone/30 hover:text-bone/70 transition-colors">
+                        <SubmitButton variant="ghost" size="sm">
                           {tier.active ? 'Desactivar' : 'Activar'}
-                        </button>
+                        </SubmitButton>
                       </form>
                       <form action={toggleSoldOut}>
-                        <button type="submit" className="text-xs text-bone/30 hover:text-bone/70 transition-colors">
+                        <SubmitButton variant="ghost" size="sm">
                           {tier.sold_out_override ? 'Restaurar' : 'Agotar'}
-                        </button>
+                        </SubmitButton>
                       </form>
                     </div>
                   )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
       )}
 
       <div className="flex flex-wrap gap-3">
         <Link
           href={`/admin/events/${params.id}/edit`}
-          className="border border-bone/20 px-4 py-2 text-xs tracking-widest text-bone/60 uppercase hover:border-bone/40 hover:text-bone transition-colors"
+          className={buttonVariants({ variant: 'outline', size: 'sm' })}
         >
           Editar
         </Link>
 
-        {event.status !== 'archived' && (
+        {editable && (
           <form action={toggleSales}>
-            <button
-              type="submit"
-              className="border border-white/10 px-4 py-2 text-xs tracking-widest text-bone/50 uppercase hover:border-bone/30 hover:text-bone transition-colors"
-            >
+            <SubmitButton variant="outline" size="sm">
               {event.sales_active ? 'Pausar ventas' : 'Activar ventas'}
-            </button>
+            </SubmitButton>
           </form>
         )}
 
-        {admin.role === 'owner' && event.status !== 'archived' && (
+        {admin.role === 'owner' && editable && (
           <form action={archive}>
-            <button
-              type="submit"
-              className="border border-white/8 px-4 py-2 text-xs tracking-widest text-bone/30 uppercase hover:border-red-400/30 hover:text-red-400/60 transition-colors"
-            >
+            <ConfirmSubmitButton variant="ghost" size="sm" confirmLabel="Sí, archivar">
               Archivar
-            </button>
+            </ConfirmSubmitButton>
           </form>
         )}
       </div>
     </div>
-  )
-}
-
-function StatCard({ label, value, sub }: { label: string; value: string | number; sub: string }) {
-  return (
-    <div className="border border-white/8 bg-white/3 p-5">
-      <p className="text-xs tracking-widest text-bone/40 uppercase">{label}</p>
-      <p className="mt-2 font-display text-2xl font-light text-bone">{value}</p>
-      <p className="mt-1 text-xs text-bone/30">{sub}</p>
-    </div>
-  )
+  );
 }

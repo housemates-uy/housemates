@@ -38,7 +38,7 @@ export async function getNextEvent(): Promise<NextEvent> {
   };
 
   try {
-    const db = createAdminClient();
+    const db = createAdminClient({ timeoutMs: 2500 });
     const { data: event } = await db
       .from('events')
       .select('id, title, date_start, date_end, location_name, sales_active')
@@ -46,7 +46,8 @@ export async function getNextEvent(): Promise<NextEvent> {
       .gte('date_end', new Date().toISOString())
       .order('date_start', { ascending: true })
       .limit(1)
-      .maybeSingle();
+      .maybeSingle()
+      .retry(false);
 
     if (!event) return fallback;
 
@@ -55,7 +56,8 @@ export async function getNextEvent(): Promise<NextEvent> {
       .select('id, name, quantity_sold, quantity_total, sold_out_override')
       .eq('event_id', event.id)
       .eq('active', true)
-      .order('sort_order', { ascending: true });
+      .order('sort_order', { ascending: true })
+      .retry(false);
 
     return {
       title: event.title,
