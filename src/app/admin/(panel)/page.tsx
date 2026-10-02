@@ -1,5 +1,8 @@
 import { getAdminUser } from '@/lib/auth/admin';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { PageHeader } from '@/components/admin/page-header';
+import { StatCard } from '@/components/ui/card';
+import { formatLocal } from '@/lib/events';
 
 export default async function AdminDashboard() {
   const admin = await getAdminUser();
@@ -21,62 +24,25 @@ export default async function AdminDashboard() {
 
   return (
     <div className="max-w-4xl space-y-8">
-      <div>
-        <h1 className="font-display text-2xl font-light text-bone">
-          Bienvenido, {admin?.name?.split(' ')[0]}
-        </h1>
-        <p className="mt-1 text-sm text-bone/40">Panel de administración</p>
-      </div>
+      <PageHeader
+        title={`Bienvenido, ${admin?.name?.split(' ')[0] ?? ''}`}
+        description="Panel de administración"
+      />
 
-      {/* KPI cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <StatCard label="Tickets vendidos" value={totalTickets ?? 0} sub="Pagos confirmados" />
+        <StatCard label="Whitelist" value={totalWhitelist ?? 0} sub="Emails activos" />
         <StatCard
-          label="Tickets vendidos"
-          value={totalTickets ?? 0}
-          sub="estado paid"
-        />
-        <StatCard
-          label="Whitelist"
-          value={totalWhitelist ?? 0}
-          sub="emails activos"
-        />
-        <StatCard
+          className="sm:col-span-2 lg:col-span-1"
           label="Próximo evento"
-          value={nextEvent?.title ?? '—'}
+          value={<span className="text-xl">{nextEvent?.title ?? 'Sin evento'}</span>}
           sub={
             nextEvent
-              ? new Date(nextEvent.date_start).toLocaleDateString('es-UY', {
-                  day: 'numeric',
-                  month: 'long',
-                  year: 'numeric',
-                })
-              : 'Sin evento publicado'
+              ? formatLocal(nextEvent.date_start, "d 'de' MMMM yyyy")
+              : 'No hay ningún evento publicado'
           }
-          wide
         />
       </div>
-    </div>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  sub,
-  wide,
-}: {
-  label: string;
-  value: string | number;
-  sub: string;
-  wide?: boolean;
-}) {
-  return (
-    <div className="border border-white/8 bg-white/3 p-5">
-      <p className="text-xs tracking-widest text-bone/40 uppercase">{label}</p>
-      <p className={`mt-2 font-display font-light text-bone ${wide ? 'text-xl' : 'text-3xl'}`}>
-        {value}
-      </p>
-      <p className="mt-1 text-xs text-bone/30">{sub}</p>
     </div>
   );
 }

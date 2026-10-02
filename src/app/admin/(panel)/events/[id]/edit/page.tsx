@@ -1,31 +1,24 @@
-import { notFound } from 'next/navigation'
-import { requireAdmin } from '@/lib/auth/admin'
-import { createAdminClient } from '@/lib/supabase/admin'
-import { EventEditForm } from './event-edit-form'
-import { toZonedTime } from 'date-fns-tz'
-import { format } from 'date-fns'
-import type { EventInput } from '@/lib/validation/schemas'
-import type { TicketTier } from '@/types/database'
+import { notFound } from 'next/navigation';
+import { requireAdmin } from '@/lib/auth/admin';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { toLocalInput } from '@/lib/events';
+import type { EventInput } from '@/lib/validation/schemas';
+import type { TicketTier } from '@/types/database';
+import { EventEditForm } from './event-edit-form';
 
-export const metadata = { title: 'Editar evento — Admin HOUSE MATES' }
-
-const TZ = 'America/Montevideo'
-
-function toLocalInput(iso: string) {
-  return format(toZonedTime(new Date(iso), TZ), "yyyy-MM-dd'T'HH:mm")
-}
+export const metadata = { title: 'Editar evento' };
 
 export default async function EditEventPage({ params }: { params: { id: string } }) {
-  await requireAdmin()
-  const db = createAdminClient()
+  await requireAdmin();
+  const db = createAdminClient();
 
   const { data: event } = await db
     .from('events')
     .select('*, ticket_tiers(*)')
     .eq('id', params.id)
-    .single()
+    .single();
 
-  if (!event) notFound()
+  if (!event) notFound();
 
   const initial: EventInput = {
     title: event.title,
@@ -37,13 +30,15 @@ export default async function EditEventPage({ params }: { params: { id: string }
     capacity: event.capacity,
     status: event.status,
     description_md: event.description_md ?? '',
-  }
+  };
 
-  const tiers: TicketTier[] = ((event.ticket_tiers as TicketTier[]) ?? []).sort((a, b) => a.sort_order - b.sort_order)
+  const tiers: TicketTier[] = ((event.ticket_tiers as TicketTier[]) ?? []).sort(
+    (a, b) => a.sort_order - b.sort_order,
+  );
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="max-w-2xl">
       <EventEditForm id={params.id} initial={initial} existingTiers={tiers} />
     </div>
-  )
+  );
 }

@@ -1,121 +1,70 @@
 # HANDOFF — HOUSE MATES
 
 > Estado actual del proyecto. Este archivo se reescribe en cada PR que mergea a `develop`.
-> Última actualización: 2026-05-08 por Tato (branch `feature/admin-events`, PR pendiente)
+> Última actualización: 2026-10-02 por Tato (branch `feature/rebrand`)
 
 ---
 
 ## Dónde estamos
 
-**Fase:** Diseño + docs ✅ → Scaffold + gate ✅ → Admin base ✅ → Admin events ✅ (PR pendiente)
+**Fase:** Admin events ✅ → Rebrand + landing pública ✅ → Deploy Vercel ✅ (parcial) → Ticketera
 
-`feature/admin-events` está lista para PR a `develop`. El panel tiene gestión completa de
-eventos: CRUD con wizard 2 pasos, tiers con edición inline, toggle activo/agotado manual,
-archivar, toggle ventas. Tests e2e verdes.
+**Deploy:** https://housemates-rho.vercel.app (proyecto Vercel `ssouberbielles-projects/housemates`,
+desplegado con la CLI desde `feature/rebrand`). Sin env vars cargadas todavía: anda la landing;
+`/entradas` y `/admin` necesitan las variables de Supabase y del gate.
 
----
-
-## Branch activa
-
-- `feature/admin-events` — PR pendiente contra `develop`
+Todo el frontend está sobre el Manual de Marca v1. La landing es pública; la contraseña
+protege solo `/entradas`. La venta para el 11.12.26 sigue siendo híbrida (transferencia).
 
 ---
 
-## Qué está hecho
+## Bloqueo principal
 
-### Feature `admin-events` (esta PR)
-
-**Lista y creación de eventos:**
-- `src/app/admin/(panel)/events/page.tsx` — lista real con status badge y links
-- `src/app/admin/(panel)/events/new/page.tsx` — wizard 2 pasos: info del evento → tiers iniciales
-- `src/app/admin/(panel)/events/new/actions.ts` — `createEventAction`: crea evento + tiers,
-  valida unicidad de nombre (case-insensitive), redirige post-creación
-
-**Overview de evento:**
-- `src/app/admin/(panel)/events/[id]/page.tsx` — stats (tickets vendidos, fecha, estado),
-  tabla de tiers con badges "inactiva"/"agotada", acciones toggle por tier, toggle ventas,
-  archivar (solo owner). Tiers ordenados por `sort_order` (estable tras mutaciones).
-
-**Edición de evento y tiers:**
-- `src/app/admin/(panel)/events/[id]/edit/page.tsx` — carga evento + tiers por sort_order
-- `src/app/admin/(panel)/events/[id]/edit/event-edit-form.tsx` — edición inline de tiers
-  existentes (TierEditRow con pencil hover), agregar tiers nuevos, editar campos del evento
-- `src/app/admin/(panel)/events/[id]/actions.ts` — `updateEventAction`, `updateTierAction`,
-  `toggleTierActiveAction`, `toggleTierSoldOutAction`, `toggleSalesAction`, `archiveEventAction`
-
-**Validaciones y DB:**
-- Unicidad de nombre de tier (case-insensitive): app + unique index
-  `ticket_tiers_event_name_unique` sobre `(event_id, lower(name))`
-- `sold_out_override boolean` en `ticket_tiers` para marcar agotado manualmente (ver #016)
-
-**Schemas y componentes:**
-- `src/components/admin/events/status-badge.tsx` — badge draft/published/archived
-- `src/lib/validation/schemas.ts` — `eventSchema`, `tierSchema`, `tiersSchema`,
-  `tierEditSchema`, `TierEditInput`
-
-**Auth:**
-- `src/lib/auth/admin.ts` — `getAdminUser()` usa `getSession()` en vez de `getUser()`
-  para evitar doble call a Supabase Auth por request (ver #015)
-
-**Tests e2e:**
-- `tests/e2e/admin/events.spec.ts` — 3 tests: lista carga, crear evento con tier,
-  validación campos vacíos
-- `tests/e2e/admin/config.spec.ts` — actualizados con re-login fallback y selector específico
-
-### Features previas mergeadas
-
-- **admin-base:** auth, layout, sidebar, dashboard KPIs, gate password desde panel, Playwright
-- **supabase-setup, landing-gate, fix-landing, project-base** — ver JOURNAL.md
+**El proyecto Supabase de dev (`yitrsdrfygpccdterhwq`) no resuelve DNS.** Está pausado o
+borrado. Hay que restaurarlo o crear uno nuevo, correr las migraciones `0001`–`0005`, crear
+los admins (ADR #012) y actualizar `.env.local` y las env vars de Vercel. Hasta entonces:
+- el admin no anda (no hay login),
+- la landing usa fallbacks (fecha 11.12.26, sin tandas, IG `@house__mates`),
+- el gate usa `GATE_PASSWORD` del entorno.
 
 ---
 
-## Qué está pendiente (próximas ramas)
+## Qué está hecho en `feature/rebrand`
 
-| Rama | Contenido |
-|------|-----------|
-| `feature/admin-whitelist` | Bulk add, búsqueda, ban, edición inline |
-| `feature/admin-tickets` | Tabla compradores, ticket manual, resend email |
-| `feature/admin-scan` | Invitaciones + Scanner QR + close-door |
-| `feature/admin-staff` | CRUD admins + logs de auditoría |
-
-**Infra pendiente (humano):**
-- Deploy a Vercel + compra de dominio
-- `ALTER TABLE ticket_tiers ADD COLUMN sold_out_override...` en producción al deployar
-- Integración Mercado Pago + Resend (después de admin completo)
+- **Sistema de diseño:** `tailwind.config.ts` (tokens del manual), `src/lib/fonts.ts`
+  (Neue Montreal vía `NEXT_PUBLIC_FONTS_URL`, ver #018), primitivas en `src/components/ui/`
+  (`logo`, `button`, `input`, `field`, `card`, `badge`, `tanda-status`, `doodle-backdrop`,
+  `logo-intro`, `reveal`).
+- **Sitio público:** `src/app/page.tsx` + `src/components/landing/*`. Datos del próximo evento
+  en `src/lib/next-event.ts`, IG desde `site_config` en `src/lib/site.ts`.
+- **Gate:** `/access?next=…` → `/entradas`. La cookie guarda la huella de la contraseña:
+  rotarla desde `/admin/config` invalida las sesiones (ver #017).
+- **Admin:** responsive, `EventFields`/`TierFields` compartidos, helpers en `src/lib/events.ts`.
+- **Infra:** migración `0005_tier_overrides.sql`, `vercel.json` limpio, `camera=(self)`.
 
 ---
 
-## Bloqueos / Dudas abiertas
+## Pendiente
 
-- Dominio final sin decidir.
-- Deploy a Vercel pendiente.
-- MP + Resend quedan para después de admin completo.
+| Qué | Notas |
+|---|---|
+| Restaurar Supabase | Bloqueo principal (arriba) |
+| Env vars en Vercel | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `GATE_COOKIE_SECRET`, `GATE_PASSWORD` (production y preview) |
+| Git en Vercel | Conectar `housemates-uy/housemates` (la CLI no pudo: falta dar acceso a la org en la GitHub app de Vercel) y poner `develop` como rama de producción |
+| Fuentes en deploy | Los deploys por CLI suben `public/fonts/` local; los deploys desde git no los tienen: hace falta `NEXT_PUBLIC_FONTS_URL` |
+| Fotos | Hay 4 y de baja resolución en `public/photos/`. Faltan más y mejores |
+| `feature/tickets-manual` | Carga manual + QR opaco + página `/ticket/[token]` (ver #019) |
+| `feature/scanner` | `/admin/events/[id]/scan` con cámara, un solo uso atómico |
+| `feature/checkout-mp` | Mercado Pago Checkout Pro + webhook idempotente |
+| `feature/emails` | Resend con QR |
 
 ---
 
 ## Decisiones recientes relevantes
 
-- **#015** — `getSession()` en Server Actions para evitar doble call a Supabase Auth
-- **#016** — `sold_out_override` column para marcar tier agotada manualmente
-- **#014** — Gate password en `site_config` (sigue vigente)
-- **#013** — Skeleton first: stubs en admin-base, CRUD en ramas separadas
+- **#017** — Landing pública, contraseña solo para comprar, rotación invalida sesiones, sin whitelist en checkout
+- **#018** — Neue Montreal fuera del repo (repo público)
+- **#019** — Validador web en el admin y QR opaco de un solo uso
+- **#016** — `sold_out_override` (ahora en migración `0005`)
 
-Ver `memoria/DECISIONS.md` para historial completo (#001–#016).
-
----
-
-## Quién hizo qué en la última sesión
-
-- **Tato** (2026-05-08): completó `feature/admin-events` — CRUD eventos, gestión de tiers
-  (editar inline, agotar, activar/desactivar), tests e2e, fix `getSession()`, validación
-  unicidad de tier.
-
----
-
-## Próximos pasos concretos
-
-1. Mergear PR `feature/admin-events` → `develop` (review de al menos 1 miembro)
-2. Abrir `feature/admin-whitelist` desde `develop`
-3. Abrir `feature/admin-tickets` desde `develop` (puede ir paralela a whitelist)
-4. Coordinar deploy a Vercel + dominio (tarea humana)
-5. Correr `/shannon` antes del PR de cualquier feature que toque gate, whitelist o scan
+Ver `memoria/DECISIONS.md` para historial completo (#001–#019).
