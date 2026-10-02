@@ -1,15 +1,4 @@
 {
-  "rewrites": [
-    {
-      "source": "/:path*",
-      "has": [{ "type": "host", "value": "admin\\..*" }],
-      "destination": "/admin/:path*"
-    }
-  ],
-  "crons": [
-    {
-      "path": "/api/cron/send-reminders",
-      "schedule": "0 * * * *"
-    }
-  ]
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs"
 }
