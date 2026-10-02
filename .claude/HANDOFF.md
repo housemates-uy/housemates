@@ -7,7 +7,11 @@
 
 ## Dónde estamos
 
-**Fase:** Admin events ✅ → Rebrand + landing pública ✅ → Deploy Vercel (en curso) → Ticketera
+**Fase:** Admin events ✅ → Rebrand + landing pública ✅ → Deploy Vercel ✅ (parcial) → Ticketera
+
+**Deploy:** https://housemates-rho.vercel.app (proyecto Vercel `ssouberbielles-projects/housemates`,
+desplegado con la CLI desde `feature/rebrand`). Sin env vars cargadas todavía: anda la landing;
+`/entradas` y `/admin` necesitan las variables de Supabase y del gate.
 
 Todo el frontend está sobre el Manual de Marca v1. La landing es pública; la contraseña
 protege solo `/entradas`. La venta para el 11.12.26 sigue siendo híbrida (transferencia).
@@ -45,7 +49,9 @@ los admins (ADR #012) y actualizar `.env.local` y las env vars de Vercel. Hasta 
 | Qué | Notas |
 |---|---|
 | Restaurar Supabase | Bloqueo principal (arriba) |
-| Fuentes en deploy | Subir los `.woff2` a un hosting propio y setear `NEXT_PUBLIC_FONTS_URL` |
+| Env vars en Vercel | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `GATE_COOKIE_SECRET`, `GATE_PASSWORD` (production y preview) |
+| Git en Vercel | Conectar `housemates-uy/housemates` (la CLI no pudo: falta dar acceso a la org en la GitHub app de Vercel) y poner `develop` como rama de producción |
+| Fuentes en deploy | Los deploys por CLI suben `public/fonts/` local; los deploys desde git no los tienen: hace falta `NEXT_PUBLIC_FONTS_URL` |
 | Fotos | Hay 4 y de baja resolución en `public/photos/`. Faltan más y mejores |
 | `feature/tickets-manual` | Carga manual + QR opaco + página `/ticket/[token]` (ver #019) |
 | `feature/scanner` | `/admin/events/[id]/scan` con cámara, un solo uso atómico |
