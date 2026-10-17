@@ -13,7 +13,9 @@ export function Header({ admin }: { admin: Admin }) {
       </Link>
       <div className="flex items-center gap-3">
         <Badge tone={admin.role === 'owner' ? 'solid' : 'neutral'}>{admin.role}</Badge>
-        <span className="text-sm text-bone/75">{admin.name}</span>
+        <Link href="/admin/account" className="text-sm text-bone/75 hover:text-bone">
+          {admin.name}
+        </Link>
         <form action={logoutAction} className="md:hidden">
           <button
             type="submit"

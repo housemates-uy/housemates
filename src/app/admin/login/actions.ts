@@ -29,3 +29,10 @@ export async function logoutAction() {
   await supabase.auth.signOut();
   redirect('/admin/login');
 }
+
+export async function requestPasswordResetAction(email: string): Promise<{ ok: true }> {
+  const supabase = await createClient();
+  // Siempre responde ok: no revela si el email existe.
+  await supabase.auth.resetPasswordForEmail(email);
+  return { ok: true };
+}
