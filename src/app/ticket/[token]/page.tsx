@@ -5,6 +5,7 @@ import { Logo } from '@/components/ui/logo';
 import { formatLocal } from '@/lib/events';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { qrSvg, STATUS_LABELS, ticketUrl } from '@/lib/tickets';
+import { LiveRefresh } from './live-refresh';
 
 export const metadata: Metadata = { title: 'Tu entrada', robots: { index: false, follow: false } };
 export const dynamic = 'force-dynamic';
@@ -35,6 +36,7 @@ export default async function TicketPage({ params }: { params: { token: string }
 
   return (
     <main id="contenido" className="mx-auto flex min-h-[100dvh] max-w-md flex-col px-5 py-8">
+      <LiveRefresh active={valid || ticket.status === 'pending'} />
       <header className="flex items-center justify-between">
         <Logo className="h-11" />
         <Badge tone={valid ? 'solid' : ticket.status === 'used' ? 'club' : 'alert'}>

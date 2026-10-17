@@ -121,6 +121,7 @@ Todo esto lo hace la función `create_ticket` en Postgres (`supabase/migrations/
 - Cada entrada tiene un `qr_token`: 22 caracteres aleatorios. No contiene datos ni firma; solo vale si existe en la base. Adivinarlo es imposible en la práctica.
 - El QR codifica la URL `https://<sitio>/ticket/<token>`. Si alguien lo escanea con la cámara del celular, abre su entrada. El scanner de puerta extrae el token de esa URL.
 - La página `/ticket/<token>` muestra la cédula **parcial**, porque cualquiera con el link la ve. La completa la ve solo el portero.
+- Mientras la entrada está válida (o pendiente de pago), la página se refresca sola cada 5 segundos. Cuando el portero confirma el ingreso, el celular de la persona pasa a "Usada" sin recargar.
 
 ---
 
@@ -246,7 +247,11 @@ Código: `src/app/admin/scan/[id]/` · SQL: migraciones `0006` y `0007`.
 
 ---
 
-## 8. Límites conocidos (decisiones conscientes)
+## 8. Caché
+
+Las consultas a Supabase se hacen con `cache: 'no-store'` (`src/lib/supabase/admin.ts` y `server.ts`). Next 14 cachea por defecto los `fetch` del servidor, y la app mostraba datos viejos: una entrada usada seguía figurando como válida. Los datos de esta app cambian en tiempo real, así que **no se cachea nada de la base**.
+
+## 9. Límites conocidos (decisiones conscientes)
 
 - **No hay mails.** La entrada se muestra al terminar de pagar, y las manuales se mandan por WhatsApp. Mandar mails a cualquiera exige un dominio propio (Resend).
 - **Una entrada por compra.** No hay selector de cantidad: cada persona compra la suya, con su cédula.

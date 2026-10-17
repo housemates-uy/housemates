@@ -9,6 +9,8 @@ export async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      // Sin caché de Next: ver el comentario en ./admin.ts.
+      global: { fetch: (input, init) => fetch(input, { ...init, cache: 'no-store' }) },
       cookies: {
         getAll() {
           return cookieStore.getAll();
