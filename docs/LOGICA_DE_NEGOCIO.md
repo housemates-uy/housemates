@@ -47,7 +47,7 @@ Las entradas son **QR personales**: una por persona, a nombre y cédula, y de un
 | `/admin/events` | Lista y alta de eventos | todos |
 | `/admin/events/<id>` | Resumen del evento, tandas, activar ventas, archivar | archivar: owner |
 | `/admin/events/<id>/tickets` | **Entradas**: cargar manuales/invitaciones, buscar, anular, reembolsar | todos |
-| `/admin/events/<id>/scan` | **Puerta**: scanner de QR | todos; cerrar puerta: owner |
+| `/admin/scan/<id>` | **Puerta**: scanner de QR, pantalla completa, solo celular | todos; cerrar puerta: owner |
 | `/admin/config` | Contraseña del gate | cambiar: owner |
 | `/admin/account` | Cambiar mi contraseña | todos |
 | `/admin/admins`, `/admin/logs` | Usuarios y auditoría | owner |
@@ -168,17 +168,30 @@ Código: `src/app/entradas/actions.ts`, `src/lib/mercadopago.ts`, `src/app/api/m
 
 ### 5.3 Puerta
 
-1. Staff entra al admin desde el celular → evento → **Puerta**.
-2. Se abre la cámara trasera y escanea. A pantalla completa:
-   - **Azul "Adelante"** + nombre y CI → cotejar con la cédula física.
-   - **Rojo** con el motivo: ya usada (y a qué hora entró), QR inválido, de otro evento, no pagada/anulada, puerta cerrada.
-3. **Plan B sin QR:** escribir la cédula y "Validar". Hace exactamente el mismo check-in.
-4. Arriba muestra **"Entraron X / Y"**.
-5. **Cerrar puerta** (solo owner): desde ahí todo escaneo se rechaza.
+Pantalla aparte (`/admin/scan/<id>`, botón "Puerta" del evento):
+- Ocupa todo el celular, sin el menú del admin.
+- En la compu solo muestra "Usalo desde el celular".
 
-El uso único lo garantiza `check_in_ticket` en Postgres: un solo `UPDATE … WHERE status = 'paid'`. Si dos celulares escanean el mismo QR a la vez, uno da "Adelante" y el otro "Ya usada". Cada intento, incluidos los QR falsos, queda en la tabla `check_ins`.
+**Cada persona pasa en dos pasos.** El QR prueba que la entrada existe; la cédula prueba que es de esa persona.
 
-Código: `src/app/admin/(panel)/events/[id]/scan/`.
+1. **Escanear** el QR, o escribir la cédula en "Sin QR". El escaneo **solo consulta: no cambia nada**.
+   - **Azul "Entrada válida"** con nombre, cédula y tanda (o "Invitación"). Queda fijo hasta que el portero decide.
+   - **Rojo** con el motivo y botón **Cerrar**: ya usada (y a qué hora entró), QR inválido, de otro evento, no válida (anulada o sin pagar), puerta cerrada. También queda fijo.
+2. **Cotejar** la cédula física con la pantalla:
+   - **"Coincide, confirmar ingreso"** → recién ahí la entrada pasa a `used` y suma al contador "X / Y".
+   - **"Cancelar"** → la entrada **no cambia** (sigue válida). Se registra el intento como `id_mismatch`.
+
+Detalles:
+
+- El uso único lo garantiza `check_in_ticket` en Postgres, un solo `UPDATE … WHERE status = 'paid'`. Si dos porteros confirman la misma entrada a la vez, al segundo le aparece "Ya usada".
+- El scanner ignora el mismo QR durante 3 segundos después de cerrar un resultado, porque suele seguir delante de la cámara.
+- **Cerrar puerta** (solo owner): desde ahí todo escaneo se rechaza.
+- Todo queda en `check_ins`:
+  - los rechazos, al escanear (`inspect_ticket`);
+  - los ingresos, al confirmar (`check_in_ticket`);
+  - las cancelaciones del portero (`reject_check_in`).
+
+Código: `src/app/admin/scan/[id]/` · SQL: migraciones `0006` y `0007`.
 
 ### 5.4 Anular y reembolsar
 
@@ -202,7 +215,7 @@ Código: `src/app/admin/(panel)/events/[id]/scan/`.
 | Stock, una por persona, reservas | `create_ticket` — `supabase/migrations/0006_ticketing.sql` |
 | Confirmar pago (idempotente) | `confirm_ticket_payment` — misma migración |
 | Anular / devolver stock | `cancel_ticket` — misma migración |
-| Check-in de un solo uso | `check_in_ticket` — misma migración |
+| Puerta: consultar sin cambiar / confirmar / cancelar | `inspect_ticket`, `reject_check_in` (`0007_door_two_step.sql`) y `check_in_ticket` (`0006`) |
 | Normalizar email/CI/IG, token, URL del QR | `src/lib/tickets.ts` |
 | Mercado Pago (preferencia, consulta, reembolso, firma) | `src/lib/mercadopago.ts` |
 | Contraseña del gate y rotación | `src/lib/auth/gate.ts`, `src/app/api/gate/route.ts` |

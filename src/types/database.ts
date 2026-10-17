@@ -567,6 +567,32 @@ export type Database = {
         }
         Returns: string
       }
+      inspect_ticket: {
+        Args: {
+          p_admin_id: string
+          p_device?: string
+          p_event_id: string
+          p_token: string
+        }
+        Returns: {
+          buyer_document: string
+          buyer_name: string
+          result: string
+          source: Database["public"]["Enums"]["ticket_source"]
+          ticket_id: string
+          tier_name: string
+          used_at: string
+        }[]
+      }
+      reject_check_in: {
+        Args: {
+          p_admin_id: string
+          p_device?: string
+          p_event_id: string
+          p_ticket_id: string
+        }
+        Returns: undefined
+      }
       tier_available: { Args: { p_tier_id: string }; Returns: number }
     }
     Enums: {
@@ -578,6 +604,7 @@ export type Database = {
         | "wrong_event"
         | "not_paid"
         | "door_closed"
+        | "id_mismatch"
       email_status: "sent" | "failed" | "bounced"
       email_type: "confirmation" | "reminder" | "resent"
       event_status: "draft" | "published" | "archived"
@@ -741,6 +768,7 @@ export const Constants = {
         "wrong_event",
         "not_paid",
         "door_closed",
+        "id_mismatch",
       ],
       email_status: ["sent", "failed", "bounced"],
       email_type: ["confirmation", "reminder", "resent"],

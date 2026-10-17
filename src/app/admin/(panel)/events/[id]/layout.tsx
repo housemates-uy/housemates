@@ -27,7 +27,7 @@ export default async function EventLayout({
   const tabs = [
     { href: `/admin/events/${params.id}`, label: 'Resumen', exact: true },
     { href: `/admin/events/${params.id}/tickets`, label: 'Entradas' },
-    { href: `/admin/events/${params.id}/scan`, label: 'Puerta' },
+    { href: `/admin/scan/${params.id}`, label: 'Puerta' },
   ];
 
   return (
