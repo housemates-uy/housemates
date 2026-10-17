@@ -35,6 +35,7 @@ Los tres trabajan con Claude Code desde sus Macs. Este repo es el punto de verda
 
 En orden:
 
+0. **[docs/LOGICA_DE_NEGOCIO.md](../docs/LOGICA_DE_NEGOCIO.md)** — **cómo funciona hoy** (rutas, entradas, compra, puerta). Manda sobre ARCHITECTURE cuando difieren. Actualizarlo en el mismo PR si cambia una regla.
 1. **[docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md)** — visión general, rutas, modelo de datos, flujos
 2. **[docs/API.md](../docs/API.md)** — endpoints y contratos
 3. **[docs/EXTERNAL_SERVICES.md](../docs/EXTERNAL_SERVICES.md)** — servicios externos y secrets
@@ -170,7 +171,7 @@ Default: **no escribir comentarios**. Los buenos nombres explican qué hace el c
 ### 7.3 Tickets
 - `UNIQUE (event_id, buyer_email)` y `UNIQUE (event_id, buyer_document)` a nivel DB
 - 1 ticket por persona por evento (intransferible salvo que admin lo edite manualmente)
-- QR firmado con HMAC — nunca confiar en el token sin verificar la firma
+- QR = token aleatorio opaco (ADR #019), solo vale si existe en la base
 - Una vez usado (`used_at != null`) el QR deja de admitir
 
 ### 7.4 Invitaciones
