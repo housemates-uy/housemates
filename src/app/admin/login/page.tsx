@@ -9,9 +9,13 @@ import { Logo } from '@/components/ui/logo';
 import { loginAction, requestPasswordResetAction } from './actions';
 
 export default function LoginPage() {
-  const linkError = useSearchParams().get('error') === 'link';
+  const errorParam = useSearchParams().get('error');
   const [error, setError] = useState<string | null>(
-    linkError ? 'El link venció o ya se usó. Pedí uno nuevo con "Olvidé mi contraseña".' : null,
+    errorParam === 'link'
+      ? 'El link venció o ya se usó. Pedí uno nuevo con "Olvidé mi contraseña".'
+      : errorParam === 'noadmin'
+        ? 'Tu usuario existe pero no está habilitado como admin. Pedile a un owner que lo habilite.'
+        : null,
   );
   const [pending, startTransition] = useTransition();
   const [email, setEmail] = useState('');

@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { getAdminUser } from '@/lib/auth/admin';
+import { createClient } from '@/lib/supabase/server';
 import { MobileNav, Sidebar } from '@/components/admin/sidebar';
 import { Header } from '@/components/admin/header';
 
@@ -7,7 +8,12 @@ export const metadata = { title: { default: 'Admin', template: '%s · Admin Hous
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const admin = await getAdminUser();
-  if (!admin) redirect('/admin/login');
+  if (!admin) {
+    // Sesión válida pero sin fila activa en `admins`: avisar en vez de mandar al login a ciegas.
+    const supabase = await createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    redirect(session ? '/admin/login?error=noadmin' : '/admin/login');
+  }
 
   return (
     <div className="min-h-[100dvh] md:pl-60">
