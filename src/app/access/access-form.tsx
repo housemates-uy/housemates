@@ -13,6 +13,7 @@ export function AccessForm({ next }: { next: string }) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [attempts, setAttempts] = useState(0);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -42,6 +43,7 @@ export function AccessForm({ next }: { next: string }) {
       setError('Sin conexión. Probá de nuevo.');
     }
 
+    setAttempts((n) => n + 1);
     setPassword('');
     setLoading(false);
   }
@@ -57,13 +59,14 @@ export function AccessForm({ next }: { next: string }) {
 
       <form
         onSubmit={handleSubmit}
-        key={error ? `error-${password.length === 0}` : 'form'}
+        key={attempts}
         className={cn('mt-8 flex w-full flex-col gap-4 text-left', error && 'animate-shake')}
       >
         <Field label="Contraseña" error={error}>
           <Input
             type="password"
             autoComplete="off"
+            autoFocus={attempts > 0}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             disabled={loading}
