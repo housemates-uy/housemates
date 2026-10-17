@@ -7,8 +7,10 @@ import { Eyebrow } from '@/components/ui/eyebrow';
 import { Logo } from '@/components/ui/logo';
 import { TandaStatus } from '@/components/ui/tanda-status';
 import { hasGateAccess } from '@/lib/auth/gate';
+import { isMercadoPagoConfigured } from '@/lib/mercadopago';
 import { getNextEvent } from '@/lib/next-event';
 import { getIgHandle, igUrl } from '@/lib/site';
+import { BuyForm } from './buy-form';
 
 export const metadata: Metadata = { title: 'Entradas' };
 export const dynamic = 'force-dynamic';
@@ -17,6 +19,10 @@ export default async function EntradasPage() {
   if (!(await hasGateAccess())) redirect('/access?next=/entradas');
 
   const [event, igHandle] = await Promise.all([getNextEvent(), getIgHandle()]);
+  // Se vende online solo si: hay evento publicado con ventas activas, Mercado Pago está
+  // configurado y queda al menos una tanda comprable. Si no, se explica cómo comprar por IG.
+  const canBuy =
+    !!event.id && event.salesActive && isMercadoPagoConfigured() && event.tandas.some((t) => t.purchasable);
 
   return (
     <main id="contenido" className="mx-auto min-h-[100dvh] max-w-3xl px-5 pb-20 md:px-10">
@@ -49,21 +55,31 @@ export default async function EntradasPage() {
         </ul>
       )}
 
-      <Card className="mt-12 p-6 md:p-8">
-        <h2 className="text-xl font-bold tracking-tight">La venta por la web llega pronto</h2>
-        <p className="mt-3 max-w-[52ch] text-sm leading-relaxed text-bone/65">
-          Por ahora las entradas se compran por transferencia. Escribinos por Instagram y te pasamos
-          los datos. La entrada es personal: una por persona, a tu nombre y con tu CI.
-        </p>
-        <a
-          href={igUrl(igHandle)}
-          target="_blank"
-          rel="noreferrer"
-          className={buttonVariants({ size: 'lg', className: 'mt-7' })}
-        >
-          Escribinos por Instagram
-        </a>
-      </Card>
+      {canBuy ? (
+        <Card className="mt-12 p-6 md:p-8">
+          <h2 className="text-xl font-bold tracking-tight">Comprá tu entrada</h2>
+          <p className="mt-2 text-sm text-bone/60">Una entrada por persona, a tu nombre.</p>
+          <div className="mt-7">
+            <BuyForm tandas={event.tandas} />
+          </div>
+        </Card>
+      ) : (
+        <Card className="mt-12 p-6 md:p-8">
+          <h2 className="text-xl font-bold tracking-tight">La venta por la web llega pronto</h2>
+          <p className="mt-3 max-w-[52ch] text-sm leading-relaxed text-bone/65">
+            Por ahora las entradas se compran por transferencia. Escribinos por Instagram y te pasamos
+            los datos. La entrada es personal: una por persona, a tu nombre y con tu CI.
+          </p>
+          <a
+            href={igUrl(igHandle)}
+            target="_blank"
+            rel="noreferrer"
+            className={buttonVariants({ size: 'lg', className: 'mt-7' })}
+          >
+            Escribinos por Instagram
+          </a>
+        </Card>
+      )}
     </main>
   );
 }

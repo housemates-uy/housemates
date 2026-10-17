@@ -7,7 +7,7 @@
 > - Si una decisión cambia → nueva entrada que la supersede (con link a la anterior)
 > - Formato: contexto → decisión → alternativas descartadas → consecuencias
 >
-> Última entrada: #019
+> Última entrada: #020
 
 ---
 
@@ -412,3 +412,21 @@ del HMAC previsto: si no está en la base, no existe. Un solo uso garantizado co
 como tickets `manual` / `invitation` y generan el mismo QR, así la puerta usa un solo validador.
 
 **Orden de implementación:** tickets manuales + QR + scanner → checkout Mercado Pago → mails → recordatorios.
+
+---
+
+## #020 — Ticketera v1: lógica en Postgres, reservas de 20 min y Mercado Pago Checkout Pro
+
+**Fecha:** 2026-10-17
+**Autor:** Tato
+
+**Decisión:**
+- Las reglas críticas viven en funciones de Postgres (`create_ticket`, `confirm_ticket_payment`, `cancel_ticket`, `check_in_ticket`, migración 0006) para que sean atómicas.
+- Unicidad email/CI por evento con índices parciales: solo entradas `pending/paid/used`. Antes un UNIQUE total bloqueaba para siempre a quien abandonaba un pago o tenía una entrada anulada.
+- Compra web: reserva `pending` de 20 min, sin cron (la disponibilidad ignora reservas vencidas). Pagos que llegan tarde se honran.
+- Confirmación por dos caminos (webhook + página de resultado), siempre consultando el pago a la API de MP.
+- Invitaciones dentro de la pantalla de Entradas (se eliminó la pestaña aparte).
+
+**Por qué:** POC de venta real a amigos para la fiesta del 11.12.26 sin dominio propio ni mails.
+
+**Consecuencias:** sin mail de confirmación; el comprador ve su entrada al volver de MP y las manuales se mandan por WhatsApp. Documentado en `docs/LOGICA_DE_NEGOCIO.md`.

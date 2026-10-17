@@ -18,14 +18,19 @@ protege solo `/entradas`. La venta para el 11.12.26 sigue siendo híbrida (trans
 
 ---
 
-## Bloqueo principal
+## Ticketera v1 (`feature/tickets`, PR apilado sobre `feature/rebrand`)
 
-**El proyecto Supabase de dev (`yitrsdrfygpccdterhwq`) no resuelve DNS.** Está pausado o
-borrado. Hay que restaurarlo o crear uno nuevo, correr las migraciones `0001`–`0005`, crear
-los admins (ADR #012) y actualizar `.env.local` y las env vars de Vercel. Hasta entonces:
-- el admin no anda (no hay login),
-- la landing usa fallbacks (fecha 11.12.26, sin tandas, IG `@house__mates`),
-- el gate usa `GATE_PASSWORD` del entorno.
+Cómo funciona todo: **[docs/LOGICA_DE_NEGOCIO.md](../docs/LOGICA_DE_NEGOCIO.md)**.
+
+- Migración `0006_ticketing.sql`: reservas, una entrada por email/CI (solo vivas), check-in atómico, funciones `create_ticket` / `confirm_ticket_payment` / `cancel_ticket` / `check_in_ticket`.
+- Admin → evento → **Entradas**: alta manual o invitación con link por WhatsApp, búsqueda, anular / reembolsar.
+- Admin → evento → **Puerta**: scanner con cámara, plan B por CI, contador, cerrar puerta.
+- `/ticket/<token>`: la entrada con el QR.
+- `/entradas`: formulario de compra → Mercado Pago Checkout Pro → `/compra/resultado` + webhook `/api/mp/webhook`.
+
+**Para probar la compra falta:** cargar `MP_ACCESS_TOKEN` (vendedor de prueba) y opcional `MP_WEBHOOK_SECRET` en `.env.local` y en Vercel, y activar ventas del evento. Pasos en el doc, §7.
+
+Supabase: proyecto `lmymrfoveedkpchuofme` (sa-east-1), migraciones 0001–0006 aplicadas. El anterior (`yitrsdrfygpccdterhwq`) se perdió.
 
 ---
 

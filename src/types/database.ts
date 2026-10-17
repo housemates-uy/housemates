@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.18"
   }
   graphql_public: {
     Tables: {
@@ -111,26 +111,32 @@ export type Database = {
         Row: {
           admin_id: string | null
           device_info: string | null
+          event_id: string | null
           id: string
           result: Database["public"]["Enums"]["checkin_result"]
           scanned_at: string
-          ticket_id: string
+          scanned_token: string | null
+          ticket_id: string | null
         }
         Insert: {
           admin_id?: string | null
           device_info?: string | null
+          event_id?: string | null
           id?: string
           result: Database["public"]["Enums"]["checkin_result"]
           scanned_at?: string
-          ticket_id: string
+          scanned_token?: string | null
+          ticket_id?: string | null
         }
         Update: {
           admin_id?: string | null
           device_info?: string | null
+          event_id?: string | null
           id?: string
           result?: Database["public"]["Enums"]["checkin_result"]
           scanned_at?: string
-          ticket_id?: string
+          scanned_token?: string | null
+          ticket_id?: string | null
         }
         Relationships: [
           {
@@ -138,6 +144,13 @@ export type Database = {
             columns: ["admin_id"]
             isOneToOne: false
             referencedRelation: "admins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "check_ins_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
             referencedColumns: ["id"]
           },
           {
@@ -352,9 +365,13 @@ export type Database = {
           amount_paid_uyu: number
           buyer_document: string
           buyer_email: string
+          buyer_email_normalized: string
+          buyer_instagram: string | null
           buyer_name: string
           buyer_phone: string | null
+          cancelled_at: string | null
           created_at: string
+          created_by_admin_id: string | null
           event_id: string
           id: string
           mp_payment_id: string | null
@@ -362,6 +379,7 @@ export type Database = {
           notes: string | null
           paid_at: string | null
           qr_token: string | null
+          reserved_until: string | null
           source: Database["public"]["Enums"]["ticket_source"]
           status: Database["public"]["Enums"]["ticket_status"]
           tier_id: string | null
@@ -372,9 +390,13 @@ export type Database = {
           amount_paid_uyu?: number
           buyer_document: string
           buyer_email: string
+          buyer_email_normalized: string
+          buyer_instagram?: string | null
           buyer_name: string
           buyer_phone?: string | null
+          cancelled_at?: string | null
           created_at?: string
+          created_by_admin_id?: string | null
           event_id: string
           id?: string
           mp_payment_id?: string | null
@@ -382,6 +404,7 @@ export type Database = {
           notes?: string | null
           paid_at?: string | null
           qr_token?: string | null
+          reserved_until?: string | null
           source?: Database["public"]["Enums"]["ticket_source"]
           status?: Database["public"]["Enums"]["ticket_status"]
           tier_id?: string | null
@@ -392,9 +415,13 @@ export type Database = {
           amount_paid_uyu?: number
           buyer_document?: string
           buyer_email?: string
+          buyer_email_normalized?: string
+          buyer_instagram?: string | null
           buyer_name?: string
           buyer_phone?: string | null
+          cancelled_at?: string | null
           created_at?: string
+          created_by_admin_id?: string | null
           event_id?: string
           id?: string
           mp_payment_id?: string | null
@@ -402,6 +429,7 @@ export type Database = {
           notes?: string | null
           paid_at?: string | null
           qr_token?: string | null
+          reserved_until?: string | null
           source?: Database["public"]["Enums"]["ticket_source"]
           status?: Database["public"]["Enums"]["ticket_status"]
           tier_id?: string | null
@@ -409,6 +437,13 @@ export type Database = {
           used_by_admin_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "tickets_created_by_admin_id_fkey"
+            columns: ["created_by_admin_id"]
+            isOneToOne: false
+            referencedRelation: "admins"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "tickets_event_id_fkey"
             columns: ["event_id"]
@@ -487,7 +522,52 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      cancel_ticket: {
+        Args: { p_refunded?: boolean; p_ticket_id: string }
+        Returns: string
+      }
+      check_in_ticket: {
+        Args: {
+          p_admin_id: string
+          p_device?: string
+          p_event_id: string
+          p_token: string
+        }
+        Returns: {
+          buyer_document: string
+          buyer_name: string
+          result: Database["public"]["Enums"]["checkin_result"]
+          source: Database["public"]["Enums"]["ticket_source"]
+          ticket_id: string
+          tier_name: string
+          used_at: string
+        }[]
+      }
+      confirm_ticket_payment: {
+        Args: { p_amount: number; p_payment_id: string; p_ticket_id: string }
+        Returns: string
+      }
+      create_ticket: {
+        Args: {
+          p_admin_id?: string
+          p_amount: number
+          p_document: string
+          p_email: string
+          p_email_norm: string
+          p_event_id: string
+          p_hold_minutes?: number
+          p_instagram: string
+          p_name: string
+          p_notes?: string
+          p_phone: string
+          p_qr_token: string
+          p_source: Database["public"]["Enums"]["ticket_source"]
+          p_status: Database["public"]["Enums"]["ticket_status"]
+          p_tier_id: string
+        }
+        Returns: string
+      }
+      tier_available: { Args: { p_tier_id: string }; Returns: number }
     }
     Enums: {
       admin_role: "owner" | "staff"
@@ -519,12 +599,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -548,11 +628,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -573,11 +653,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -598,11 +678,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -615,11 +695,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
