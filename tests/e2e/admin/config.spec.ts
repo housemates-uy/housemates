@@ -3,6 +3,8 @@ import { loginAsOwner } from '../../helpers/auth'
 
 test.describe('Config — gate password', () => {
   test('owner puede cambiar la contraseña del gate', async ({ page }) => {
+    // Este test pisa la contraseña real del gate: solo corre si se puede restaurar.
+    test.skip(!process.env.TEST_GATE_PASSWORD, 'Definí TEST_GATE_PASSWORD para correr este test')
     await loginAsOwner(page)
     await page.goto('/admin/config')
 
@@ -19,7 +21,7 @@ test.describe('Config — gate password', () => {
     await expect(page.locator('text=Contraseña actualizada correctamente.')).toBeVisible()
 
     // restaurar la contraseña original para no romper otros tests
-    await input.fill(process.env.TEST_GATE_PASSWORD ?? 'password-original')
+    await input.fill(process.env.TEST_GATE_PASSWORD!)
     await page.click('button:has-text("Guardar contraseña")')
     await expect(page.locator('text=Contraseña actualizada correctamente.')).toBeVisible()
   })

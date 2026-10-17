@@ -1,48 +1,50 @@
-import { redirect, notFound } from 'next/navigation'
-import Link from 'next/link'
-import { getAdminUser } from '@/lib/auth/admin'
-import { createAdminClient } from '@/lib/supabase/admin'
-import { TabLinkClient } from '@/components/admin/tab-link'
+import { redirect, notFound } from 'next/navigation';
+import Link from 'next/link';
+import { ArrowLeft } from 'lucide-react';
+import { getAdminUser } from '@/lib/auth/admin';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { TabLinkClient } from '@/components/admin/tab-link';
 
 export default async function EventLayout({
   children,
   params,
 }: {
-  children: React.ReactNode
-  params: { id: string }
+  children: React.ReactNode;
+  params: { id: string };
 }) {
-  const admin = await getAdminUser()
-  if (!admin) redirect('/admin/login')
+  const admin = await getAdminUser();
+  if (!admin) redirect('/admin/login');
 
-  const db = createAdminClient()
+  const db = createAdminClient();
   const { data: event } = await db
     .from('events')
     .select('id, title, status')
     .eq('id', params.id)
-    .single()
+    .single();
 
-  if (!event) notFound()
+  if (!event) notFound();
 
   const tabs = [
-    { href: `/admin/events/${params.id}`, label: 'Overview', exact: true },
+    { href: `/admin/events/${params.id}`, label: 'Resumen', exact: true },
     { href: `/admin/events/${params.id}/tickets`, label: 'Tickets' },
     { href: `/admin/events/${params.id}/invitations`, label: 'Invitaciones' },
     { href: `/admin/events/${params.id}/scan`, label: 'Scanner' },
-  ]
+  ];
 
   return (
     <div className="space-y-6">
       <div>
         <Link
           href="/admin/events"
-          className="text-xs text-bone/30 hover:text-bone/60 tracking-widest uppercase"
+          className="inline-flex items-center gap-1.5 text-sm text-bone/55 hover:text-bone"
         >
-          ← Eventos
+          <ArrowLeft size={14} strokeWidth={1.5} aria-hidden />
+          Eventos
         </Link>
-        <h1 className="mt-2 font-display text-2xl font-light text-bone">{event.title}</h1>
+        <h1 className="mt-2 text-2xl font-bold tracking-tight md:text-3xl">{event.title}</h1>
       </div>
 
-      <nav className="flex gap-1 border-b border-white/8">
+      <nav aria-label="Secciones del evento" className="flex overflow-x-auto border-b border-bone/10">
         {tabs.map((tab) => (
           <TabLinkClient key={tab.href} href={tab.href} label={tab.label} exact={tab.exact} />
         ))}
@@ -50,5 +52,5 @@ export default async function EventLayout({
 
       {children}
     </div>
-  )
+  );
 }

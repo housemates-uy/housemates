@@ -1,32 +1,33 @@
-'use client'
+'use client';
 
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { clsx } from 'clsx'
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { cn } from '@/lib/utils';
 
 export function TabLinkClient({
   href,
   label,
   exact,
 }: {
-  href: string
-  label: string
-  exact?: boolean
+  href: string;
+  label: string;
+  exact?: boolean;
 }) {
-  const pathname = usePathname()
-  const isActive = exact ? pathname === href : pathname.startsWith(href)
+  const pathname = usePathname();
+  const isActive = exact ? pathname === href : pathname.startsWith(href);
 
   return (
     <Link
       href={href}
-      className={clsx(
-        'px-4 py-2.5 text-xs tracking-widest uppercase border-b-2 -mb-px transition-colors',
+      aria-current={isActive ? 'page' : undefined}
+      className={cn(
+        '-mb-px shrink-0 border-b-2 px-4 py-3 text-sm transition-colors',
         isActive
-          ? 'border-bone text-bone'
-          : 'border-transparent text-bone/40 hover:text-bone/70'
+          ? 'border-bone font-medium text-bone'
+          : 'border-transparent text-bone/50 hover:text-bone',
       )}
     >
       {label}
     </Link>
-  )
+  );
 }

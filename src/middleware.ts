@@ -1,29 +1,24 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getIronSession } from 'iron-session';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
-import { GATE_COOKIE, GATE_TTL_SECONDS, type GateSession } from '@/lib/auth/gate';
+import { GATE_COOKIE, GATE_TTL_SECONDS, type GateSession } from '@/lib/auth/gate-shared';
 
-const STATIC_PREFIXES = ['/_next', '/favicon.ico', '/robots.txt'];
-const GATE_PUBLIC = ['/access', '/api/gate'];
-const ADMIN_PUBLIC = ['/admin/login', '/api/admin/auth/login'];
+// La landing es pública. La contraseña protege solo la compra de entradas.
+const GATED_PREFIXES = ['/entradas', '/checkout'];
+const ADMIN_PUBLIC = ['/admin/login'];
 
-function isStatic(pathname: string) {
-  return STATIC_PREFIXES.some((p) => pathname.startsWith(p));
-}
-
-function isAdminHost(request: NextRequest) {
-  const host = request.headers.get('host') ?? '';
-  return host.startsWith('admin.');
+function matchesPrefix(pathname: string, prefixes: string[]) {
+  return prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
 function isAdminPath(pathname: string) {
-  return pathname.startsWith('/admin') || pathname.startsWith('/api/admin');
+  return matchesPrefix(pathname, ['/admin', '/api/admin']);
 }
 
 async function handleAdminAuth(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
 
-  if (ADMIN_PUBLIC.some((p) => pathname.startsWith(p))) {
+  if (matchesPrefix(pathname, ADMIN_PUBLIC)) {
     return NextResponse.next();
   }
 
@@ -39,73 +34,58 @@ async function handleAdminAuth(request: NextRequest): Promise<NextResponse> {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          );
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           response = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
+            response.cookies.set(name, value, options),
           );
         },
       },
-    }
+    },
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   if (!user) {
-    const loginUrl = new URL('/admin/login', request.url);
-    return NextResponse.redirect(loginUrl);
+    return NextResponse.redirect(new URL('/admin/login', request.url));
   }
 
   return response;
 }
 
+function redirectToAccess(request: NextRequest) {
+  const url = new URL('/access', request.url);
+  url.searchParams.set('next', request.nextUrl.pathname);
+  return NextResponse.redirect(url);
+}
+
+// Chequeo rápido de cookie. La comparación contra la contraseña vigente (rotación)
+// la hace cada página protegida con hasGateAccess().
 async function handleGateAuth(request: NextRequest): Promise<NextResponse> {
-  const { pathname } = request.nextUrl;
-
-  if (GATE_PUBLIC.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
-    return NextResponse.next();
-  }
-
   const secret = process.env.GATE_COOKIE_SECRET;
-  if (!secret || secret.length < 32) {
-    return NextResponse.redirect(new URL('/access', request.url));
-  }
+  if (!secret || secret.length < 32) return redirectToAccess(request);
 
   const response = NextResponse.next();
   const session = await getIronSession<GateSession>(request, response, {
     cookieName: GATE_COOKIE,
     password: secret,
     ttl: GATE_TTL_SECONDS,
-    cookieOptions: {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: GATE_TTL_SECONDS,
-    },
   });
 
-  if (!session.granted) {
-    return NextResponse.redirect(new URL('/access', request.url));
-  }
-
+  if (!session.granted) return redirectToAccess(request);
   return response;
 }
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (isStatic(pathname)) return NextResponse.next();
-
-  if (isAdminHost(request) || isAdminPath(pathname)) {
-    return handleAdminAuth(request);
-  }
-
-  return handleGateAuth(request);
+  if (isAdminPath(pathname)) return handleAdminAuth(request);
+  if (matchesPrefix(pathname, GATED_PREFIXES)) return handleGateAuth(request);
+  return NextResponse.next();
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: ['/admin/:path*', '/api/admin/:path*', '/entradas/:path*', '/checkout/:path*'],
 };

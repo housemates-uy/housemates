@@ -10,12 +10,12 @@
 
 **HOUSE MATES** es una fiesta privada premium en Montevideo, Uruguay. Este repo es la web oficial:
 
-- Landing con gate de password universal (mística de fiesta privada)
+- Landing pública; la compra de entradas pide una contraseña que los owners rotan (ver ADR #017)
 - Ticketera integrada a Mercado Pago
 - Panel admin para los owners (gestión de eventos, tickets, whitelist, invitaciones)
 - Scanner QR en puerta el día del evento
 
-**Acceso a la compra:** filtrado por una **whitelist de emails gestionada manualmente** por los owners. Esa es la barrera real de acceso — no el password universal. El password es solo mística + primer filtro.
+**Acceso a la compra:** contraseña rotada desde `/admin/config` + entrada nominativa (una por CI y una por email por evento). La whitelist de emails ya no se usa en el checkout (ADR #017).
 
 ---
 
@@ -49,7 +49,7 @@ En orden:
 ## 4. Stack
 
 - **Next.js 14** (App Router) + **TypeScript**
-- **Tailwind CSS** + **Framer Motion**
+- **Tailwind CSS** + **Framer Motion** — tokens del Manual de Marca v1 en `tailwind.config.ts`; Neue Montreal fuera del repo (ADR #018)
 - **Supabase** (Postgres + Auth + Storage)
 - **Mercado Pago Checkout Pro**
 - **Resend** (emails con React Email)
@@ -155,14 +155,15 @@ Default: **no escribir comentarios**. Los buenos nombres explican qué hace el c
 
 ## 7. Reglas específicas del dominio
 
-### 7.1 Whitelist — solo manual
+### 7.1 Whitelist — solo manual (fuera del checkout desde ADR #017)
 - **NUNCA** implementar auto-populate de whitelist tras compra (decisión del equipo)
 - **NUNCA** implementar form público de "solicitar acceso" (se canaliza por Instagram DM)
 - Agregar emails solo vía input manual en admin (uno o varios separados por coma)
 - Normalización SIEMPRE: lowercase + strip gmail dots/+tag antes de insertar o consultar
 
 ### 7.2 Password universal
-- Cookie `hm_access` vive **1 día exactamente** (no más)
+- Cookie `hm_access` vive **1 día exactamente** (no más) y guarda la huella de la contraseña: si se rota, deja de valer
+- Protege solo `/entradas` y `/checkout`; la landing es pública
 - El password se cambia desde `/admin/config`, nunca se hardcodea en código
 - Rate limit del gate: 5 intentos / 15 min por IP
 
@@ -255,16 +256,4 @@ A medida que vayamos creando flujos útiles, los guardamos acá para que todos l
 
 ## 13. Estado actual del proyecto
 
-- ✅ Arquitectura documentada
-- ✅ API spec escrita
-- ✅ Diagrama de DB
-- ✅ Plan de scaffold
-- ✅ Servicios externos documentados
-- ✅ Scaffold Next.js 14 (App Router + TS + Tailwind)
-- ✅ Gate de password universal (middleware + iron-session, 1 día)
-- ✅ Landing placeholder
-- ⏳ Deploy a Vercel + compra de dominio → ver `docs/DEPLOY.md` y `docs/NEXT_STEPS.md`
-- ⏳ Integración Supabase (siguiente feature)
-- ⏳ Whitelist + admin + tickets + MP + scanner
-
-Branch actual de trabajo: `feature/landing-gate`.
+Ver [HANDOFF.md](./HANDOFF.md).

@@ -1,20 +1,16 @@
 import Link from 'next/link';
+import { buttonVariants } from '@/components/ui/button';
+import { Logo } from '@/components/ui/logo';
 
 export default function NotFound() {
   return (
-    <main className="flex min-h-screen items-center justify-center px-6 py-10 text-center">
-      <div>
-        <p className="font-mono text-[10px] uppercase tracking-[0.45em] text-bone/40">404</p>
-        <h1 className="mt-4 font-display text-5xl font-light tracking-tightest md:text-6xl">
-          fuera de la lista
-        </h1>
-        <Link
-          href="/"
-          className="mt-10 inline-block font-mono text-[10px] uppercase tracking-[0.4em] text-bone/60 hover:text-ember"
-        >
-          → volver
-        </Link>
-      </div>
+    <main id="contenido" className="flex min-h-[100dvh] flex-col items-center justify-center px-5 text-center">
+      <Logo className="h-20" />
+      <h1 className="mt-10 text-4xl font-bold tracking-[-0.02em] md:text-5xl">Esta no es la casa</h1>
+      <p className="mt-3 text-sm text-bone/60">La página que buscás no existe o cambió de lugar.</p>
+      <Link href="/" className={buttonVariants({ variant: 'outline', className: 'mt-9' })}>
+        Volver al inicio
+      </Link>
     </main>
   );
 }

@@ -7,7 +7,7 @@
 > - Si una decisión cambia → nueva entrada que la supersede (con link a la anterior)
 > - Formato: contexto → decisión → alternativas descartadas → consecuencias
 >
-> Última entrada: #010
+> Última entrada: #019
 
 ---
 
@@ -352,3 +352,63 @@ Lógica de agotada: `sold_out_override || quantity_sold >= quantity_total`.
 - Requiere `ALTER TABLE ticket_tiers ADD COLUMN sold_out_override boolean NOT NULL DEFAULT false`
   en cada entorno. Dev ya corrida; producción pendiente al deployar.
 - El checkout público deberá respetar este campo al validar disponibilidad de un tier.
+
+---
+
+## #017 — Landing pública; la contraseña protege solo la compra (supersede parte de #014)
+
+**Fecha:** 2026-10-02
+**Autor:** Tato
+
+**Contexto:** El objetivo de la ticketera es no perder ventas por fricción. Con la landing
+detrás de contraseña nadie que llega desde Instagram ve nada, y la whitelist de emails en el
+checkout volvía a frenar la compra.
+
+**Decisión:**
+- La landing (`/`) es pública. La contraseña se pide solo para `/entradas` y el futuro `/checkout`.
+- La whitelist de emails sale del checkout. El control pasa a ser: contraseña rotada por los
+  owners desde `/admin/config` + entrada nominativa (nombre + CI + email + Instagram), una por
+  CI y una por email por evento, con revisión y anulación desde el admin.
+- La sesión del gate guarda la huella (`sha256`, 16 chars) de la contraseña con la que se
+  entró. Al rotarla, las cookies anteriores dejan de valer (`hasGateAccess()` en `src/lib/auth/gate.ts`).
+
+**Alternativas descartadas:**
+- Códigos personales de un solo uso: más seguros, pero suman trabajo manual por venta.
+- Mantener la whitelist: contradice el objetivo de conversión.
+
+**Consecuencias:**
+- `.claude/CLAUDE.md` §1 y §7.1 quedan desactualizadas respecto a la whitelist; manda esta decisión.
+- El middleware solo corre en `/admin`, `/api/admin`, `/entradas` y `/checkout`.
+
+---
+
+## #018 — Neue Montreal fuera del repo
+
+**Fecha:** 2026-10-02
+**Autor:** Tato
+
+**Contexto:** El manual de marca usa Neue Montreal (paga). El repo es público: commitear los
+archivos sería redistribuir la fuente.
+
+**Decisión:** Los `.woff2` viven en `public/fonts/` (gitignored) en local y en un hosting aparte
+en deploy, apuntado con `NEXT_PUBLIC_FONTS_URL`. `src/lib/fonts.ts` genera los `@font-face`.
+Sin la variable, el deploy cae a Helvetica Neue / Arial.
+
+**Alternativas descartadas:**
+- Repo privado: Vercel Hobby no despliega repos privados de una organización.
+- General Sans (gratis): el equipo tiene licencia de Neue Montreal y prefiere la fuente del manual.
+
+---
+
+## #019 — Validador web dentro del mismo proyecto y QR opaco
+
+**Fecha:** 2026-10-02
+**Autor:** Tato
+
+**Decisión:** El scanner de puerta es una página del admin (`/admin/events/[id]/scan`), no una
+app nativa. El QR codifica un token aleatorio de 128 bits guardado en `tickets.qr_token` en lugar
+del HMAC previsto: si no está en la base, no existe. Un solo uso garantizado con
+`UPDATE ... WHERE used_at IS NULL RETURNING`. Ventas por transferencia e invitaciones se cargan
+como tickets `manual` / `invitation` y generan el mismo QR, así la puerta usa un solo validador.
+
+**Orden de implementación:** tickets manuales + QR + scanner → checkout Mercado Pago → mails → recordatorios.

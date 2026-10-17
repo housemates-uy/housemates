@@ -1,37 +1,34 @@
 import type { Metadata, Viewport } from 'next';
-import { Fraunces, JetBrains_Mono } from 'next/font/google';
+import { fontFaceCss, fontPreloads } from '@/lib/fonts';
 import './globals.css';
 
-const fraunces = Fraunces({
-  subsets: ['latin'],
-  weight: ['300', '400', '500'],
-  variable: '--font-display',
-  display: 'swap',
-});
-
-const mono = JetBrains_Mono({
-  subsets: ['latin'],
-  weight: ['400', '500'],
-  variable: '--font-mono',
-  display: 'swap',
-});
-
 export const metadata: Metadata = {
-  title: 'HOUSE MATES',
-  description: 'Fiesta privada · Montevideo',
+  title: { default: 'House Mates', template: '%s · House Mates' },
+  description: 'Una casa, de noche. Fiesta privada en Montevideo.',
   robots: { index: false, follow: false },
 };
 
 export const viewport: Viewport = {
-  themeColor: '#0a0a0a',
+  themeColor: '#0A0A0A',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es" className={`${fraunces.variable} ${mono.variable}`}>
-      <body className="relative min-h-screen bg-ink font-sans text-bone antialiased">
-        <div aria-hidden className="pointer-events-none fixed inset-0 z-0 grain" />
-        <div className="relative z-10 min-h-screen">{children}</div>
+    <html lang="es">
+      <head>
+        {fontPreloads.map((href) => (
+          <link key={href} rel="preload" href={href} as="font" type="font/woff2" crossOrigin="anonymous" />
+        ))}
+        <style dangerouslySetInnerHTML={{ __html: fontFaceCss }} />
+      </head>
+      <body className="min-h-[100dvh] bg-ink font-sans text-bone antialiased">
+        <a
+          href="#contenido"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-control focus:bg-bone focus:px-4 focus:py-2 focus:text-sm focus:text-ink"
+        >
+          Saltar al contenido
+        </a>
+        {children}
       </body>
     </html>
   );
