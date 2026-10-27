@@ -2,21 +2,12 @@
 
 > Pedidos y pendientes, en orden de prioridad. Al terminar algo, se borra de acá y se
 > documenta en `docs/LOGICA_DE_NEGOCIO.md` si cambia una regla.
-> Última actualización: 2026-10-27 (feedback de Tato tras la primera compra con Mercado Pago).
+> Última actualización: 2026-10-27. Ya hechos: cargo por servicio, tandas con precio y sin %, elegir tanda tocándola, guardar la entrada como imagen o PDF, mails de confirmación y anulación.
 
 ## Ahora (antes de vender a amigos)
 
-1. **Cargo por servicio visible.** En las tandas se muestra el precio de la entrada. Antes de pagar, el desglose en pesos (sin porcentaje):
-   - "Entrada $1.600 · Cargo por servicio $X · Total $Y".
-   - Mercado Pago cobra el total.
-   - El cargo cubre la comisión de MP al instante (5,99 % + IVA ≈ 7,31 %).
-   - Las cuotas con interés las paga el comprador.
-2. **No mostrar "% vendida" en la web.** Para el público solo "Disponible" o "Sold out". El admin sí ve los números.
-3. **Precio en cada tanda**, también en las agotadas: que se vea cuánto salía cada una.
-4. **Elegir la tanda tocándola.** Cada tanda es una tarjeta; al tocarla se abre el formulario con esa tanda ya elegida (desde la landing también).
-5. **Guardar la entrada** como imagen y PDF desde `/ticket/<token>`, además de la captura.
-6. **Rediseño del formulario de compra.** Hoy es muy básico. Esperando referencias de otras ticketeras (las manda Tato).
-7. **Webhook de MP rechaza la firma.** Revisar que `MP_WEBHOOK_SECRET` en Vercel sea la clave secreta del webhook de **modo prueba** (y después la de producción).
+1. **Rediseño del formulario de compra.** Hoy es muy básico. Esperando referencias de otras ticketeras (las manda Tato).
+2. **Webhook de MP rechaza la firma.** Revisar que `MP_WEBHOOK_SECRET` en Vercel sea la clave secreta del webhook de **modo prueba** (y después la de producción).
 
 ## Mails
 
@@ -25,8 +16,6 @@ Hechos: **compra confirmada** (MP, manual, invitación) y **entrada anulada**, m
 **Pendiente:** dominio propio de la fiesta y casilla `no-reply@<dominio>` con Resend. Solo cambia `src/lib/mail/send.ts`. Los mails de transferencias se implementan con esa funcionalidad (diseños ya aprobados en Claude Design).
 
 Diseños: Claude Design → "Mails House Mates".
-
-Sin dominio propio: para la prueba con amigos, SMTP de un Gmail de la fiesta (contraseña de aplicación). Con dominio: Resend.
 
 | Mail | A quién | Cuándo |
 |---|---|---|
