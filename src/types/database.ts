@@ -606,7 +606,14 @@ export type Database = {
         | "door_closed"
         | "id_mismatch"
       email_status: "sent" | "failed" | "bounced"
-      email_type: "confirmation" | "reminder" | "resent"
+      email_type:
+        | "confirmation"
+        | "reminder"
+        | "resent"
+        | "cancelled"
+        | "transfer_received"
+        | "transfer_rejected"
+        | "transfer_admin_alert"
       event_status: "draft" | "published" | "archived"
       ticket_source: "purchase" | "invitation" | "manual"
       ticket_status: "pending" | "paid" | "used" | "refunded" | "cancelled"
@@ -771,7 +778,15 @@ export const Constants = {
         "id_mismatch",
       ],
       email_status: ["sent", "failed", "bounced"],
-      email_type: ["confirmation", "reminder", "resent"],
+      email_type: [
+        "confirmation",
+        "reminder",
+        "resent",
+        "cancelled",
+        "transfer_received",
+        "transfer_rejected",
+        "transfer_admin_alert",
+      ],
       event_status: ["draft", "published", "archived"],
       ticket_source: ["purchase", "invitation", "manual"],
       ticket_status: ["pending", "paid", "used", "refunded", "cancelled"],

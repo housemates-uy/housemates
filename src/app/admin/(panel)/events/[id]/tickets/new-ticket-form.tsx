@@ -48,6 +48,9 @@ export function NewTicketForm({ eventId, tiers }: { eventId: string; tiers: Tier
     return (
       <Card className="space-y-4">
         <p className="text-sm font-medium">Entrada creada para {result.name}</p>
+        <p className="text-sm text-bone/60">
+          {result.mailed ? 'Le mandamos la entrada por mail.' : 'No se mandó mail.'}
+        </p>
         <p className="break-all rounded-control bg-bone/5 px-3 py-2 text-sm text-bone/75">{result.url}</p>
         <div className="flex flex-wrap gap-2">
           <a href={waUrl} target="_blank" rel="noreferrer" className={buttonVariants({ size: 'sm' })}>
@@ -115,6 +118,10 @@ export function NewTicketForm({ eventId, tiers }: { eventId: string; tiers: Tier
       <Field label="Notas (opcional)">
         <Textarea name="notes" rows={2} />
       </Field>
+      <label className="flex cursor-pointer items-center gap-2.5 text-sm text-bone/75">
+        <input type="checkbox" name="send_mail" defaultChecked className="h-4 w-4 accent-bone" />
+        Mandarle la entrada por mail
+      </label>
       {error && !error.field && (
         <p role="alert" className="text-sm text-alert">
           {error.error}

@@ -258,7 +258,22 @@ Código: `src/app/admin/scan/[id]/` · SQL: migraciones `0006` y `0007`.
 
 ---
 
-## 8. Caché
+## 8. Mails
+
+| Mail | Cuándo se manda | Código |
+|---|---|---|
+| Entrada confirmada (con QR) | Mercado Pago aprueba el pago: lo manda solo la llamada que confirmó, así webhook + página de vuelta no lo duplican | `syncPayment` en `src/lib/mercadopago.ts` |
+| Entrada confirmada | Un admin carga una entrada manual o invitación, con la casilla "Mandarle la entrada por mail" (tildada por defecto) | `createManualTicketAction` |
+| Entrada confirmada | Botón "Reenviar mail" en Admin → Entradas | `resendTicketMailAction` |
+| Entrada anulada (+ reembolso) | Un admin anula o reembolsa una entrada **válida** (no se avisa por compras pendientes) | `cancelTicketAction` |
+
+- **Envío:** SMTP de Gmail (`src/lib/mail/send.ts`), con `GMAIL_USER` + `GMAIL_APP_PASSWORD`. Gmail permite unos 500 mails por día.
+- **Si falta configuración o falla el envío**, se loguea y la acción sigue: un mail nunca bloquea una compra.
+- **Registro:** cada envío queda en `email_log` (enviado o fallido).
+- **Plantillas:** `src/lib/mail/templates.ts`, con tablas y estilos inline, que es lo que respetan los clientes de mail. El QR va como imagen adjunta embebida (`cid:qr`), porque Gmail no muestra imágenes `data:`.
+- **Pendiente:** dominio propio + `no-reply@` con Resend; ver `docs/BACKLOG.md`.
+
+## 8b. Caché
 
 Las consultas a Supabase se hacen con `cache: 'no-store'` (`src/lib/supabase/admin.ts` y `server.ts`). Next 14 cachea por defecto los `fetch` del servidor, y la app mostraba datos viejos: una entrada usada seguía figurando como válida. Los datos de esta app cambian en tiempo real, así que **no se cachea nada de la base**.
 

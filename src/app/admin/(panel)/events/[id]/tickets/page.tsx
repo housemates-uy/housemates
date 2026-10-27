@@ -1,14 +1,14 @@
 import Link from 'next/link';
 import { requireAdmin } from '@/lib/auth/admin';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { ConfirmSubmitButton } from '@/components/admin/submit-button';
+import { ConfirmSubmitButton, SubmitButton } from '@/components/admin/submit-button';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState, StatCard } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { formatUYU } from '@/lib/events';
 import { formatDocument, normalizeDocument, SOURCE_LABELS, STATUS_LABELS, ticketUrl } from '@/lib/tickets';
 import type { TicketStatus } from '@/types/database';
-import { cancelTicketAction } from './actions';
+import { cancelTicketAction, resendTicketMailAction } from './actions';
 import { CopyLinkButton } from './copy-link-button';
 import { NewTicketForm } from './new-ticket-form';
 
@@ -120,6 +120,7 @@ export default async function EventTicketsPage({
           <ul className="divide-y divide-bone/10 rounded-card border border-bone/10">
             {filtered.map((t) => {
               const cancel = cancelTicketAction.bind(null, params.id, t.id);
+              const resend = resendTicketMailAction.bind(null, params.id, t.id);
               const cancellable = t.status === 'paid' || t.status === 'pending';
               return (
                 <li key={t.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4">
@@ -140,6 +141,13 @@ export default async function EventTicketsPage({
                   </div>
                   <div className="flex items-center gap-1">
                     {t.qr_token && t.status !== 'pending' && <CopyLinkButton url={ticketUrl(t.qr_token)} />}
+                    {t.status === 'paid' && (
+                      <form action={resend}>
+                        <SubmitButton variant="ghost" size="sm">
+                          Reenviar mail
+                        </SubmitButton>
+                      </form>
+                    )}
                     {cancellable && (
                       <form action={cancel}>
                         <ConfirmSubmitButton

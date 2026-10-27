@@ -18,7 +18,13 @@
 6. **Rediseño del formulario de compra.** Hoy es muy básico. Esperando referencias de otras ticketeras (las manda Tato).
 7. **Webhook de MP rechaza la firma.** Revisar que `MP_WEBHOOK_SECRET` en Vercel sea la clave secreta del webhook de **modo prueba** (y después la de producción).
 
-## Mails (diseñar en Claude Design → aprobar → implementar)
+## Mails
+
+Hechos: **compra confirmada** (MP, manual, invitación) y **entrada anulada**, más "Reenviar mail" en el admin. Se mandan desde el Gmail de Tato (`ssouber99@gmail.com`).
+
+**Pendiente:** dominio propio de la fiesta y casilla `no-reply@<dominio>` con Resend. Solo cambia `src/lib/mail/send.ts`. Los mails de transferencias se implementan con esa funcionalidad (diseños ya aprobados en Claude Design).
+
+Diseños: Claude Design → "Mails House Mates".
 
 Sin dominio propio: para la prueba con amigos, SMTP de un Gmail de la fiesta (contraseña de aplicación). Con dominio: Resend.
 

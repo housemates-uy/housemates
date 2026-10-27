@@ -7,6 +7,7 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 import { MercadoPagoConfig, Payment, PaymentRefund, Preference } from 'mercadopago';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { sendTicketConfirmedMail } from '@/lib/mail/ticket-mails';
 import { appUrl } from '@/lib/tickets';
 
 function client() {
@@ -79,6 +80,9 @@ export async function syncPayment(paymentId: string): Promise<{
       p_payment_id: String(payment.id),
       p_amount: payment.transaction_amount ?? 0,
     });
+    // Solo la llamada que efectivamente confirmó manda el mail (webhook y página de vuelta
+    // pueden llegar los dos; la segunda recibe 'already_paid' y no reenvía).
+    if (data === 'confirmed') await sendTicketConfirmedMail(ticketId);
     return { ticketId, status, result: data as string };
   }
   return { ticketId, status };

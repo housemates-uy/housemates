@@ -6,10 +6,11 @@ import { revalidatePath } from 'next/cache';
 import { logAdminAction, requireAdmin } from '@/lib/auth/admin';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { buyerSchema, createTicket, ticketUrl } from '@/lib/tickets';
+import { sendTicketCancelledMail, sendTicketConfirmedMail } from '@/lib/mail/ticket-mails';
 import { refundPayment } from '@/lib/mercadopago';
 
 export type ManualTicketResult =
-  | { ok: true; url: string; name: string; phone: string | null }
+  | { ok: true; url: string; name: string; phone: string | null; mailed: boolean }
   | { error: string; field?: string };
 
 export async function createManualTicketAction(
@@ -53,8 +54,16 @@ export async function createManualTicketAction(
   if ('error' in result) return { error: result.error };
 
   await logAdminAction(admin.id, isInvitation ? 'create_invitation' : 'create_manual_ticket', 'ticket', result.id);
+  // Mail con la entrada (se puede destildar en el form, p. ej. si se la mandan por WhatsApp).
+  const mailed = formData.get('send_mail') === 'on' ? await sendTicketConfirmedMail(result.id) : false;
   revalidatePath(`/admin/events/${eventId}/tickets`);
-  return { ok: true, url: ticketUrl(result.qrToken), name: parsed.data.name, phone: parsed.data.phone || null };
+  return {
+    ok: true,
+    url: ticketUrl(result.qrToken),
+    name: parsed.data.name,
+    phone: parsed.data.phone || null,
+    mailed,
+  };
 }
 
 // Anular: si la entrada se pagó por Mercado Pago, primero se devuelve la plata y recién
@@ -81,5 +90,14 @@ export async function cancelTicketAction(eventId: string, ticketId: string): Pro
 
   await db.rpc('cancel_ticket', { p_ticket_id: ticketId, p_refunded: refunded });
   await logAdminAction(admin.id, refunded ? 'refund_ticket' : 'cancel_ticket', 'ticket', ticketId);
+  // Solo se avisa si la entrada estaba válida: una compra pendiente nunca tuvo entrada.
+  if (ticket.status === 'paid') await sendTicketCancelledMail(ticketId, refunded);
+  revalidatePath(`/admin/events/${eventId}/tickets`);
+}
+
+export async function resendTicketMailAction(eventId: string, ticketId: string): Promise<void> {
+  const admin = await requireAdmin();
+  await sendTicketConfirmedMail(ticketId);
+  await logAdminAction(admin.id, 'resend_ticket_mail', 'ticket', ticketId);
   revalidatePath(`/admin/events/${eventId}/tickets`);
 }
