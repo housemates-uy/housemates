@@ -50,6 +50,9 @@ export const eventSchema = z.object({
   capacity: z.coerce.number().int().positive('Capacidad debe ser mayor a 0'),
   status: z.enum(['draft', 'published', 'archived']),
   description_md: z.string().optional(),
+}).refine((e) => !e.date_start || !e.date_end || e.date_end > e.date_start, {
+  message: 'La fecha de fin tiene que ser posterior al inicio',
+  path: ['date_end'],
 })
 
 export const tierSchema = z.object({
