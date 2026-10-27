@@ -25,7 +25,8 @@ export function isMercadoPagoConfigured(): boolean {
 export async function createPreference(params: {
   ticketId: string;
   title: string;
-  amount: number;
+  price: number;
+  fee: number;
   payerEmail: string;
   payerName: string;
   expiresAt: Date;
@@ -33,14 +34,12 @@ export async function createPreference(params: {
   const base = appUrl();
   const pref = await new Preference(client()).create({
     body: {
+      // Dos líneas para que Mercado Pago muestre el desglose: entrada + cargo por servicio.
       items: [
-        {
-          id: params.ticketId,
-          title: params.title,
-          quantity: 1,
-          unit_price: params.amount,
-          currency_id: 'UYU',
-        },
+        { id: params.ticketId, title: params.title, quantity: 1, unit_price: params.price, currency_id: 'UYU' },
+        ...(params.fee > 0
+          ? [{ id: `${params.ticketId}-fee`, title: 'Cargo por servicio', quantity: 1, unit_price: params.fee, currency_id: 'UYU' }]
+          : []),
       ],
       payer: { email: params.payerEmail, name: params.payerName },
       external_reference: params.ticketId,

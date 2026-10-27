@@ -57,7 +57,7 @@ async function handleAdminAuth(request: NextRequest): Promise<NextResponse> {
 
 function redirectToAccess(request: NextRequest) {
   const url = new URL('/access', request.url);
-  url.searchParams.set('next', request.nextUrl.pathname);
+  url.searchParams.set('next', request.nextUrl.pathname + request.nextUrl.search);
   return NextResponse.redirect(url);
 }
 

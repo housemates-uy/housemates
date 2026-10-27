@@ -1,0 +1,44 @@
+# Backlog — House Mates web
+
+> Pedidos y pendientes, en orden de prioridad. Al terminar algo, se borra de acá y se
+> documenta en `docs/LOGICA_DE_NEGOCIO.md` si cambia una regla.
+> Última actualización: 2026-10-27 (feedback de Tato tras la primera compra con Mercado Pago).
+
+## Ahora (antes de vender a amigos)
+
+1. **Cargo por servicio visible.** En las tandas se muestra el precio de la entrada. Antes de pagar, el desglose en pesos (sin porcentaje):
+   - "Entrada $1.600 · Cargo por servicio $X · Total $Y".
+   - Mercado Pago cobra el total.
+   - El cargo cubre la comisión de MP al instante (5,99 % + IVA ≈ 7,31 %).
+   - Las cuotas con interés las paga el comprador.
+2. **No mostrar "% vendida" en la web.** Para el público solo "Disponible" o "Sold out". El admin sí ve los números.
+3. **Precio en cada tanda**, también en las agotadas: que se vea cuánto salía cada una.
+4. **Elegir la tanda tocándola.** Cada tanda es una tarjeta; al tocarla se abre el formulario con esa tanda ya elegida (desde la landing también).
+5. **Guardar la entrada** como imagen y PDF desde `/ticket/<token>`, además de la captura.
+6. **Rediseño del formulario de compra.** Hoy es muy básico. Esperando referencias de otras ticketeras (las manda Tato).
+7. **Webhook de MP rechaza la firma.** Revisar que `MP_WEBHOOK_SECRET` en Vercel sea la clave secreta del webhook de **modo prueba** (y después la de producción).
+
+## Mails (diseñar en Claude Design → aprobar → implementar)
+
+Sin dominio propio: para la prueba con amigos, SMTP de un Gmail de la fiesta (contraseña de aplicación). Con dominio: Resend.
+
+| Mail | A quién | Cuándo |
+|---|---|---|
+| Compra confirmada (con QR y link) | Comprador | MP aprueba el pago, o un admin carga una entrada manual o invitación |
+| Transferencia recibida, en revisión | Comprador | Sube el comprobante |
+| Hay una transferencia para validar | Los admins | Alguien sube un comprobante |
+| Transferencia aprobada → entrada | Comprador | Un admin la valida (mismo mail que "compra confirmada") |
+| Transferencia rechazada | Comprador | Un admin la rechaza ("contactanos por Instagram") |
+| Entrada anulada (+ reembolso si fue por MP) | Comprador | Un admin anula por algo raro: email duplicado, colado, etc. |
+
+Si el pago con MP falla no se manda mail: Mercado Pago ya lo avisa y devuelve a la web para reintentar.
+
+## Después
+
+- **Pago por transferencia con comprobante** (imagen, captura o PDF):
+  - El comprador sube el archivo y queda la entrada "en revisión": no se le muestra QR, sino "vamos a validar tu transferencia y te llega la entrada por mail".
+  - En el admin, cada evento tiene una sección **"Entradas a validar"**, con el comprobante, y botones Aprobar / Rechazar.
+  - Mails según la tabla de arriba.
+- **Apple Wallet** (cuenta Apple Developer USD 99/año).
+- **Dominio propio** + mails desde Resend.
+- **Webhook al admin de finanzas** (2027).

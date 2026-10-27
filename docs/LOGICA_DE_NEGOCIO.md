@@ -98,7 +98,7 @@ Quién protege qué está en `src/middleware.ts`: solo corre en `/admin*`, `/api
 
 | Origen | Cómo se crea | Monto | ¿Descuenta stock de la tanda? |
 |---|---|---|---|
-| `purchase` | Compra web con Mercado Pago | Precio de la tanda | Sí (reserva al empezar, confirma al pagar) |
+| `purchase` | Compra web con Mercado Pago | Precio de la tanda + cargo por servicio | Sí (reserva al empezar, confirma al pagar) |
 | `manual` | Un admin la carga: se cobró por transferencia | Lo que se cobró | Sí |
 | `invitation` | Un admin la carga: gratis | 0 | No (no tiene tanda) |
 
@@ -117,6 +117,10 @@ Las tres generan el **mismo tipo de QR** y pasan por el **mismo scanner**.
 Todo esto lo hace la función `create_ticket` en Postgres (`supabase/migrations/0006_ticketing.sql`). Bloquea la tanda mientras crea la entrada, así dos compras por el último lugar nunca salen las dos.
 
 ### 4.4 El QR
+
+- La persona puede **guardar la entrada** desde su página:
+  - **"Guardar imagen"** descarga un PNG formato historia (`/ticket/<token>/imagen`, solo si está válida).
+  - **"Guardar PDF"** abre la impresión del navegador; la versión impresa sale en blanco y negro.
 
 - Cada entrada tiene un `qr_token`: 22 caracteres aleatorios. No contiene datos ni firma; solo vale si existe en la base. Adivinarlo es imposible en la práctica.
 - El QR codifica la URL `https://<sitio>/ticket/<token>`. Si alguien lo escanea con la cámara del celular, abre su entrada. El scanner de puerta extrae el token de esa URL.
@@ -164,6 +168,13 @@ Puntos importantes:
 - **Pago que llega tarde.** Si MP aprueba un pago después de vencida la reserva, se honra igual: la persona pagó. En un caso límite puede sobrevender por 1.
 - **Pago en efectivo (Abitab/RedPagos)** queda "en proceso" hasta que se acredita. Cuando MP avisa por webhook, la entrada pasa a válida. Hoy no hay mail: hay que mandarle el link por Instagram. Sale de la lista de entradas del admin.
 - Se vende solo si: el evento está publicado, tiene **ventas activas**, no terminó, Mercado Pago está configurado y queda alguna tanda comprable.
+- **Cargo por servicio** (`src/lib/pricing.ts`). Se suma al precio de la entrada para cubrir la comisión de Mercado Pago con cobro al instante: 5,99 % + IVA ≈ 7,31 %. Se redondea hacia arriba a $10; por ejemplo, $1.600 → cargo $130 → total $1.730.
+  - Al comprador se le muestra en pesos, nunca el porcentaje: "Entrada + Cargo por servicio = Total".
+  - Mercado Pago cobra el total, con las dos líneas separadas.
+  - `amount_paid_uyu` guarda el total.
+  - Las cuotas con interés las paga el comprador.
+- **Cómo se muestran las tandas al público:** solo "Disponible" o "Sold out", siempre con el precio (también las agotadas). El "% vendida" no se muestra en la web a propósito.
+  - En la landing, cada tanda disponible lleva a `/entradas?tanda=<id>` con esa tanda ya elegida. El `?tanda=` sobrevive al paso por la contraseña.
 
 Código: `src/app/entradas/actions.ts`, `src/lib/mercadopago.ts`, `src/app/api/mp/webhook/route.ts`, `src/app/compra/resultado/page.tsx`.
 

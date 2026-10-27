@@ -2,7 +2,8 @@ import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { toZonedTime } from 'date-fns-tz';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { tandaState, type TandaState } from '@/components/ui/tanda-status';
+import type { TandaState } from '@/components/ui/tanda-status';
+import { priceBreakdown } from '@/lib/pricing';
 
 const TZ = 'America/Montevideo';
 
@@ -20,8 +21,19 @@ export type NextEvent = {
   locationName: string | null;
   salesActive: boolean;
   // purchasable: se puede comprar ahora (activa, sin "agotado manual" y con lugares
-  // libres descontando reservas en curso). price en UYU.
-  tandas: { id: string; name: string; state: TandaState; price: number; purchasable: boolean }[];
+  // libres descontando reservas en curso). price en UYU; fee y total incluyen el cargo
+  // por servicio de la compra web (src/lib/pricing.ts).
+  // state es lo que ve el público: solo "Disponible" o "Sold out". El "% vendida" no se
+  // muestra en la web a propósito (si se vende poco, no conviene que se note).
+  tandas: {
+    id: string;
+    name: string;
+    state: TandaState;
+    price: number;
+    fee: number;
+    total: number;
+    purchasable: boolean;
+  }[];
 };
 
 function describeDate(iso: string) {
@@ -78,13 +90,16 @@ export async function getNextEvent(): Promise<NextEvent> {
       ...describeDate(event.date_start),
       locationName: event.location_name,
       salesActive: event.sales_active,
-      tandas: (tiers ?? []).map((t, i) => ({
-        id: t.id,
-        name: t.name,
-        state: tandaState(t),
-        price: Number(t.price_uyu),
-        purchasable: !t.sold_out_override && available[i] > 0,
-      })),
+      tandas: (tiers ?? []).map((t, i) => {
+        const purchasable = !t.sold_out_override && available[i] > 0;
+        return {
+          id: t.id,
+          name: t.name,
+          state: purchasable ? ({ kind: 'available' } as const) : ({ kind: 'sold_out' } as const),
+          ...priceBreakdown(Number(t.price_uyu)),
+          purchasable,
+        };
+      }),
     };
   } catch {
     return fallback;

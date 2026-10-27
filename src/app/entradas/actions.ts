@@ -9,6 +9,7 @@ import { redirect } from 'next/navigation';
 import { hasGateAccess } from '@/lib/auth/gate';
 import { createPreference, isMercadoPagoConfigured } from '@/lib/mercadopago';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { priceBreakdown } from '@/lib/pricing';
 import { buyerSchema, createTicket } from '@/lib/tickets';
 
 const HOLD_MINUTES = 20;
@@ -51,13 +52,16 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
     return { error: 'Esa tanda no está a la venta.', field: 'tier' };
   }
 
+  // amount_paid_uyu guarda el total cobrado (entrada + cargo por servicio).
+  const { price, fee, total } = priceBreakdown(Number(tier.price_uyu));
+
   const ticket = await createTicket({
     eventId: event.id,
     tierId: tier.id,
     source: 'purchase',
     status: 'pending',
     buyer: parsed.data,
-    amount: Number(tier.price_uyu),
+    amount: total,
     holdMinutes: HOLD_MINUTES,
   });
   if ('error' in ticket) return { error: ticket.error };
@@ -67,7 +71,8 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
     const pref = await createPreference({
       ticketId: ticket.id,
       title: `${event.title} — ${tier.name}`,
-      amount: Number(tier.price_uyu),
+      price,
+      fee,
       payerEmail: parsed.data.email,
       payerName: parsed.data.name,
       expiresAt: new Date(Date.now() + HOLD_MINUTES * 60_000),

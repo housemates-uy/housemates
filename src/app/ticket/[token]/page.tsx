@@ -8,6 +8,7 @@ import { qrSvg, ticketUrl } from '@/lib/tickets';
 import { cn } from '@/lib/utils';
 import type { TicketStatus } from '@/types/database';
 import { LiveRefresh } from './live-refresh';
+import { SaveButtons } from './save-buttons';
 
 export const metadata: Metadata = { title: 'Tu entrada', robots: { index: false, follow: false } };
 export const dynamic = 'force-dynamic';
@@ -51,13 +52,13 @@ export default async function TicketPage({ params }: { params: { token: string }
   return (
     <main
       id="contenido"
-      className="relative isolate h-[100dvh] overflow-hidden"
+      className="print-ink relative isolate h-[100dvh] overflow-hidden print:h-auto print:bg-white"
     >
       <LiveRefresh active={valid || ticket.status === 'pending'} />
-      <DoodleBackdrop className="-z-10" />
+      <DoodleBackdrop className="-z-10 print:hidden" />
 
       <div className="mx-auto flex h-full max-w-md flex-col items-center gap-[2.2dvh] px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.75rem,env(safe-area-inset-top))]">
-        <Logo className="h-[clamp(64px,13dvh,112px)] shrink-0" />
+        <Logo className="h-[clamp(64px,13dvh,112px)] shrink-0 print:text-ink" />
 
         {event && (
           <div className="shrink-0 text-center">
@@ -72,7 +73,7 @@ export default async function TicketPage({ params }: { params: { token: string }
 
         <section
           aria-label="Entrada"
-          className="flex w-full min-h-0 flex-col items-center gap-[1.8dvh] rounded-[22px] border border-bone/20 bg-ink/55 p-5"
+          className="flex w-full min-h-0 flex-col items-center gap-[1.8dvh] rounded-[22px] border border-bone/20 bg-ink/55 p-5 print:border-ink/30 print:bg-white"
         >
           <div className="flex w-full items-center justify-between">
             <span className="text-xs text-bone/65">{entryLabel}</span>
@@ -124,7 +125,9 @@ export default async function TicketPage({ params }: { params: { token: string }
           </div>
         </section>
 
-        <p className="mt-auto shrink-0 text-center text-xs text-bone/60">
+        {valid && <div className="mt-auto" />}
+        {valid && <SaveButtons token={ticket.qr_token} />}
+        <p className={cn('shrink-0 text-center text-xs text-bone/60 print:text-ink/70', !valid && 'mt-auto')}>
           {ticket.status === 'used'
             ? 'Esta entrada ya se usó en puerta. Que la pases bien.'
             : 'Entrada personal · En puerta te pedimos la cédula'}

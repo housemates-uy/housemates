@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { buttonVariants } from '@/components/ui/button';
 import { Eyebrow } from '@/components/ui/eyebrow';
 import { Reveal } from '@/components/ui/reveal';
-import { TandaStatus } from '@/components/ui/tanda-status';
+import { TandaCard } from '@/components/landing/tanda-card';
 import type { NextEvent } from '@/lib/next-event';
 
 export function NextDate({ event }: { event: NextEvent }) {
@@ -34,10 +34,10 @@ export function NextDate({ event }: { event: NextEvent }) {
           </dl>
 
           {event.tandas.length > 0 && (
-            <ul className="mt-8 grid gap-7 sm:grid-cols-2">
+            <ul className="mt-8 grid gap-3 sm:grid-cols-2">
               {event.tandas.map((t) => (
                 <li key={t.id}>
-                  <TandaStatus name={t.name} state={t.state} />
+                  <TandaCard tanda={t} />
                 </li>
               ))}
             </ul>
