@@ -1,10 +1,12 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Input, inputClass } from '@/components/ui/input';
 import { formatUYU } from '@/lib/events';
+import { validateCI } from '@/lib/validation/document';
 import { startCheckoutAction, type CheckoutState } from './actions';
 
 type Tanda = { id: string; name: string; price: number; purchasable: boolean };
@@ -22,7 +24,13 @@ function Submit() {
 // en puerta se coteja la cédula, y el Instagram nos deja ver quién compró.
 export function BuyForm({ tandas }: { tandas: Tanda[] }) {
   const [state, action] = useFormState<CheckoutState, FormData>(startCheckoutAction, null);
-  const fieldError = (name: string) => (state?.field === name ? state.error : null);
+  // El error del servidor se oculta apenas la persona edita ese campo.
+  const [editedField, setEditedField] = useState<string | null>(null);
+  useEffect(() => setEditedField(null), [state]);
+  // La cédula se valida en el navegador al salir del campo (mismo dígito verificador que el servidor).
+  const [ciError, setCiError] = useState<string | null>(null);
+  const fieldError = (name: string) =>
+    state?.field === name && editedField !== name ? state.error : null;
   const firstAvailable = tandas.find((t) => t.purchasable)?.id;
 
   return (
@@ -38,16 +46,29 @@ export function BuyForm({ tandas }: { tandas: Tanda[] }) {
         </select>
       </Field>
       <Field label="Nombre y apellido" error={fieldError('name')}>
-        <Input name="name" required autoComplete="name" />
+        <Input name="name" required autoComplete="name" onChange={() => setEditedField('name')} />
       </Field>
-      <Field label="Cédula" hint="La vas a mostrar en puerta" error={fieldError('document')}>
-        <Input name="document" required inputMode="numeric" autoComplete="off" />
+      <Field label="Cédula" hint="La vas a mostrar en puerta" error={ciError ?? fieldError('document')}>
+        <Input
+          name="document"
+          required
+          inputMode="numeric"
+          autoComplete="off"
+          onChange={() => {
+            setCiError(null);
+            setEditedField('document');
+          }}
+          onBlur={(e) => {
+            const v = e.target.value.trim();
+            setCiError(v && !validateCI(v) ? 'Cédula inválida: revisá los números y el dígito verificador.' : null);
+          }}
+        />
       </Field>
       <Field label="Email" error={fieldError('email')}>
-        <Input name="email" type="email" required autoComplete="email" />
+        <Input name="email" type="email" required autoComplete="email" onChange={() => setEditedField('email')} />
       </Field>
       <Field label="Instagram" hint="Tu usuario, sin @" error={fieldError('instagram')}>
-        <Input name="instagram" required autoComplete="off" autoCapitalize="none" />
+        <Input name="instagram" required autoComplete="off" autoCapitalize="none" onChange={() => setEditedField('instagram')} />
       </Field>
       <Field label="Celular (opcional)">
         <Input name="phone" type="tel" autoComplete="tel" />
@@ -57,7 +78,7 @@ export function BuyForm({ tandas }: { tandas: Tanda[] }) {
         Entiendo que la entrada es personal e intransferible: una por persona, y en puerta me piden
         la cédula.
       </label>
-      {state && (!state.field || state.field === 'accept') && (
+      {state && (!state.field || state.field === 'accept') && editedField === null && (
         <p role="alert" className="text-sm text-alert">
           {state.error}
         </p>
