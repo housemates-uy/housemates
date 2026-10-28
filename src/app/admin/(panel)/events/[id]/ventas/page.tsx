@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowRight, Download, Printer } from 'lucide-react';
 import { requireAdmin } from '@/lib/auth/admin';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { createAdminClient, fetchAll } from '@/lib/supabase/admin';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, EmptyState } from '@/components/ui/card';
@@ -58,7 +58,8 @@ export default async function EventSalesPage({ params }: { params: { id: string 
   const db = createAdminClient();
   const now = Date.now();
 
-  const [{ data: event }, { data: tiers }, { data: tickets }, { data: paying }, { data: codes }] =
+  // Las entradas se traen de a páginas: PostgREST corta en 1000 filas y los totales quedarían cortos.
+  const [{ data: event }, { data: tiers }, all, paying, { data: codes }, buses] =
     await Promise.all([
       db
         .from('events')
@@ -70,25 +71,46 @@ export default async function EventSalesPage({ params }: { params: { id: string 
         .select('id, name, price_uyu, quantity_total, quantity_sold, sold_out_override, active')
         .eq('event_id', params.id)
         .order('sort_order'),
-      db
-        .from('tickets')
-        .select(
-          'status, source, payment_method, tier_id, amount_paid_uyu, discount_uyu, discount_code_id, created_at, used_at',
-        )
-        .eq('event_id', params.id)
-        .in('status', ['paid', 'used', 'review']),
+      fetchAll((from, to) =>
+        db
+          .from('tickets')
+          .select(
+            'status, source, payment_method, tier_id, amount_paid_uyu, discount_uyu, discount_code_id, created_at, used_at',
+          )
+          .eq('event_id', params.id)
+          .in('status', ['paid', 'used', 'review'])
+          .order('created_at')
+          .order('id')
+          .range(from, to),
+      ),
       // Compras con Mercado Pago en curso (reserva sin vencer). Las vencidas son abandonos.
-      db
-        .from('tickets')
-        .select('discount_code_id')
-        .eq('event_id', params.id)
-        .eq('status', 'pending')
-        .gt('reserved_until', new Date(now).toISOString()),
+      fetchAll((from, to) =>
+        db
+          .from('tickets')
+          .select('discount_code_id')
+          .eq('event_id', params.id)
+          .eq('status', 'pending')
+          .gt('reserved_until', new Date(now).toISOString())
+          .order('id')
+          .range(from, to),
+      ),
       db
         .from('discount_codes')
         .select('id, code, max_uses, active')
         .eq('event_id', params.id)
         .order('created_at'),
+      // Lo que se cobró de bus en las entradas válidas: va dentro de amount_paid_uyu.
+      isOwner
+        ? fetchAll((from, to) =>
+            db
+              .from('ticket_transport')
+              .select('price_uyu, tickets!inner(status)')
+              .eq('event_id', params.id)
+              .in('tickets.status', ['paid', 'used'])
+              .order('ticket_id')
+              .range(from, to),
+          )
+        : Promise.resolve([]),
     ]);
 
   if (!event) notFound();
@@ -105,28 +127,28 @@ export default async function EventSalesPage({ params }: { params: { id: string 
     }),
   );
 
-  const all = tickets ?? [];
   const valid = all.filter((t) => t.status === 'paid' || t.status === 'used');
   const inside = valid.filter((t) => t.status === 'used');
   const toReview = all.filter((t) => t.status === 'review');
   const invitations = valid.filter((t) => t.source === 'invitation');
   const sold = valid.filter((t) => t.source !== 'invitation');
-  const inProgress = toReview.length + (paying?.length ?? 0);
+  const inProgress = toReview.length + paying.length;
   const sum = (list: { amount_paid_uyu: number }[]) =>
     list.reduce((s, t) => s + Number(t.amount_paid_uyu), 0);
   const revenue = sum(sold);
+  const busRevenue = buses.reduce((s, b) => s + Number(b.price_uyu), 0);
   const capacity = event.capacity;
   const free = Math.max(capacity - valid.length - inProgress, 0);
 
   const methods = [
     {
       label: 'Mercado Pago',
-      note: 'Incluye el cargo por servicio',
+      note: 'Incluye cargo por servicio y transporte',
       list: sold.filter((t) => t.source === 'purchase' && t.payment_method !== 'transfer'),
     },
     {
       label: 'Transferencia',
-      note: 'Compra web con comprobante',
+      note: 'Compra web con comprobante (incluye transporte)',
       list: sold.filter((t) => t.source === 'purchase' && t.payment_method === 'transfer'),
     },
     {
@@ -143,7 +165,7 @@ export default async function EventSalesPage({ params }: { params: { id: string 
       uses: confirmed.length,
       pending:
         toReview.filter((t) => t.discount_code_id === c.id).length +
-        (paying ?? []).filter((t) => t.discount_code_id === c.id).length,
+        paying.filter((t) => t.discount_code_id === c.id).length,
       discounted: confirmed.reduce((s, t) => s + Number(t.discount_uyu), 0),
     };
   });
@@ -311,7 +333,7 @@ export default async function EventSalesPage({ params }: { params: { id: string 
             </div>
             <div>
               <dt className="text-xs text-bone/45">Pagando ahora</dt>
-              <dd className="mt-0.5 font-medium">{paying?.length ?? 0}</dd>
+              <dd className="mt-0.5 font-medium">{paying.length}</dd>
             </div>
             <div>
               <dt className="text-xs text-bone/45">A validar</dt>
@@ -329,8 +351,21 @@ export default async function EventSalesPage({ params }: { params: { id: string 
             <p className="text-[13px] text-bone/50">Recaudado</p>
             <p className="mt-2 text-4xl font-bold tracking-tight">{formatUYU(revenue)}</p>
             <p className="mt-1 text-sm text-bone/60">
-              {plural(sold.length, 'entrada cobrada', 'entradas cobradas')}
+              {plural(sold.length, 'entrada cobrada', 'entradas cobradas')} · incluye transporte y cargo
+              por servicio
             </p>
+            {busRevenue > 0 && (
+              <dl className="mt-3 grid grid-cols-2 gap-x-4 text-sm">
+                <div>
+                  <dt className="text-xs text-bone/45">Entradas y cargo</dt>
+                  <dd className="mt-0.5 font-medium tabular-nums">{formatUYU(revenue - busRevenue)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-bone/45">Transporte</dt>
+                  <dd className="mt-0.5 font-medium tabular-nums">{formatUYU(busRevenue)}</dd>
+                </div>
+              </dl>
+            )}
             <ul className="mt-5 space-y-4">
               {methods.map((m) => {
                 const amount = sum(m.list);
@@ -450,7 +485,8 @@ export default async function EventSalesPage({ params }: { params: { id: string 
           </h2>
           <p className="mt-1 text-sm text-bone/55">
             Entradas vendidas por fecha de compra (sin invitaciones)
-            {trimmedDays && `, últimos ${MAX_DAYS} días`}.
+            {trimmedDays && `, últimos ${MAX_DAYS} días`}
+            {isOwner && '. Los montos incluyen transporte y cargo por servicio'}.
           </p>
         </div>
         {days.length === 0 ? (

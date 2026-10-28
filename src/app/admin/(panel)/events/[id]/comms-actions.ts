@@ -35,6 +35,7 @@ export async function sendCommsAction(eventId: string, kind: CommsKind, formData
     quedan: String(r.left),
     t: String(Date.now()),
   });
+  if (r.skipped > 0) q.set('salteados', String(r.skipped));
   if (since && r.left > 0) q.set('desde', since);
   redirect(`/admin/events/${eventId}?${q}#comunicacion`);
 }

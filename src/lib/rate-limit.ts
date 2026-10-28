@@ -17,6 +17,12 @@ const LIMITS = {
   discount: { windowSeconds: 10 * 60, max: 30 },
   bar_checkout: { windowSeconds: 10 * 60, max: 120 },
   gate: { windowSeconds: 15 * 60, max: 5 }, // fijado en .claude/CLAUDE.md §7.2
+  // Login de compradores y de admins: Supabase ve la IP de Vercel, no la de quien prueba.
+  login: { windowSeconds: 15 * 60, max: 10 },
+  // Recupero y reenvío de confirmación: cada uno manda un mail (Gmail corta en ~500 por día).
+  reset: { windowSeconds: 15 * 60, max: 5 },
+  // /compra/resultado consulta a Mercado Pago con nuestro token en cada visita.
+  result: { windowSeconds: 10 * 60, max: 60 },
 };
 
 export type RateLimitAction = keyof typeof LIMITS;

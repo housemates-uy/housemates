@@ -6,11 +6,14 @@
 // - Encuesta del día después: a quienes entraron (`used`), con link a /encuesta/<token>.
 // Cada envío queda en email_log; quien ya tiene un envío `sent` de ese tipo no se repite
 // (salvo "reenviar a todos", que usa `since` para no contar los envíos anteriores).
+// Antes de mandar, cada entrada se reserva en email_log (send_key único, 0019): si dos
+// envíos corren a la vez (dos owners, un doble clic o el cron), cada mail sale una sola vez.
 // Lo usan el admin (resumen del evento) y el cron diario (/api/cron/comunicacion).
 import QRCode from 'qrcode';
 import { entryTime, formatLocal } from '@/lib/events';
 import { mapsUrl } from '@/lib/next-event';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { getIgHandle } from '@/lib/site';
+import { createAdminClient, fetchAll } from '@/lib/supabase/admin';
 import { appUrl, ticketUrl } from '@/lib/tickets';
 import type { EmailType, TicketStatus } from '@/types/database';
 import { sendMail } from './send';
@@ -36,6 +39,9 @@ const RULES = [
 const CONCURRENCY = 4;
 // Si fallan varios seguidos (p. ej. se llegó al límite diario de Gmail), se corta.
 const MAX_FAILS_IN_ROW = 5;
+// Una reserva en 'sending' más vieja que esto es de un envío que se cortó (las funciones de
+// Vercel duran 5 minutos como mucho): se puede volver a tomar.
+const STALE_CLAIM_MS = 10 * 60_000;
 
 export function surveyUrl(token: string): string {
   return `${appUrl()}/encuesta/${token}`;
@@ -60,6 +66,7 @@ export type ReminderMailData = {
   locationUrl: string;
   arrivalInfo: string | null;
   ticketUrl: string;
+  igHandle?: string;
 };
 
 export function reminderEmail(d: ReminderMailData) {
@@ -114,10 +121,10 @@ ${button(d.ticketUrl, 'Ver mi entrada')}
     .filter(Boolean)
     .join('\n');
 
-  return { subject, html: layout(inner, 'Fecha, lugar, qué llevar y tu QR.'), text };
+  return { subject, html: layout(inner, 'Fecha, lugar, qué llevar y tu QR.', d.igHandle), text };
 }
 
-export type SurveyMailData = { firstName: string; eventTitle: string; surveyUrl: string };
+export type SurveyMailData = { firstName: string; eventTitle: string; surveyUrl: string; igHandle?: string };
 
 export function surveyEmail(d: SurveyMailData) {
   const subject = `¿Qué tal estuvo ${d.eventTitle}?`;
@@ -148,7 +155,7 @@ ${button(d.surveyUrl, 'Responder la encuesta')}`;
     d.surveyUrl,
   ].join('\n');
 
-  return { subject, html: layout(inner, 'Tres preguntas, un minuto.'), text };
+  return { subject, html: layout(inner, 'Tres preguntas, un minuto.', d.igHandle), text };
 }
 
 // ---------- Destinatarios ----------
@@ -164,41 +171,72 @@ type Recipient = {
 };
 
 // Entradas en el estado que corresponde y cuáles ya recibieron el mail (envío `sent` del
-// tipo, desde `since` si se pasa). Si alguna consulta falla, se corta: mejor no mandar
-// nada que mandarle de nuevo a todos.
+// tipo, desde `since` si se pasa). Se trae todo de a páginas (PostgREST corta en 1000 filas).
+// Si alguna consulta falla, se corta: mejor no mandar nada que mandarle de nuevo a todos.
 export async function commsAudience(eventId: string, kind: CommsKind, since: string | null = null) {
   const db = createAdminClient();
   const { status, mailType } = KINDS[kind];
 
-  let logs = db
-    .from('email_log')
-    .select('ticket_id, tickets!inner(event_id)')
-    .eq('tickets.event_id', eventId)
-    .eq('type', mailType)
-    .eq('status', 'sent');
-  if (since) logs = logs.gte('sent_at', since);
-
-  const [ticketsRes, logsRes] = await Promise.all([
-    db
-      .from('tickets')
-      .select('id, buyer_name, buyer_email, buyer_document, qr_token, source, tier_id')
-      .eq('event_id', eventId)
-      .eq('status', status)
-      .order('created_at', { ascending: true }),
-    logs,
+  const [all, logs] = await Promise.all([
+    fetchAll<Recipient>((from, to) =>
+      db
+        .from('tickets')
+        .select('id, buyer_name, buyer_email, buyer_document, qr_token, source, tier_id')
+        .eq('event_id', eventId)
+        .eq('status', status)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
+    fetchAll((from, to) => {
+      let q = db
+        .from('email_log')
+        .select('ticket_id, tickets!inner(event_id)')
+        .eq('tickets.event_id', eventId)
+        .eq('type', mailType)
+        .eq('status', 'sent');
+      if (since) q = q.gte('sent_at', since);
+      return q.order('sent_at', { ascending: true }).order('id', { ascending: true }).range(from, to);
+    }),
   ]);
-  if (ticketsRes.error) throw ticketsRes.error;
-  if (logsRes.error) throw logsRes.error;
 
-  const done = new Set((logsRes.data ?? []).map((l) => l.ticket_id));
-  const all: Recipient[] = ticketsRes.data ?? [];
+  const done = new Set(logs.map((l) => l.ticket_id));
   const pending = all.filter((t) => !done.has(t.id) && t.qr_token);
   return { total: all.length, received: all.length - pending.length, pending };
 }
 
 // ---------- Envío ----------
 
-export type CommsResult = { sent: number; failed: number; left: number };
+// skipped: los tenía otro envío que corría a la vez (no se cuentan como pendientes).
+export type CommsResult = { sent: number; failed: number; skipped: number; left: number };
+
+type Claim = { id: string } | 'taken' | 'error';
+
+// Reserva la entrada antes de mandar: una fila en 'sending' con send_key único. Si ya hay una
+// (otro envío la mandó o la está mandando), el insert no hace nada y este mail no sale. Una
+// reserva en 'sending' que quedó colgada (STALE_CLAIM_MS) se vuelve a tomar.
+async function claimSend(
+  db: ReturnType<typeof createAdminClient>,
+  ticketId: string,
+  type: EmailType,
+  key: string,
+): Promise<Claim> {
+  const { data, error } = await db
+    .from('email_log')
+    .upsert({ ticket_id: ticketId, type, status: 'sending', send_key: key }, { onConflict: 'send_key', ignoreDuplicates: true })
+    .select('id');
+  if (error) return 'error';
+  if (data.length > 0) return data[0];
+  const { data: stale, error: staleError } = await db
+    .from('email_log')
+    .update({ sent_at: new Date().toISOString() })
+    .eq('send_key', key)
+    .eq('status', 'sending')
+    .lt('sent_at', new Date(Date.now() - STALE_CLAIM_MS).toISOString())
+    .select('id');
+  if (staleError) return 'error';
+  return stale[0] ?? 'taken';
+}
 
 // Manda a los pendientes hasta terminar o hasta agotar `budgetMs` (las funciones de
 // Vercel tienen tiempo máximo). Lo que queda se manda en el próximo envío: no duplica.
@@ -209,14 +247,16 @@ export async function sendEventComms(
 ): Promise<CommsResult> {
   const startedAt = Date.now();
   const db = createAdminClient();
-  const [{ data: event, error }, { data: tiers }, audience] = await Promise.all([
+  const since = opts.since ?? null;
+  const [{ data: event, error }, { data: tiers }, audience, igHandle] = await Promise.all([
     db
       .from('events')
       .select('id, title, date_start, location_name, location_url, arrival_info')
       .eq('id', eventId)
       .single(),
     db.from('ticket_tiers').select('id, name, entry_until').eq('event_id', eventId),
-    commsAudience(eventId, kind, opts.since ?? null),
+    commsAudience(eventId, kind, since),
+    getIgHandle(),
   ]);
   if (error || !event) throw error ?? new Error('Evento no encontrado');
 
@@ -226,14 +266,15 @@ export async function sendEventComms(
   );
   const dateLong = formatLocal(event.date_start, "EEEE d 'de' MMMM · HH:mm 'hs'").replace(/^./, (c) => c.toUpperCase());
   const dateShort = formatLocal(event.date_start, 'dd.MM.yy');
+  const { mailType } = KINDS[kind];
   const queue = audience.pending;
 
-  async function sendOne(t: Recipient): Promise<boolean> {
+  async function deliver(t: Recipient): Promise<boolean> {
     const token = t.qr_token!;
     const firstName = t.buyer_name.split(' ')[0];
     if (kind === 'survey') {
-      const mail = surveyEmail({ firstName, eventTitle: event!.title, surveyUrl: surveyUrl(token) });
-      return sendMail({ to: t.buyer_email, ...mail, log: { ticketId: t.id, type: 'survey' } });
+      const mail = surveyEmail({ firstName, eventTitle: event!.title, surveyUrl: surveyUrl(token), igHandle });
+      return sendMail({ to: t.buyer_email, ...mail });
     }
     const url = ticketUrl(token);
     const mail = reminderEmail({
@@ -248,18 +289,34 @@ export async function sendEventComms(
       locationUrl: mapsUrl(event!.location_name, event!.location_url),
       arrivalInfo: event!.arrival_info,
       ticketUrl: url,
+      igHandle,
     });
     const qr = await QRCode.toBuffer(url, { width: 400, margin: 1, errorCorrectionLevel: 'M' });
     return sendMail({
       to: t.buyer_email,
       ...mail,
       attachments: [{ filename: 'entrada-qr.png', content: qr, cid: 'qr' }],
-      log: { ticketId: t.id, type: 'reminder' },
     });
+  }
+
+  // La vuelta del send_key: "Mandar" y el cron comparten la misma; cada "Reenviar a todos"
+  // tiene la suya (`since`), y "Seguir reenviando" reusa la del reenvío que continúa.
+  async function sendOne(t: Recipient): Promise<'sent' | 'failed' | 'skipped'> {
+    const claim = await claimSend(db, t.id, mailType, since ? `${kind}:${t.id}:${since}` : `${kind}:${t.id}`);
+    if (claim === 'taken') return 'skipped';
+    if (claim === 'error') return 'failed';
+    const ok = await deliver(t);
+    // Si falla, se libera la reserva (sin send_key) para que el próximo envío lo reintente.
+    await db
+      .from('email_log')
+      .update(ok ? { status: 'sent', sent_at: new Date().toISOString() } : { status: 'failed', send_key: null })
+      .eq('id', claim.id);
+    return ok ? 'sent' : 'failed';
   }
 
   let sent = 0;
   let failed = 0;
+  let skipped = 0;
   let failsInRow = 0;
   let next = 0;
   const canContinue = () =>
@@ -267,17 +324,19 @@ export async function sendEventComms(
 
   async function worker() {
     while (canContinue()) {
-      const ok = await sendOne(queue[next++]);
-      if (ok) {
+      const outcome = await sendOne(queue[next++]);
+      if (outcome === 'sent') {
         sent++;
         failsInRow = 0;
-      } else {
+      } else if (outcome === 'failed') {
         failed++;
         failsInRow++;
+      } else {
+        skipped++;
       }
     }
   }
   await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 
-  return { sent, failed, left: queue.length - sent };
+  return { sent, failed, skipped, left: queue.length - sent - skipped };
 }

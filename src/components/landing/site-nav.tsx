@@ -9,13 +9,13 @@ export function SiteNav({ igHandle, igHref }: { igHandle: string; igHref: string
     <header className="absolute inset-x-0 top-0 z-20">
       <nav
         aria-label="Principal"
-        className="mx-auto flex h-20 max-w-page items-center justify-between px-5 md:px-10"
+        className="mx-auto flex h-20 max-w-page items-center justify-between px-4 sm:px-5 md:px-10"
       >
         <Link href="/" aria-label="House Mates, inicio" className="p-2 text-bone">
           <Logo className="h-11" />
         </Link>
-        <div className="flex items-center gap-2">
-          <Link href="/barra" className={buttonVariants({ variant: 'ghost', size: 'md', className: 'px-3.5' })}>
+        <div className="flex items-center gap-1 sm:gap-2">
+          <Link href="/barra" className={cn(buttonVariants({ variant: 'ghost', size: 'md' }), 'px-3 sm:px-5')}>
             Barra
           </Link>
           <a
@@ -29,7 +29,7 @@ export function SiteNav({ igHandle, igHref }: { igHandle: string; igHref: string
           <Link
             href="/cuenta"
             aria-label="Mi cuenta"
-            className={buttonVariants({ variant: 'ghost', size: 'md', className: 'px-3' })}
+            className={cn(buttonVariants({ variant: 'ghost', size: 'md' }), 'px-2.5 sm:px-5')}
           >
             <User size={18} strokeWidth={1.5} aria-hidden className="sm:hidden" />
             <span className="hidden sm:inline">Mi cuenta</span>
@@ -38,7 +38,7 @@ export function SiteNav({ igHandle, igHref }: { igHandle: string; igHref: string
             href="/entradas"
             className={cn(
               buttonVariants({ variant: 'outline', size: 'md' }),
-              'border-bone/45 bg-ink/30 font-semibold backdrop-blur-sm hover:border-bone hover:bg-ink/50',
+              'border-bone/45 bg-ink/30 px-4 font-semibold backdrop-blur-sm hover:border-bone hover:bg-ink/50 sm:px-5',
             )}
           >
             Entradas

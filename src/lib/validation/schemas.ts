@@ -81,17 +81,17 @@ const tierExtras = {
 }
 
 export const tierSchema = z.object({
-  name: z.string().min(1, 'Nombre requerido'),
+  name: z.string().trim().min(1, 'Nombre de la tanda requerido'),
   price_uyu: z.coerce.number().positive('Precio debe ser mayor a 0'),
   quantity_total: z.coerce.number().int().positive('Cantidad debe ser mayor a 0'),
   description: z.string().optional(),
   ...tierExtras,
 })
 
-export const tiersSchema = z.array(tierSchema).min(1, 'Agregá al menos un tier')
+export const tiersSchema = z.array(tierSchema).min(1, 'Agregá al menos una tanda')
 
 export const tierEditSchema = z.object({
-  name: z.string().min(1, 'Nombre requerido'),
+  name: z.string().trim().min(1, 'Nombre de la tanda requerido'),
   price_uyu: z.coerce.number().positive('Precio debe ser mayor a 0'),
   quantity_total: z.coerce.number().int().positive('Cantidad debe ser mayor a 0'),
   description: z.string().optional(),

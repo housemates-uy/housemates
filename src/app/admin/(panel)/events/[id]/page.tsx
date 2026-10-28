@@ -40,11 +40,21 @@ export default async function EventOverviewPage({
 
   if (!event) notFound();
 
-  const { count: ticketCount } = await db
-    .from('tickets')
-    .select('*', { count: 'exact', head: true })
-    .eq('event_id', params.id)
-    .eq('status', 'paid');
+  // Igual que "Entradas válidas" de Ventas: pagas + ya usadas (no baja cuando la gente entra),
+  // invitaciones incluidas porque también ocupan lugar de la capacidad.
+  const [{ count: validCount }, { count: invitationCount }] = await Promise.all([
+    db
+      .from('tickets')
+      .select('id', { count: 'exact', head: true })
+      .eq('event_id', params.id)
+      .in('status', ['paid', 'used']),
+    db
+      .from('tickets')
+      .select('id', { count: 'exact', head: true })
+      .eq('event_id', params.id)
+      .in('status', ['paid', 'used'])
+      .eq('source', 'invitation'),
+  ]);
 
   const tiers = ((event.ticket_tiers as TicketTier[]) ?? []).sort(
     (a, b) => a.sort_order - b.sort_order,
@@ -58,9 +68,9 @@ export default async function EventOverviewPage({
     <div className="max-w-3xl space-y-6">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
-          label="Tickets vendidos"
-          value={ticketCount ?? 0}
-          sub={`de ${event.capacity} lugares`}
+          label="Entradas válidas"
+          value={validCount ?? 0}
+          sub={`de ${event.capacity} lugares${invitationCount ? ` · ${invitationCount} ${invitationCount === 1 ? 'invitación' : 'invitaciones'}` : ''}`}
         />
         <StatCard
           label="Fecha"
@@ -80,7 +90,7 @@ export default async function EventOverviewPage({
 
       {tiers.length > 0 && (
         <section className="rounded-card border border-bone/10">
-          <h2 className="border-b border-bone/10 px-5 py-3 text-sm font-medium text-bone/70">Tiers</h2>
+          <h2 className="border-b border-bone/10 px-5 py-3 text-sm font-medium text-bone/70">Tandas</h2>
           <ul className="divide-y divide-bone/10">
             {tiers.map((tier) => {
               const isSoldOut = tier.sold_out_override || tier.quantity_sold >= tier.quantity_total;
@@ -97,7 +107,7 @@ export default async function EventOverviewPage({
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-sm font-medium">{tier.name}</p>
                       {!tier.active && <Badge>Inactiva</Badge>}
-                      {isSoldOut && <Badge tone="alert">Sold out</Badge>}
+                      {isSoldOut && <Badge tone="alert">Agotada</Badge>}
                       <TierTags tier={tier} />
                     </div>
                     <p className="mt-1 text-xs text-bone/55">

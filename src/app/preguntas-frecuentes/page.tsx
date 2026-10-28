@@ -4,7 +4,7 @@ import { Plus } from 'lucide-react';
 import { LegalPage, proseClass } from '@/components/legal/legal-page';
 import { buttonVariants } from '@/components/ui/button';
 import { getNextEvent, mapsUrl, type NextEvent } from '@/lib/next-event';
-import { SERVICE_FEE_RATE } from '@/lib/pricing';
+import { SERVICE_FEE_LABEL } from '@/lib/pricing';
 import { getIgHandle, igUrl } from '@/lib/site';
 import { cn } from '@/lib/utils';
 
@@ -17,8 +17,6 @@ export const metadata: Metadata = {
 export const revalidate = 300;
 
 type Group = { id: string; title: string; items: { q: string; a: React.ReactNode }[] };
-
-const FEE = `${(SERVICE_FEE_RATE * 100).toLocaleString('es-UY')} %`;
 
 function faq(event: NextEvent, ig: { handle: string; href: string }): Group[] {
   const instagram = (
@@ -96,8 +94,10 @@ function faq(event: NextEvent, ig: { handle: string; href: string }): Group[] {
           q: '¿Qué son las tandas?',
           a: (
             <p>
-              Las entradas salen por tandas, cada una con su precio y su cantidad. En la web ves cuáles están
-              disponibles y cuáles ya son sold out.
+              Las entradas salen por tandas, cada una con su precio y su cantidad. En{' '}
+              <Link href="/entradas">Entradas</Link> ves cuáles están disponibles, cuáles ya son sold out y cuáles
+              vienen después: esas aparecen como «Próximamente», con el día y la hora en que salen a la venta. Ya ves
+              su precio, pero se pueden comprar recién desde ese momento.
             </p>
           ),
         },
@@ -151,8 +151,8 @@ function faq(event: NextEvent, ig: { handle: string; href: string }): Group[] {
           q: '¿Cómo puedo pagar?',
           a: (
             <p>
-              Con transferencia bancaria (sin cargo) o con Mercado Pago (con un cargo por servicio del {FEE}). Según la
-              fecha, puede estar habilitado uno solo de los dos.
+              Con transferencia bancaria (sin cargo por servicio) o con Mercado Pago (con un cargo por servicio del{' '}
+              {SERVICE_FEE_LABEL}). Según la fecha, puede estar habilitado uno solo de los dos.
             </p>
           ),
         },
@@ -190,8 +190,9 @@ function faq(event: NextEvent, ig: { handle: string; href: string }): Group[] {
           q: '¿Por qué hay un cargo por servicio?',
           a: (
             <p>
-              Es la comisión que cobra Mercado Pago: el {FEE} del precio de la entrada. Lo ves en pesos, separado,
-              antes de pagar. Con transferencia no hay cargo.
+              Cubre la comisión de Mercado Pago. Es el {SERVICE_FEE_LABEL} de todo lo que pagás por Mercado Pago: la
+              entrada (ya con el descuento, si tenés un código) y el transporte, si lo sumás. Lo ves en pesos, separado,
+              antes de pagar. Con transferencia no hay cargo por servicio.
             </p>
           ),
         },
@@ -210,8 +211,9 @@ function faq(event: NextEvent, ig: { handle: string; href: string }): Group[] {
             <>
               {/* A CONFIRMAR: cómo y en qué plazo se devuelve una transferencia rechazada si la plata llegó. */}
               <p>
-                Te llega un mail avisando y el lugar se libera. Pasa, por ejemplo, si el monto no coincide o el
-                comprobante no se lee. Escribinos por {instagram}: si la plata llegó, te la devolvemos.
+                Te llega un mail avisando y el lugar se libera. Pasa si el monto no coincide con el total, si el
+                comprobante no se lee o si no encontramos la transferencia en la cuenta. Escribinos por {instagram}: si
+                la plata llegó, te la devolvemos.
               </p>
             </>
           ),
@@ -227,11 +229,16 @@ function faq(event: NextEvent, ig: { handle: string; href: string }): Group[] {
           a: (
             <>
               {/* A CONFIRMAR: horario de cierre de la fiesta. */}
-              <p>
-                La próxima es el {event.weekday} {event.dateLong}
-                {where ? <>, en {where}</> : null}. Es open air y arranca a las {event.time}. Sigue hasta la madrugada.
-              </p>
-              {!where && <p>El lugar lo anunciamos por {instagram}.</p>}
+              {event.id ? (
+                <p>
+                  La próxima es el {event.weekday} {event.dateLong}
+                  {where ? <>, en {where}</> : null}. Es open air y arranca a las {event.time}. Sigue hasta la
+                  madrugada.
+                </p>
+              ) : (
+                <p>La próxima fecha está a confirmar: la anunciamos por {instagram}, con el lugar y el horario.</p>
+              )}
+              {event.id && !where && <p>El lugar lo anunciamos por {instagram}.</p>}
             </>
           ),
         },
@@ -277,11 +284,13 @@ function faq(event: NextEvent, ig: { handle: string; href: string }): Group[] {
           q: '¿Hay transporte?',
           a: (
             <>
-              {/* A CONFIRMAR: horarios, puntos de salida, precio y fecha de lanzamiento del bus. */}
+              {/* A CONFIRMAR: quién opera el bus. */}
               <p>
-                Lo estamos armando: al final de la compra vas a poder sumar un bus de ida y vuelta. Cuando esté, lo
-                anunciamos por {instagram}.
+                Sí. Al comprar tu entrada, antes de pagar, podés sumar tu lugar en el bus: ida, vuelta o ida y vuelta,
+                según lo que haya para esa fecha. Cada opción muestra el horario, el punto de salida, el precio y los
+                lugares que quedan.
               </p>
+              <p>El bus se suma al total de tu compra y lo ves en tu entrada y en el mail. Los lugares son limitados.</p>
             </>
           ),
         },

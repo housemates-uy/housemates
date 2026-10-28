@@ -6,7 +6,9 @@ import { Card, EmptyState } from '@/components/ui/card';
 import { DoodleBackdrop } from '@/components/ui/doodle-backdrop';
 import { Eyebrow } from '@/components/ui/eyebrow';
 import { Logo } from '@/components/ui/logo';
+import { loadAccountBarOrders, type AccountBarOrder } from '@/lib/bar';
 import { getCustomer, loadAccountTickets, type AccountTicket } from '@/lib/customers';
+import { formatLocal } from '@/lib/events';
 import { formatDocument } from '@/lib/tickets';
 import { getTransportByTicket, type TicketTransport } from '@/lib/transport';
 import { cn } from '@/lib/utils';
@@ -34,7 +36,7 @@ export default async function CuentaPage({
   const customer = await getCustomer();
   if (!customer) redirect('/cuenta/ingresar?next=/cuenta');
 
-  const tickets = await loadAccountTickets(customer);
+  const [tickets, barOrders] = await Promise.all([loadAccountTickets(customer), loadAccountBarOrders(customer.id)]);
   const buses = await getTransportByTicket({ ticketIds: tickets.map((t) => t.id) });
   const upcoming = tickets.filter((t) => t.upcoming);
   const past = tickets.filter((t) => !t.upcoming);
@@ -115,6 +117,16 @@ export default async function CuentaPage({
           )}
         </section>
 
+        {barOrders.length > 0 && (
+          <section aria-labelledby="pedidos-barra" className="mt-14">
+            <h2 id="pedidos-barra" className="text-xl font-bold tracking-tight">
+              Pedidos de barra
+            </h2>
+            <p className="mt-2 text-sm text-bone/60">Los que pagaste con tu cuenta. Cada QR vale un trago.</p>
+            <BarOrderList items={barOrders} />
+          </section>
+        )}
+
         <section aria-labelledby="tus-datos" className="mt-14">
           <h2 id="tus-datos" className="text-xl font-bold tracking-tight">
             Tus datos
@@ -182,6 +194,44 @@ function TicketList({
         ))}
       </ul>
     </div>
+  );
+}
+
+function BarOrderList({ items }: { items: AccountBarOrder[] }) {
+  return (
+    <ul className="mt-5 space-y-3">
+      {items.map((o) => {
+        const toPick = o.units - o.delivered;
+        return (
+          <li key={o.id}>
+            <Card className={cn('p-5 md:p-6', toPick === 0 && 'opacity-80')}>
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+                <p className="text-lg font-bold tracking-tight">
+                  {o.eventTitle} · {formatLocal(o.eventStart, 'dd.MM.yy')}
+                </p>
+                <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.14em]">
+                  <span aria-hidden className={cn('h-2 w-2 rounded-full', toPick ? 'bg-violet' : 'bg-bone/30')} />
+                  {toPick ? 'Para retirar' : 'Retirado'}
+                </span>
+              </div>
+              <p className="mt-2 text-sm text-bone/75">
+                {o.units} {o.units === 1 ? 'trago' : 'tragos'} · {o.delivered}{' '}
+                {o.delivered === 1 ? 'entregado' : 'entregados'}
+              </p>
+              <Link
+                href={`/barra/pedido/${o.accessToken}`}
+                className={buttonVariants({
+                  variant: toPick ? 'solid' : 'outline',
+                  className: 'mt-5 w-full sm:w-auto',
+                })}
+              >
+                Ver pedido
+              </Link>
+            </Card>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

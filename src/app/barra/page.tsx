@@ -53,13 +53,13 @@ export default async function BarraPage() {
         </header>
 
         <section className="pt-8">
-          <Eyebrow>Barra · {event.dateShort}</Eyebrow>
+          <Eyebrow>{event.id ? `Barra · ${event.dateShort}` : 'Barra'}</Eyebrow>
           <h1 className="mt-4 text-[clamp(3.25rem,15vw,5.5rem)] font-bold leading-[0.88] tracking-[-0.04em]">
             Pedí tus tragos
           </h1>
           <p className="mt-5 max-w-[40ch] text-base leading-relaxed text-bone/70">
-            Pagás con Mercado Pago y te llega un QR por cada trago. Lo mostrás en la barra y lo
-            retirás cuando quieras, antes o durante la fiesta.
+            Comprás antes o durante la fiesta, pagás con Mercado Pago y te llega un QR por cada trago.
+            En la fiesta lo mostrás en la barra y retirás tu trago cuando quieras.
           </p>
         </section>
 

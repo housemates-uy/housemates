@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { LiveRefresh } from '@/app/ticket/[token]/live-refresh';
 import { buttonVariants } from '@/components/ui/button';
 import { DoodleBackdrop } from '@/components/ui/doodle-backdrop';
@@ -20,8 +20,10 @@ export const dynamic = 'force-dynamic';
 // la persona desde Mercado Pago.
 // Al volver, MP agrega ?payment_id=…&status=…: igual que /compra/resultado, no se confía en
 // eso, se le pregunta el estado a MP (syncPayment) y si está aprobado se confirma acá mismo.
-// Mientras falte retirar algo, se refresca sola: cuando el barman entrega, el QR pasa a
-// "Entregado" sin recargar.
+// Una sola vez: después redirige a la misma página sin payment_id (queda ?status para el
+// texto). Si no, el refresco de cada 5 s le preguntaría a MP sin límite.
+// Mientras falte pagar o retirar algo, se refresca sola: cuando el barman entrega, el QR pasa
+// a "Entregado" sin recargar. Con el pago rechazado, no.
 export default async function BarOrderPage({
   params,
   searchParams,
@@ -29,21 +31,22 @@ export default async function BarOrderPage({
   params: { token: string };
   searchParams: { payment_id?: string; collection_id?: string; status?: string; collection_status?: string };
 }) {
-  let order = await loadBarOrderByToken(params.token);
+  const order = await loadBarOrderByToken(params.token);
   if (!order) notFound();
 
   const paymentId = searchParams.payment_id ?? searchParams.collection_id;
   let mpStatus = searchParams.status ?? searchParams.collection_status ?? null;
-  if (order.status === 'pending' && paymentId && paymentId !== 'null' && isMercadoPagoConfigured()) {
-    try {
-      const synced = await syncPayment(paymentId);
-      if (synced.barOrderId === order.id) {
-        mpStatus = synced.status;
-        order = (await loadBarOrderByToken(params.token)) ?? order;
+  if (paymentId) {
+    if (order.status === 'pending' && paymentId !== 'null' && isMercadoPagoConfigured()) {
+      try {
+        const synced = await syncPayment(paymentId);
+        if (synced.barOrderId === order.id) mpStatus = synced.status;
+      } catch {
+        // Si MP no responde, queda pendiente: lo confirma el webhook.
       }
-    } catch {
-      // Si MP no responde, queda pendiente: el webhook (o el próximo refresco) lo confirma.
     }
+    const keep = mpStatus && mpStatus !== 'approved' ? `?status=${encodeURIComponent(mpStatus)}` : '';
+    redirect(`/barra/pedido/${params.token}${keep}`);
   }
 
   const { data: event } = await createAdminClient()
@@ -71,7 +74,7 @@ export default async function BarOrderPage({
 
   return (
     <main id="contenido" className="print-ink relative isolate min-h-[100dvh] print:bg-white">
-      <LiveRefresh active={order.status === 'pending' || (paid && toPick > 0)} />
+      <LiveRefresh active={(order.status === 'pending' && !failed) || (paid && toPick > 0)} />
       <DoodleBackdrop className="fixed -z-10 print:hidden" />
 
       <div className="mx-auto flex max-w-md flex-col items-center px-5 pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))]">

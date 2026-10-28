@@ -10,7 +10,7 @@ import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { tandaStateLabel, type TandaState } from '@/components/ui/tanda-status';
 import { formatUYU } from '@/lib/events';
-import { discountAmount, quote, type PayMethod } from '@/lib/pricing';
+import { SERVICE_FEE_LABEL, discountAmount, quote, type PayMethod } from '@/lib/pricing';
 import { validateCI } from '@/lib/validation/document';
 import { cn } from '@/lib/utils';
 import { signOutAction } from '@/app/cuenta/actions';
@@ -216,7 +216,7 @@ export function BuyForm({
   return (
     <form action={action} onSubmit={() => (submittedBus.current = busId)} className="space-y-9">
       {/* 1 · Tanda */}
-      <fieldset className="space-y-3">
+      <fieldset className="min-w-0 space-y-3">
         <legend className="mb-3 text-sm font-medium text-bone/70">Elegí tu tanda</legend>
         {/* Link de preventa: create_ticket vuelve a validar el código en el servidor. */}
         {presaleCode && <input type="hidden" name="presale" value={presaleCode} />}
@@ -225,7 +225,7 @@ export function BuyForm({
             <label
               key={t.id}
               className={cn(
-                'relative flex cursor-pointer flex-col rounded-card border p-5 transition-colors',
+                'relative flex cursor-pointer flex-col rounded-card border p-5 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-bone/60',
                 t.state.kind === 'sold_out' && 'cursor-not-allowed opacity-60',
                 // Próxima tanda: se ve el precio (sin tacharlo) pero todavía no se puede elegir.
                 t.state.kind === 'upcoming' && 'cursor-not-allowed border-dashed',
@@ -280,7 +280,7 @@ export function BuyForm({
       </fieldset>
 
       {/* 2 · Datos */}
-      <fieldset className="space-y-5">
+      <fieldset className="min-w-0 space-y-5">
         <legend className="mb-1 text-sm font-medium text-bone/70">Tus datos</legend>
         {account && (
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-card border border-bone/10 bg-bone/[0.03] px-4 py-3 text-sm">
@@ -302,6 +302,7 @@ export function BuyForm({
           <Input
             name="name"
             required
+            maxLength={100}
             autoComplete="name"
             defaultValue={account?.name}
             onChange={() => setEditedField('name')}
@@ -431,7 +432,7 @@ export function BuyForm({
 
       {/* Transporte (opcional): va antes del pago para que el total a transferir ya lo incluya. */}
       {transport.length > 0 && (
-        <fieldset ref={busRef} className="space-y-3">
+        <fieldset ref={busRef} className="min-w-0 space-y-3">
           <legend className="mb-1 text-sm font-medium text-bone/70">¿Necesitás transporte?</legend>
           <p className="text-sm text-bone/55">La fiesta es fuera de Montevideo. Podés sumar tu lugar en el bus.</p>
           <div className="grid gap-3 pt-1">
@@ -500,9 +501,10 @@ export function BuyForm({
       )}
 
       {/* 4 · Cómo pagar */}
-      <fieldset className="space-y-3">
+      <fieldset className="min-w-0 space-y-3">
         <legend className="mb-3 text-sm font-medium text-bone/70">¿Cómo querés pagar?</legend>
         <input type="hidden" name="method" value={method} />
+        <input type="hidden" name="expected_total" value={price?.total ?? ''} />
         <div className={cn('grid gap-3', bothMethods && 'sm:grid-cols-2')}>
           {methods.mercadopago && (
             <MethodCard
@@ -510,7 +512,7 @@ export function BuyForm({
               onSelect={() => setMethod('mercadopago')}
               title="Mercado Pago"
               body="Tarjeta, débito, saldo o efectivo. Tu entrada llega al instante."
-              note="+ 7,5 % de cargo por servicio"
+              note={`+ ${SERVICE_FEE_LABEL} de cargo por servicio`}
             />
           )}
           {methods.transfer && (
@@ -541,7 +543,7 @@ export function BuyForm({
               <span className="text-[13px] font-medium text-bone/70">Comprobante</span>
               <label
                 className={cn(
-                  'flex cursor-pointer items-center gap-3 rounded-control border border-dashed px-4 py-4 text-sm transition-colors',
+                  'flex cursor-pointer items-center gap-3 rounded-control border border-dashed px-4 py-4 text-sm transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-bone/60',
                   receipt ? 'border-bone/40 text-bone' : 'border-bone/20 text-bone/60 hover:border-bone/40',
                 )}
               >
@@ -566,7 +568,7 @@ export function BuyForm({
                   {receiptError ?? fieldError('receipt')}
                 </p>
               ) : (
-                <p className="text-xs text-bone/45">Foto, captura o PDF, hasta 4 MB.</p>
+                <p className="text-xs text-bone/55">Foto, captura o PDF, hasta 4 MB.</p>
               )}
             </div>
           </div>
@@ -623,7 +625,7 @@ export function BuyForm({
       )}
       <div className="space-y-3">
         <Submit method={method} total={price?.total ?? 0} />
-        <p className="text-center text-xs text-bone/45">
+        <p className="text-center text-xs text-bone/55">
           {method === 'transfer'
             ? 'Tu lugar queda reservado mientras validamos el comprobante. Te avisamos por mail.'
             : 'Tenés 20 minutos para completar el pago en Mercado Pago.'}

@@ -4,6 +4,7 @@
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { safeNextPath } from '@/lib/auth/gate';
+import { allowAttempt, TOO_MANY_ATTEMPTS } from '@/lib/rate-limit';
 import {
   getCustomer,
   markEmailVerified,
@@ -22,6 +23,7 @@ export async function signInAction(_prev: FormState, formData: FormData): Promis
   const email = String(formData.get('email') ?? '').trim().toLowerCase();
   const password = String(formData.get('password') ?? '');
   if (!isValidEmail(email) || !password) return { error: 'Completá tu email y tu contraseña.' };
+  if (!(await allowAttempt('login'))) return { error: TOO_MANY_ATTEMPTS };
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -43,10 +45,17 @@ export async function signOutAction(next: string) {
   redirect(safeNextPath(next, '/'));
 }
 
+// Tarda siempre lo mismo y responde igual exista o no la cuenta: así no se puede averiguar
+// quién tiene cuenta. Pasado el límite tampoco cambia la respuesta (no se manda nada).
+const RESET_MIN_MS = 1500;
+
 export async function requestPasswordResetAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const email = String(formData.get('email') ?? '').trim();
   if (!isValidEmail(email)) return { error: 'Escribí un email válido.' };
-  await sendPasswordResetMail(email);
+  const started = Date.now();
+  if (await allowAttempt('reset')) await sendPasswordResetMail(email);
+  const wait = RESET_MIN_MS - (Date.now() - started);
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
   return { ok: email };
 }
 
@@ -101,6 +110,7 @@ export async function resendConfirmAction(): Promise<FormState> {
   const customer = await getCustomer();
   if (!customer) redirect('/cuenta/ingresar?next=/cuenta');
   if (customer.verified) return { ok: 'Tu email ya está confirmado.' };
+  if (!(await allowAttempt('reset'))) return { error: TOO_MANY_ATTEMPTS };
 
   const sent = await sendAccountConfirmMail(customer.email, customer.profile?.name ?? '');
   return sent

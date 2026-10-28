@@ -90,8 +90,8 @@ export function NewTicketForm({ eventId, tiers }: { eventId: string; tiers: Tier
         <Field label="Instagram (opcional)" hint="Sin @" error={fieldError('instagram')}>
           <Input name="instagram" autoComplete="off" />
         </Field>
-        <Field label="Celular (opcional)" hint="Para mandarle la entrada por WhatsApp">
-          <Input name="phone" type="tel" autoComplete="off" />
+        <Field label="Celular (opcional)" hint="Para mandarle la entrada por WhatsApp" error={fieldError('phone')}>
+          <Input name="phone" type="tel" autoComplete="off" maxLength={30} />
         </Field>
         <Field label="Tipo" error={fieldError('tier')}>
           <select name="tier" className={inputClass} value={tier} onChange={(e) => onTierChange(e.target.value)}>
@@ -115,8 +115,8 @@ export function NewTicketForm({ eventId, tiers }: { eventId: string; tiers: Tier
           </Field>
         )}
       </div>
-      <Field label="Notas (opcional)">
-        <Textarea name="notes" rows={2} />
+      <Field label="Notas (opcional)" hint="Se ven en la lista de entradas, solo en el admin" error={fieldError('notes')}>
+        <Textarea name="notes" rows={2} maxLength={500} />
       </Field>
       <label className="flex cursor-pointer items-center gap-2.5 text-sm text-bone/75">
         <input type="checkbox" name="send_mail" defaultChecked className="h-4 w-4 accent-bone" />

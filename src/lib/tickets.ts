@@ -18,6 +18,10 @@ export function generateQrToken(): string {
   return randomBytes(16).toString('base64url');
 }
 
+// Cookie con la última compra de este navegador: /compra/resultado muestra el link de la
+// entrada solo a quien la compró (el id de la entrada o el payment_id no alcanzan).
+export const PURCHASE_COOKIE = 'hm_compra';
+
 // URL pública del sitio, para armar el link de cada entrada.
 // En Vercel se toma del dominio de producción; en local, localhost.
 export function appUrl(): string {
@@ -53,10 +57,10 @@ export function normalizeInstagram(raw: string): string {
 }
 
 export const buyerSchema = z.object({
-  name: z.string().trim().min(3, 'Poné nombre y apellido'),
+  name: z.string().trim().min(3, 'Poné nombre y apellido').max(100, 'El nombre es demasiado largo'),
   email: z.string().trim().refine(isValidEmail, 'Email inválido'),
   document: z.string().trim().refine(validateCI, 'Cédula uruguaya inválida'),
-  phone: z.string().trim().max(30).optional().or(z.literal('')),
+  phone: z.string().trim().max(30, 'El celular es demasiado largo (hasta 30 caracteres)').optional().or(z.literal('')),
   // Opcional: la compra web ya no lo pide; el admin puede anotarlo en las entradas manuales.
   instagram: z
     .string()
@@ -149,4 +153,15 @@ export const SOURCE_LABELS: Record<TicketSource, string> = {
 export function formatDocument(doc: string): string {
   const d = normalizeDocument(doc);
   return `${d[0]}.${d.slice(1, 4)}.${d.slice(4, 7)}-${d[7]}`;
+}
+
+// Celular agrupado con espacios ("099 123 456", "+598 99 123 456"). En los CSV hace falta:
+// Excel abre "099123456" como número y se come el 0. Lo que no es solo dígitos queda igual.
+export function formatPhone(raw: string): string {
+  const value = raw.trim();
+  if (!/^\+?\d+$/.test(value)) return value;
+  const d = value.replace(/\D/g, '');
+  if (d.length === 11 && d.startsWith('598')) return `+598 ${d.slice(3, 5)} ${d.slice(5, 8)} ${d.slice(8)}`;
+  if (d.length === 8) return `${d.slice(0, 4)} ${d.slice(4)}`;
+  return `${value.startsWith('+') ? '+' : ''}${d.match(/\d{1,3}/g)!.join(' ')}`;
 }

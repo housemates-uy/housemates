@@ -1,5 +1,6 @@
 'use server';
 
+import { randomBytes } from 'crypto';
 import { redirect } from 'next/navigation';
 import type { EmailOtpType } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
@@ -24,6 +25,14 @@ export async function confirmLinkAction(formData: FormData) {
     const supabase = await createClient();
     const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
     if (!error) {
+      // Quien abrió el link es el dueño del email: la contraseña anterior (que pudo poner otro
+      // al crear la cuenta con este email) deja de valer y se cierran las otras sesiones. La
+      // nueva la elige en la pantalla siguiente.
+      const { error: resetError } = await supabase.auth.updateUser({ password: randomBytes(24).toString('base64url') });
+      const { error: signOutError } = await supabase.auth.signOut({ scope: 'others' });
+      if (resetError || signOutError) {
+        console.error('[auth/confirm] no se pudo invalidar el acceso anterior', resetError?.message ?? signOutError?.message);
+      }
       if (!forCustomer) redirect('/admin/account?set=1');
       redirect(type === 'magiclink' ? '/cuenta/nueva-clave?confirmar=1' : '/cuenta/nueva-clave');
     }

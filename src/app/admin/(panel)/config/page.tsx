@@ -9,7 +9,7 @@ import { SaleConfigForm } from './sale-config-form';
 
 export const metadata = { title: 'Configuración' };
 
-export default async function ConfigPage() {
+export default async function ConfigPage({ searchParams }: { searchParams: { venta?: string } }) {
   const admin = await requireAdmin();
   const db = createAdminClient();
 
@@ -42,6 +42,7 @@ export default async function ConfigPage() {
         </div>
         <SaleConfigForm
           editable={isOwner}
+          saved={searchParams.venta === 'guardada'}
           mpConfigured={isMercadoPagoConfigured()}
           values={{
             gateEnabled: sale.get('gate_enabled') !== '0',

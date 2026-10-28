@@ -8,10 +8,6 @@ import { priceBreakdown } from '@/lib/pricing';
 
 const TZ = 'America/Montevideo';
 
-// Se usa mientras no haya un evento publicado en la base.
-const FALLBACK_DATE = '2026-12-11T23:00:00-03:00';
-const FALLBACK_LOCATION = 'Viña Varela Zarranz';
-
 // Link al pin de Google Maps: el que se cargó en el admin o, si no hay, una búsqueda por
 // el nombre del lugar (Google abre directo la ficha cuando hay un solo resultado).
 export function mapsUrl(locationName: string, locationUrl?: string | null): string {
@@ -63,11 +59,16 @@ function describeDate(iso: string) {
 
 export async function getNextEvent(opts: { presaleCode?: string | null } = {}): Promise<NextEvent> {
   const presaleCode = (opts.presaleCode ?? '').trim().toUpperCase();
+  // Sin evento publicado, o si la base no respondió: id null y sin fecha ni lugar. Nunca se
+  // inventa una fecha: la web muestra "Próxima fecha a confirmar".
   const fallback: NextEvent = {
     id: null,
     title: null,
-    ...describeDate(FALLBACK_DATE),
-    locationName: FALLBACK_LOCATION,
+    dateShort: '',
+    weekday: '',
+    dateLong: '',
+    time: '',
+    locationName: null,
     locationUrl: null,
     salesActive: false,
     tandas: [],
@@ -97,12 +98,15 @@ export async function getNextEvent(opts: { presaleCode?: string | null } = {}): 
     // Las de preventa se ven solo con su código (create_ticket lo vuelve a exigir al comprar).
     const tiers = (allTiers ?? []).filter((t) => !t.presale_code || t.presale_code === presaleCode);
 
-    const available = await Promise.all(
-      tiers.map(async (t) => {
+    // Además del cupo de cada tanda, la capacidad del evento (create_ticket frena igual).
+    const [eventLeft, ...tierLeft] = await Promise.all([
+      db.rpc('event_available', { p_event_id: event.id }).retry(false).then(({ data }) => (data as number | null) ?? 0),
+      ...tiers.map(async (t) => {
         const { data } = await db.rpc('tier_available', { p_tier_id: t.id }).retry(false);
         return (data as number | null) ?? 0;
       }),
-    );
+    ]);
+    const available = tierLeft.map((left) => Math.min(left, eventLeft));
 
     return {
       id: event.id,

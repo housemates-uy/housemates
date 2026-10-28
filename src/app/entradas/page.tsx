@@ -50,6 +50,8 @@ export default async function EntradasPage({
     event.salesActive &&
     (sale.mpEnabled || sale.transferEnabled) &&
     event.tandas.some((t) => t.purchasable);
+  const soldOut =
+    !canBuy && event.salesActive && event.tandas.length > 0 && event.tandas.every((t) => t.state.kind === 'sold_out');
   const transport = canBuy && event.id ? await getTransportOptions(event.id, { onlyActive: true }) : [];
 
   return (
@@ -77,14 +79,22 @@ export default async function EntradasPage({
 
         <section className="pt-10">
           <Eyebrow>Entradas</Eyebrow>
-          <h1 className="mt-4 text-[clamp(3.5rem,14vw,7rem)] font-bold leading-[0.88] tracking-[-0.04em]">
-            {event.dateShort}
-          </h1>
-          <p className="mt-5 text-base text-bone/65">
-            <span className="capitalize">{event.weekday}</span> {event.dateLong} · {event.time} hs ·
-            Open air
-            {event.locationName && <> · {event.locationName}</>}
-          </p>
+          {event.id ? (
+            <>
+              <h1 className="mt-4 text-[clamp(3.5rem,14vw,7rem)] font-bold leading-[0.88] tracking-[-0.04em]">
+                {event.dateShort}
+              </h1>
+              <p className="mt-5 text-base text-bone/65">
+                <span className="capitalize">{event.weekday}</span> {event.dateLong} · {event.time} hs ·
+                Open air
+                {event.locationName && <> · {event.locationName}</>}
+              </p>
+            </>
+          ) : (
+            <h1 className="mt-4 text-[clamp(2.5rem,10vw,4.5rem)] font-bold leading-[0.95] tracking-[-0.03em]">
+              Próxima fecha a confirmar
+            </h1>
+          )}
         </section>
 
         {presaleInvalid && (
@@ -138,10 +148,13 @@ export default async function EntradasPage({
           </Card>
         ) : (
           <Card className="mt-12 p-6 md:p-8">
-            <h2 className="text-xl font-bold tracking-tight">La venta todavía no está abierta</h2>
+            <h2 className="text-xl font-bold tracking-tight">
+              {soldOut ? 'Entradas agotadas' : 'La venta todavía no está abierta'}
+            </h2>
             <p className="mt-3 max-w-[52ch] text-sm leading-relaxed text-bone/65">
-              Avisamos por Instagram cuando arranca cada tanda. La entrada es personal: una por
-              persona, a tu nombre y con tu CI.
+              {soldOut
+                ? 'Se vendieron todas las entradas de esta fecha. Si se libera algún lugar, lo avisamos por Instagram.'
+                : 'Avisamos por Instagram cuando arranca cada tanda. La entrada es personal: una por persona, a tu nombre y con tu CI.'}
             </p>
             <a
               href={igUrl(igHandle)}

@@ -1,11 +1,14 @@
 'use server'
 
-import { requireOwner, logAdminAction } from '@/lib/auth/admin'
+import { requireOwner, logAdminAction, fieldChanges } from '@/lib/auth/admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
 import { z } from 'zod'
 
-const passwordSchema = z.string().min(6, 'Mínimo 6 caracteres')
+// Sin espacios al principio ni al final: quien la copia de un mensaje suele arrastrar uno, y
+// /api/gate también recorta lo que escribe la persona.
+const passwordSchema = z.string().trim().min(6, 'Mínimo 6 caracteres')
 
 export async function updateGatePasswordAction(
   password: string
@@ -30,7 +33,8 @@ export async function updateGatePasswordAction(
 
   if (error) return { error: 'Error al guardar. Intentá de nuevo.' }
 
-  await logAdminAction(admin.id, 'update', 'site_config', 'gate_password')
+  // Sin la contraseña en el detalle. entity_id es uuid: la clave va en la acción.
+  await logAdminAction(admin.id, 'update_gate_password', 'site_config')
 
   revalidatePath('/admin/config')
   return { ok: true }
@@ -38,7 +42,7 @@ export async function updateGatePasswordAction(
 
 // Configuración de la venta: contraseña para comprar, medios de pago y datos para transferir.
 // Ver src/lib/sale-config.ts y docs/LOGICA_DE_NEGOCIO.md → "Compra web".
-export type SaleConfigState = { error: string } | { ok: true } | null
+export type SaleConfigState = { error: string } | null
 
 export async function saveSaleConfigAction(
   _prev: SaleConfigState,
@@ -53,6 +57,13 @@ export async function saveSaleConfigAction(
     return { error: 'Para activar la transferencia cargá los datos de la cuenta.' }
   }
 
+  const db = createAdminClient()
+  const { data: current } = await db
+    .from('site_config')
+    .select('key, value')
+    .in('key', ['gate_enabled', 'pay_mp_enabled', 'pay_transfer_enabled', 'transfer_details'])
+  const before = Object.fromEntries((current ?? []).map((r) => [r.key, r.value]))
+
   const now = new Date().toISOString()
   const rows = [
     { key: 'gate_enabled', value: formData.get('gate_enabled') === 'on' ? '1' : '0' },
@@ -61,15 +72,18 @@ export async function saveSaleConfigAction(
     { key: 'transfer_details', value: transferDetails },
   ].map((r) => ({ ...r, updated_by: admin.id, updated_at: now }))
 
-  const { error } = await createAdminClient().from('site_config').upsert(rows, { onConflict: 'key' })
+  const { error } = await db.from('site_config').upsert(rows, { onConflict: 'key' })
   if (error) return { error: 'Error al guardar. Intentá de nuevo.' }
 
-  await logAdminAction(admin.id, 'update', 'site_config', undefined, {
-    gate_enabled: rows[0].value,
-    pay_mp_enabled: rows[1].value,
-    pay_transfer_enabled: rows[2].value,
-  })
+  // Antes y después de lo que cambió, incluidos los datos para transferir: si alguien cambia
+  // la cuenta a la que se transfiere, queda registrado quién y qué había antes.
+  const changes = fieldChanges(before, Object.fromEntries(rows.map((r) => [r.key, r.value])))
+  if (Object.keys(changes).length > 0) {
+    await logAdminAction(admin.id, 'update_sale_config', 'site_config', undefined, { changes })
+  }
   revalidatePath('/admin/config')
   revalidatePath('/entradas')
-  return { ok: true }
+  // "Guardado." viaja en la URL: con useFormState, el estado se pierde cuando la acción
+  // revalida la página.
+  redirect('/admin/config?venta=guardada')
 }

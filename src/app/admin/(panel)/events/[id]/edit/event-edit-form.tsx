@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { Pencil, Plus } from 'lucide-react';
-import { EventFields } from '@/components/admin/events/event-fields';
+import { EventFields, TierCapacityNotice } from '@/components/admin/events/event-fields';
 import { TierExtraFields, TierFields, TierTags } from '@/components/admin/events/tier-fields';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -67,7 +67,7 @@ function TierEditRow({ tier, eventId }: { tier: TicketTier; eventId: string }) {
         <button
           type="button"
           onClick={() => setEditing(true)}
-          aria-label={`Editar tier ${tier.name}`}
+          aria-label={`Editar tanda ${tier.name}`}
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control text-bone/55 hover:bg-bone/5 hover:text-bone"
         >
           <Pencil size={15} strokeWidth={1.5} aria-hidden />
@@ -91,8 +91,8 @@ function TierEditRow({ tier, eventId }: { tier: TicketTier; eventId: string }) {
           />
         </Field>
         <Field
-          label="Cantidad total"
-          hint={tier.quantity_sold > 0 ? `${tier.quantity_sold} ya vendidos: es el mínimo` : undefined}
+          label="Cupo"
+          hint={tier.quantity_sold > 0 ? `${tier.quantity_sold} ya vendidas: es el mínimo` : undefined}
         >
           <Input
             type="number"
@@ -139,10 +139,12 @@ export function EventEditForm({
   id,
   initial,
   existingTiers,
+  isOwner,
 }: {
   id: string;
   initial: EventInput;
   existingTiers: TicketTier[];
+  isOwner: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState('');
@@ -169,11 +171,15 @@ export function EventEditForm({
     });
   }
 
+  const tierTotal =
+    existingTiers.filter((t) => t.active).reduce((sum, t) => sum + t.quantity_total, 0) +
+    newTiers.reduce((sum, t) => sum + (Number(t.quantity_total) || 0), 0);
+
   return (
     <div className="space-y-8">
       {existingTiers.length > 0 && (
         <section className="rounded-card border border-bone/10">
-          <h2 className="border-b border-bone/10 px-5 py-3 text-sm font-medium text-bone/70">Tiers</h2>
+          <h2 className="border-b border-bone/10 px-5 py-3 text-sm font-medium text-bone/70">Tandas</h2>
           <ul className="divide-y divide-bone/10">
             {existingTiers.map((tier) => (
               <TierEditRow key={tier.id} tier={tier} eventId={id} />
@@ -182,14 +188,16 @@ export function EventEditForm({
         </section>
       )}
 
-      <EventFields event={event} onChange={handleChange} />
+      <EventFields event={event} onChange={handleChange} canArchive={isOwner} />
+
+      <TierCapacityNotice capacity={Number(event.capacity)} tierTotal={tierTotal} />
 
       <section className="space-y-4 border-t border-bone/10 pt-6">
-        <h2 className="text-sm font-medium text-bone/70">Tiers nuevos</h2>
+        <h2 className="text-sm font-medium text-bone/70">Tandas nuevas</h2>
         {newTiers.map((tier, i) => (
           <TierFields
             key={i}
-            title={`Tier nuevo ${i + 1}`}
+            title={`Tanda nueva ${i + 1}`}
             tier={tier}
             onChange={(field, value) => handleTierChange(i, field, value)}
             onRemove={() => setNewTiers((p) => p.filter((_, idx) => idx !== i))}
@@ -202,7 +210,7 @@ export function EventEditForm({
           onClick={() => setNewTiers((p) => [...p, emptyTier()])}
         >
           <Plus size={15} strokeWidth={1.5} aria-hidden />
-          Agregar tier
+          Agregar tanda
         </Button>
       </section>
 

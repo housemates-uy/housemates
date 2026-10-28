@@ -17,6 +17,7 @@
 // Cada plantilla devuelve { subject, html, text }: el texto plano es para clientes que no
 // muestran HTML y mejora la entrega (menos spam).
 import { formatUYU } from '@/lib/events';
+import { DEFAULT_IG_HANDLE, igUrl } from '@/lib/site';
 import { appUrl } from '@/lib/tickets';
 
 const C = {
@@ -28,7 +29,7 @@ const C = {
   panel: '#161616',
 };
 const FONT = "'Helvetica Neue', Helvetica, Arial, sans-serif";
-const IG_URL = 'https://instagram.com/house__mates';
+const IG_URL = igUrl(DEFAULT_IG_HANDLE);
 
 // Texto que Gmail no debe invertir. Solo para texto: aplicado a imágenes las invertiría.
 function blend(html: string) {
@@ -42,7 +43,8 @@ function esc(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function layout(inner: string, preheader: string) {
+// igHandle: el de site_config (getIgHandle() en src/lib/site.ts), que pasa quien manda el mail.
+function layout(inner: string, preheader: string, igHandle = DEFAULT_IG_HANDLE) {
   const bg = `${appUrl()}/brand/mail-bg.jpg`;
   return `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark"><title>House Mates</title>
@@ -60,7 +62,7 @@ u + .body .gmail-blend-difference { background:#000; mix-blend-mode:difference; 
 </td></tr>
 ${inner}
 <tr><td align="center" style="padding-top:36px;font-size:12px;line-height:1.6;color:${C.muted};">
-${blend(`¿Dudas? Escribinos por Instagram <a href="${IG_URL}" style="color:${C.bone};">@house__mates</a><br>House Mates · Uruguay`)}
+${blend(`¿Dudas? Escribinos por Instagram <a href="${esc(igUrl(igHandle))}" style="color:${C.bone};">${esc(igHandle)}</a><br>House Mates · Uruguay`)}
 </td></tr>
 </table>
 </td></tr>
@@ -110,6 +112,7 @@ export type TicketMailData = {
   total: number; // lo que pagó (0 en invitaciones)
   transport?: { name: string; departure: string; price: number } | null; // bus elegido al comprar
   entryUntil?: string | null; // tanda de ingreso temprano: "00:30"
+  igHandle?: string;
 };
 
 // Tanda de ingreso temprano: fila "Ingreso · Hasta las 00:30".
@@ -145,7 +148,8 @@ ${blend(`<strong style="color:${C.bone};">Tu lugar en el bus · ${esc(d.transpor
 const busText = (d: TicketMailData) =>
   d.transport ? `Transporte: ${d.transport.name} · ${d.transport.departure.replace(/\s*\n\s*/g, ' · ')}` : '';
 
-const ciMasked = (tail: string) => `CI •••• ${tail.slice(0, 3)}-${tail.slice(3)}`;
+// Con espacios de no corte: en pantallas angostas no se parte en dos líneas.
+const ciMasked = (tail: string) => `CI\u00A0••••\u00A0${tail.slice(0, 3)}-${tail.slice(3)}`;
 
 // Para los mails de comunicación del evento (src/lib/mail/event-mails.ts).
 export { C as MAIL_COLORS, IG_URL, blend, solid, esc, layout, heading, rows, button, ciMasked };
@@ -201,12 +205,18 @@ ${blend(`<strong style="color:${C.bone};">Antes de ir</strong><br>La entrada es 
     .filter(Boolean)
     .join('\n');
 
-  return { subject, html: layout(inner, `Tu entrada para el ${d.dateShort}: mostrá el QR en puerta.`), text };
+  return {
+    subject,
+    html: layout(inner, `Tu entrada para el ${d.dateShort}: mostrá el QR en puerta.`, d.igHandle),
+    text,
+  };
 }
 
-// 5 · Entrada anulada por un admin (con reembolso si fue por Mercado Pago).
+// 5 · Entrada anulada por un admin (con reembolso si fue por Mercado Pago). Texto neutro: se
+// anula también por arrepentimiento o porque se canceló la fecha.
 export function ticketCancelledEmail(d: TicketMailData & { refunded: boolean }) {
   const subject = `Tu entrada para ${d.eventTitle} fue anulada`;
+  const ig = igUrl(d.igHandle ?? DEFAULT_IG_HANDLE);
   const refundBlock = d.refunded
     ? `<tr><td style="padding-top:20px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="${solid(C.panel)}border-radius:14px;"><tr><td style="padding:18px 20px;font-size:13px;line-height:1.6;color:${C.soft};">
 ${blend(`<strong style="color:${C.bone};font-size:14px;">Te devolvimos ${esc(formatUYU(d.total))} por Mercado Pago</strong><br>La devolución va al mismo medio con el que pagaste. Según tu banco puede tardar unos días en verse.`)}
@@ -216,7 +226,7 @@ ${blend(`<strong style="color:${C.bone};font-size:14px;">Te devolvimos ${esc(for
   const inner = `${heading(
     'ANULADA',
     'Tu entrada fue anulada',
-    'Revisamos las entradas de este evento y esta no cumple con nuestras condiciones de acceso, así que la anulamos. El QR ya no es válido en puerta.',
+    'Tu entrada fue anulada y el QR ya no es válido.',
   )}
 <tr><td style="padding-top:28px;">${rows([
     ['Evento', d.eventTitle],
@@ -224,18 +234,20 @@ ${blend(`<strong style="color:${C.bone};font-size:14px;">Te devolvimos ${esc(for
     ['A nombre de', `${d.fullName} · ${ciMasked(d.docTail)}`],
   ])}</td></tr>
 ${refundBlock}
-<tr><td align="center" style="padding-top:24px;font-size:14px;line-height:1.55;color:${C.bone};">${blend('Si creés que es un error, escribinos por Instagram y lo revisamos.')}</td></tr>
-${button(IG_URL, 'Escribinos por Instagram')}`;
+<tr><td align="center" style="padding-top:24px;font-size:14px;line-height:1.55;color:${C.bone};">${blend('Si tenés dudas o creés que es un error, escribinos por Instagram.')}</td></tr>
+${button(ig, 'Escribinos por Instagram')}`;
 
   const text = [
     `Tu entrada para ${d.eventTitle} (${d.fullName}) fue anulada y el QR ya no es válido.`,
-    d.refunded ? `Te devolvimos ${formatUYU(d.total)} por Mercado Pago.` : '',
-    `Si creés que es un error, escribinos por Instagram: ${IG_URL}`,
+    d.refunded
+      ? `Te devolvimos ${formatUYU(d.total)} por Mercado Pago. Va al mismo medio con el que pagaste y, según tu banco, puede tardar unos días en verse.`
+      : '',
+    `Si tenés dudas o creés que es un error, escribinos por Instagram: ${ig}`,
   ]
     .filter(Boolean)
     .join('\n');
 
-  return { subject, html: layout(inner, 'Tu entrada fue anulada.'), text };
+  return { subject, html: layout(inner, 'Tu entrada fue anulada.', d.igHandle), text };
 }
 
 // 2 · Transferencia recibida: la persona subió el comprobante y queda en revisión.
@@ -262,31 +274,34 @@ ${blend(`<strong style="color:${C.bone};">Tu lugar queda reservado</strong><br>M
     .filter(Boolean)
     .join('\n');
 
-  return { subject, html: layout(inner, 'Estamos validando tu transferencia.'), text };
+  return { subject, html: layout(inner, 'Estamos validando tu transferencia.', d.igHandle), text };
 }
 
-// 3 · Transferencia rechazada: el comprobante no coincide con ninguna transferencia.
+// 3 · Transferencia rechazada. Los motivos son los de Preguntas frecuentes ("Me rechazaron la
+// transferencia").
 export function transferRejectedEmail(d: TicketMailData) {
   const subject = `No pudimos validar tu transferencia · ${d.eventTitle}`;
+  const ig = igUrl(d.igHandle ?? DEFAULT_IG_HANDLE);
   const inner = `${heading(
     'NO PUDIMOS VALIDARLA',
     'Tu transferencia no se pudo validar',
-    'Revisamos el comprobante y no encontramos la transferencia, así que la reserva se anuló.',
+    'Revisamos tu comprobante y no pudimos validar la transferencia: puede ser que el monto no coincida con el total, que el comprobante no se lea o que no la encontremos en la cuenta. La reserva se anuló y el lugar se liberó.',
   )}
 <tr><td style="padding-top:28px;">${rows([
     ['Evento', d.eventTitle],
     ['Entrada', d.entryLabel],
     ['A nombre de', `${d.fullName} · ${ciMasked(d.docTail)}`],
   ])}</td></tr>
-<tr><td align="center" style="padding-top:24px;font-size:14px;line-height:1.55;color:${C.bone};">${blend('Si ya transferiste, escribinos por Instagram con el comprobante y lo revisamos.')}</td></tr>
-${button(IG_URL, 'Escribinos por Instagram')}`;
+<tr><td align="center" style="padding-top:24px;font-size:14px;line-height:1.55;color:${C.bone};">${blend('Si ya transferiste, escribinos por Instagram con el comprobante y lo revisamos. Si la plata llegó, te la devolvemos.')}</td></tr>
+${button(ig, 'Escribinos por Instagram')}`;
 
   const text = [
     `No pudimos validar tu transferencia para ${d.eventTitle} (${d.fullName}) y la reserva se anuló.`,
-    `Si ya transferiste, escribinos por Instagram con el comprobante: ${IG_URL}`,
+    'Puede ser que el monto no coincida con el total, que el comprobante no se lea o que no encontremos la transferencia en la cuenta.',
+    `Si ya transferiste, escribinos por Instagram con el comprobante: ${ig}. Si la plata llegó, te la devolvemos.`,
   ].join('\n');
 
-  return { subject, html: layout(inner, 'Tu transferencia no se pudo validar.'), text };
+  return { subject, html: layout(inner, 'Tu transferencia no se pudo validar.', d.igHandle), text };
 }
 
 // 4 · Aviso a los owners: hay una transferencia para validar (con el comprobante adjunto).
@@ -312,12 +327,12 @@ ${button(d.adminUrl, 'Validar en el admin')}
     `Validala en: ${d.adminUrl}`,
   ].join('\n');
 
-  return { subject, html: layout(inner, `${d.fullName} subió un comprobante.`), text };
+  return { subject, html: layout(inner, `${d.fullName} subió un comprobante.`, d.igHandle), text };
 }
 
 // 5 · Cuenta de comprador: confirmar el email. Hasta confirmarlo, "Mi cuenta" muestra solo
 // las entradas compradas desde la cuenta (ver docs/LOGICA_DE_NEGOCIO.md → "Cuentas").
-export function accountConfirmEmail(d: { firstName: string; url: string }) {
+export function accountConfirmEmail(d: { firstName: string; url: string; igHandle?: string }) {
   const subject = 'Confirmá tu email · House Mates';
   const inner = `${heading(
     'TU CUENTA',
@@ -333,11 +348,11 @@ ${button(d.url, 'Confirmar mi email')}
     'El link vence en 1 hora. Si no creaste una cuenta en House Mates, ignorá este mail.',
   ].join('\n');
 
-  return { subject, html: layout(inner, 'Confirmá tu email para ver tus entradas.'), text };
+  return { subject, html: layout(inner, 'Confirmá tu email para ver tus entradas.', d.igHandle), text };
 }
 
 // 6 · Cuenta de comprador: elegir una contraseña nueva.
-export function passwordResetEmail(d: { url: string }) {
+export function passwordResetEmail(d: { url: string; igHandle?: string }) {
   const subject = 'Elegí una contraseña nueva · House Mates';
   const inner = `${heading(
     'TU CUENTA',
@@ -353,7 +368,7 @@ ${button(d.url, 'Elegir contraseña')}
     'El link vence en 1 hora. Si no lo pediste, ignorá este mail.',
   ].join('\n');
 
-  return { subject, html: layout(inner, 'Elegí una contraseña nueva.'), text };
+  return { subject, html: layout(inner, 'Elegí una contraseña nueva.', d.igHandle), text };
 }
 
 export type BarOrderMailData = {
@@ -364,6 +379,7 @@ export type BarOrderMailData = {
   lines: { name: string; quantity: number; price: number }[];
   units: { name: string; cid: string }[]; // un QR por trago, en el orden del pedido
   total: number;
+  igHandle?: string;
 };
 
 // 7 · Pedido de barra pago: un QR por trago, cada uno con su nombre, de a dos por fila.
@@ -410,5 +426,9 @@ ${blend(`<strong style="color:${C.bone};">Cómo funciona</strong><br>El barman e
     'Mostrá cada QR en la barra: vale un trago y se usa una sola vez.',
   ].join('\n');
 
-  return { subject, html: layout(inner, `Tenés ${n} ${n === 1 ? 'trago' : 'tragos'} para retirar en la barra.`), text };
+  return {
+    subject,
+    html: layout(inner, `Tenés ${n} ${n === 1 ? 'trago' : 'tragos'} para retirar en la barra.`, d.igHandle),
+    text,
+  };
 }

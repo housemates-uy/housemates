@@ -1,12 +1,15 @@
 import type { Metadata } from 'next';
+import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Logo } from '@/components/ui/logo';
 import { getCustomer } from '@/lib/customers';
 import { isMercadoPagoConfigured, syncPayment } from '@/lib/mercadopago';
+import { allowAttempt } from '@/lib/rate-limit';
+import { normalizeEmail } from '@/lib/validation/email';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { ticketUrl } from '@/lib/tickets';
+import { PURCHASE_COOKIE, ticketUrl } from '@/lib/tickets';
 
 export const metadata: Metadata = { title: 'Tu compra', robots: { index: false, follow: false } };
 export const dynamic = 'force-dynamic';
@@ -22,19 +25,28 @@ export const dynamic = 'force-dynamic';
 export default async function CompraResultadoPage({
   searchParams,
 }: {
-  searchParams: { payment_id?: string; collection_id?: string; external_reference?: string; transferencia?: string };
+  searchParams: {
+    payment_id?: string;
+    collection_id?: string;
+    external_reference?: string;
+    preference_id?: string;
+    transferencia?: string;
+  };
 }) {
   const paymentId = searchParams.payment_id ?? searchParams.collection_id;
   let ticketId = searchParams.transferencia ?? searchParams.external_reference ?? null;
   let mpStatus: string | null = null;
+  let syncFailed = false;
 
   if (paymentId && paymentId !== 'null' && isMercadoPagoConfigured()) {
     try {
+      if (!(await allowAttempt('result'))) throw new Error('límite de consultas');
       const synced = await syncPayment(paymentId);
       ticketId = synced.ticketId ?? ticketId;
       mpStatus = synced.status;
-    } catch {
-      mpStatus = null;
+    } catch (err) {
+      console.error('[compra/resultado] no se pudo consultar el pago', paymentId, (err as Error)?.message);
+      syncFailed = true;
     }
   }
 
@@ -43,17 +55,32 @@ export default async function CompraResultadoPage({
       ? (
           await createAdminClient()
             .from('tickets')
-            .select('status, qr_token, buyer_name')
+            .select('status, qr_token, buyer_name, buyer_email_normalized, customer_id, mp_preference_id')
             .eq('id', ticketId)
             .maybeSingle()
         ).data
       : null;
 
+  // El link de la entrada (y el nombre) solo para quien la compró: este navegador, la vuelta
+  // de esa misma preferencia de MP o la cuenta que la compró.
+  const customer = await getCustomer();
+  const isBuyer =
+    !!ticket &&
+    (cookies().get(PURCHASE_COOKIE)?.value === ticketId ||
+      (!!searchParams.preference_id && searchParams.preference_id === ticket.mp_preference_id) ||
+      (!!customer &&
+        (ticket.customer_id === customer.id ||
+          (customer.verified && normalizeEmail(customer.email) === ticket.buyer_email_normalized))));
+  const firstName = isBuyer ? ` ${ticket!.buyer_name.split(' ')[0]}` : '';
+
   const paid = ticket && (ticket.status === 'paid' || ticket.status === 'used') && ticket.qr_token;
   const inReview = ticket?.status === 'review';
   const rejected = !!searchParams.transferencia && ticket?.status === 'cancelled';
-  const waiting = !paid && (mpStatus === 'pending' || mpStatus === 'in_process');
-  const loggedIn = (paid || inReview || waiting) && !!(await getCustomer());
+  const waiting = !paid && (mpStatus === 'pending' || mpStatus === 'in_process' || mpStatus === 'authorized');
+  // MP aprobó pero la entrada no quedó confirmada (falla de la base, pago para revisar):
+  // nunca decirle que no se le cobró ni invitarla a pagar de nuevo.
+  const paidUnconfirmed = !paid && mpStatus === 'approved';
+  const loggedIn = (paid || inReview || waiting || paidUnconfirmed) && !!customer;
 
   return (
     <main id="contenido" className="mx-auto flex min-h-[100dvh] max-w-md flex-col justify-center px-5 py-12">
@@ -61,30 +88,57 @@ export default async function CompraResultadoPage({
       <Card className="mt-10 p-6 md:p-8">
         {paid ? (
           <>
-            <h1 className="text-2xl font-bold tracking-tight">Listo, {ticket.buyer_name.split(' ')[0]}. Ya tenés tu entrada.</h1>
-            <p className="mt-3 text-sm text-bone/65">
-              Guardá el link de tu entrada: es lo que mostrás en puerta junto con tu cédula.
-            </p>
-            <Link href={ticketUrl(ticket.qr_token!).replace(/^https?:\/\/[^/]+/, '')} className={buttonVariants({ size: 'lg', className: 'mt-7 w-full' })}>
-              Ver mi entrada
-            </Link>
+            <h1 className="text-2xl font-bold tracking-tight">Listo{firstName}. Ya tenés tu entrada.</h1>
+            {isBuyer ? (
+              <>
+                <p className="mt-3 text-sm text-bone/65">
+                  Guardá el link de tu entrada: es lo que mostrás en puerta junto con tu cédula.
+                </p>
+                <Link href={ticketUrl(ticket.qr_token!).replace(/^https?:\/\/[^/]+/, '')} className={buttonVariants({ size: 'lg', className: 'mt-7 w-full' })}>
+                  Ver mi entrada
+                </Link>
+              </>
+            ) : (
+              <p className="mt-3 text-sm text-bone/65">
+                Te la mandamos por mail con el QR. Si no la ves, revisá también la carpeta de spam.
+              </p>
+            )}
           </>
         ) : inReview ? (
           <>
             <h1 className="text-2xl font-bold tracking-tight">
-              Recibimos tu comprobante, {ticket!.buyer_name.split(' ')[0]}.
+              Recibimos tu comprobante{firstName ? `,${firstName}` : ''}.
             </h1>
             <p className="mt-3 text-sm leading-relaxed text-bone/65">
               Lo estamos validando. Cuando confirmemos la transferencia te mandamos la entrada con
               el QR por mail. Tu lugar queda reservado mientras tanto.
             </p>
-            <p className="mt-3 text-xs text-bone/45">Si no te llega, revisá también la carpeta de spam.</p>
+            <p className="mt-3 text-xs text-bone/55">Si no te llega, revisá también la carpeta de spam.</p>
           </>
         ) : rejected ? (
           <>
             <h1 className="text-2xl font-bold tracking-tight">No pudimos validar tu transferencia</h1>
             <p className="mt-3 text-sm text-bone/65">
               Si ya transferiste, escribinos por Instagram con el comprobante y lo revisamos.
+            </p>
+          </>
+        ) : paidUnconfirmed ? (
+          <>
+            <h1 className="text-2xl font-bold tracking-tight">Recibimos tu pago</h1>
+            <p className="mt-3 text-sm leading-relaxed text-bone/65">
+              Lo estamos revisando. No vuelvas a pagar: te escribimos por mail apenas lo
+              confirmemos.
+            </p>
+            <p className="mt-3 text-xs text-bone/55">
+              Si en una hora no tenés novedades, escribinos por Instagram.
+            </p>
+          </>
+        ) : syncFailed ? (
+          <>
+            <h1 className="text-2xl font-bold tracking-tight">No pudimos consultar tu pago</h1>
+            <p className="mt-3 text-sm leading-relaxed text-bone/65">
+              No vuelvas a pagar. Recargá esta página en unos minutos: si el pago se aprobó, tu
+              entrada también te llega por mail.
             </p>
           </>
         ) : waiting ? (

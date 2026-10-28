@@ -159,6 +159,39 @@ async function loadOrder(column: 'access_token' | 'id', value: string): Promise<
 export const loadBarOrderByToken = (accessToken: string) => loadOrder('access_token', accessToken);
 export const loadBarOrderById = (id: string) => loadOrder('id', id);
 
+export type AccountBarOrder = {
+  id: string;
+  accessToken: string;
+  eventTitle: string;
+  eventStart: string;
+  units: number;
+  delivered: number;
+};
+
+// "Pedidos de barra" en /cuenta: los pagos hechos con la sesión iniciada (bar_orders.user_id).
+// El userId sale de getUser() (src/lib/customers.ts → getCustomer), nunca del cliente.
+// Del evento más nuevo al más viejo y, dentro de cada uno, el último pedido arriba.
+export async function loadAccountBarOrders(userId: string): Promise<AccountBarOrder[]> {
+  const { data } = await createAdminClient()
+    .from('bar_orders')
+    .select('id, access_token, created_at, events(title, date_start), bar_order_units(delivered_at)')
+    .eq('user_id', userId)
+    .eq('status', 'paid')
+    .order('created_at', { ascending: false });
+
+  return (data ?? [])
+    .filter((o) => o.events)
+    .map((o) => ({
+      id: o.id,
+      accessToken: o.access_token,
+      eventTitle: o.events!.title,
+      eventStart: o.events!.date_start,
+      units: o.bar_order_units.length,
+      delivered: o.bar_order_units.filter((u) => u.delivered_at).length,
+    }))
+    .sort((a, b) => new Date(b.eventStart).getTime() - new Date(a.eventStart).getTime());
+}
+
 // "2 × Fernet con Coca": agrupa las unidades por trago (y precio), en el orden del pedido.
 export function groupUnits(units: Pick<BarUnit, 'name' | 'price'>[]) {
   const lines: { name: string; price: number; quantity: number }[] = [];

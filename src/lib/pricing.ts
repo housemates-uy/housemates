@@ -6,6 +6,8 @@
 // cargo. Al comprador se le muestra el cargo en pesos.
 // Si cambia la comisión, se cambia solo esta constante.
 export const SERVICE_FEE_RATE = 0.075;
+// "7,5 %" para los textos (con espacio de no corte antes del %).
+export const SERVICE_FEE_LABEL = `${String(Math.round(SERVICE_FEE_RATE * 1000) / 10).replace('.', ',')} %`;
 
 export type PayMethod = 'mercadopago' | 'transfer';
 

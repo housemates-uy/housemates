@@ -41,8 +41,9 @@ export async function getGatePassword(): Promise<string | null> {
     .select('value')
     .eq('key', 'gate_password')
     .maybeSingle();
-  // `||` y no `??`: el seed inserta '' y ahí tiene que caer al env.
-  return data?.value || process.env.GATE_PASSWORD || null;
+  // `||` y no `??`: el seed inserta '' y ahí tiene que caer al env. Sin espacios en los
+  // bordes, igual que lo que escribe la persona (/api/gate) y lo que guarda /admin/config.
+  return data?.value?.trim() || process.env.GATE_PASSWORD?.trim() || null;
 }
 
 // La sesión guarda la huella de la contraseña con la que se entró. Al rotar la
@@ -75,8 +76,16 @@ export async function hasGateAccess(): Promise<boolean> {
   return !!password && session.version === gateVersion(password);
 }
 
-// Solo paths internos, para que `?next=` no sirva de open redirect.
+// Solo paths internos, para que `?next=` no sirva de open redirect. Se resuelve como lo haría
+// el navegador (que borra tabs y saltos de línea: "/\t/sitio.com" termina en "//sitio.com").
+const SAME_ORIGIN = 'https://same-origin.invalid';
 export function safeNextPath(next: string | undefined | null, fallback = '/entradas'): string {
-  if (!next || !next.startsWith('/') || next.startsWith('//') || next.includes('\\')) return fallback;
-  return next;
+  if (!next || !next.startsWith('/') || /[\u0000-\u001f\u007f\\]/.test(next)) return fallback;
+  try {
+    const url = new URL(next, SAME_ORIGIN);
+    if (url.origin !== SAME_ORIGIN) return fallback;
+    return url.pathname + url.search + url.hash;
+  } catch {
+    return fallback;
+  }
 }

@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   CalendarDays,
+  TicketCheck,
   Users,
   Settings,
   ScrollText,
@@ -18,11 +19,25 @@ import { cn } from '@/lib/utils';
 const NAV = [
   { href: '/admin', label: 'Inicio', icon: LayoutDashboard, exact: true },
   { href: '/admin/events', label: 'Eventos', icon: CalendarDays },
+  {
+    href: '/admin/confirmar',
+    label: 'A confirmar',
+    short: 'Confirmar',
+    icon: TicketCheck,
+    ownerOnly: true,
+  },
   { href: '/admin/whitelist', label: 'Whitelist', icon: Users },
-  { href: '/admin/admins', label: 'Admins', icon: UserCog },
-  { href: '/admin/config', label: 'Config', icon: Settings },
-  { href: '/admin/logs', label: 'Logs', icon: ScrollText },
+  { href: '/admin/admins', label: 'Administradores', short: 'Admins', icon: UserCog },
+  { href: '/admin/config', label: 'Configuración', short: 'Config', icon: Settings },
+  { href: '/admin/logs', label: 'Historial', icon: ScrollText },
 ];
+
+// toConfirm: transferencias esperando validación. null = staff, que no ve "A confirmar".
+type NavProps = { toConfirm: number | null };
+
+function navItems(toConfirm: number | null) {
+  return NAV.filter((item) => !item.ownerOnly || toConfirm !== null);
+}
 
 function useIsActive() {
   const pathname = usePathname();
@@ -30,7 +45,21 @@ function useIsActive() {
     exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function Sidebar() {
+function PendingCount({ count, className }: { count: number; className?: string }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-alert px-1 text-[11px] font-bold tabular-nums leading-none text-ink',
+        className,
+      )}
+    >
+      {count > 99 ? '99+' : count}
+      <span className="sr-only"> pendientes</span>
+    </span>
+  );
+}
+
+export function Sidebar({ toConfirm }: NavProps) {
   const isActive = useIsActive();
 
   return (
@@ -41,7 +70,7 @@ export function Sidebar() {
       </Link>
 
       <nav aria-label="Admin" className="flex-1 space-y-1 px-3 py-2">
-        {NAV.map(({ href, label, icon: Icon, exact }) => {
+        {navItems(toConfirm).map(({ href, label, icon: Icon, exact, ownerOnly }) => {
           const active = isActive(href, exact);
           return (
             <Link
@@ -55,6 +84,7 @@ export function Sidebar() {
             >
               <Icon size={16} strokeWidth={1.5} aria-hidden />
               {label}
+              {ownerOnly && !!toConfirm && <PendingCount count={toConfirm} className="ml-auto" />}
             </Link>
           );
         })}
@@ -73,15 +103,19 @@ export function Sidebar() {
   );
 }
 
-export function MobileNav() {
+export function MobileNav({ toConfirm }: NavProps) {
   const isActive = useIsActive();
+  const items = navItems(toConfirm);
 
   return (
     <nav
       aria-label="Admin"
-      className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-6 border-t border-bone/10 bg-ink/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
+      className={cn(
+        'fixed inset-x-0 bottom-0 z-30 grid border-t border-bone/10 bg-ink/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden',
+        items.length > 6 ? 'grid-cols-7' : 'grid-cols-6',
+      )}
     >
-      {NAV.map(({ href, label, icon: Icon, exact }) => {
+      {items.map(({ href, label, short, icon: Icon, exact, ownerOnly }) => {
         const active = isActive(href, exact);
         return (
           <Link
@@ -93,8 +127,13 @@ export function MobileNav() {
               active ? 'font-medium text-bone' : 'text-bone/50',
             )}
           >
-            <Icon size={18} strokeWidth={1.5} aria-hidden />
-            {label}
+            <span className="relative">
+              <Icon size={18} strokeWidth={1.5} aria-hidden />
+              {ownerOnly && !!toConfirm && (
+                <PendingCount count={toConfirm} className="absolute -right-3 -top-2" />
+              )}
+            </span>
+            {short ?? label}
           </Link>
         );
       })}

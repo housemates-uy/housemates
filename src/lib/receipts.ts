@@ -38,9 +38,9 @@ export async function uploadReceipt(eventId: string, ticketId: string, file: Fil
   return error ? null : path;
 }
 
-// Link temporal para que un admin vea el comprobante (10 minutos).
-export async function receiptSignedUrl(path: string): Promise<string | null> {
-  const { data } = await createAdminClient().storage.from(RECEIPT_BUCKET).createSignedUrl(path, 600);
+// Link temporal para que un owner vea el comprobante (10 minutos, salvo que se pida menos).
+export async function receiptSignedUrl(path: string, expiresInSeconds = 600): Promise<string | null> {
+  const { data } = await createAdminClient().storage.from(RECEIPT_BUCKET).createSignedUrl(path, expiresInSeconds);
   return data?.signedUrl ?? null;
 }
 

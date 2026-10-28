@@ -72,6 +72,11 @@ export default async function PrivacyPage() {
             <strong>Si creás una cuenta:</strong> tu email, tu contraseña (la guarda cifrada nuestro proveedor y
             nosotros no la vemos) y los datos de compra, para precargarte el formulario.
           </li>
+          {/* A CONFIRMAR: quién opera el bus y qué datos de la lista de pasajeros recibe. */}
+          <li>
+            <strong>Si sumás transporte:</strong> qué bus elegiste. Para la lista de pasajeros usamos tu nombre, tu
+            cédula y tu celular, si lo dejaste.
+          </li>
           <li>
             <strong>Si comprás en la barra:</strong> tu email, tu nombre si lo ponés, y tu pedido.
           </li>
@@ -79,10 +84,13 @@ export default async function PrivacyPage() {
             <strong>En la puerta:</strong> a qué hora entraste y el resultado de cada escaneo de tu QR.
           </li>
           <li>
+            <strong>Si respondés la encuesta:</strong> tu puntaje, tu comentario y si volverías (ver «La encuesta»,
+            más abajo).
+          </li>
+          <li>
             <strong>Registros técnicos:</strong> los mails que te mandamos y datos mínimos de conexión, como la
             dirección IP, que guardan nuestros proveedores por seguridad.
           </li>
-          {/* A CONFIRMAR: qué datos pide el transporte cuando esté. */}
         </ul>
       ),
     },
@@ -98,13 +106,71 @@ export default async function PrivacyPage() {
             </li>
             <li>Cobrar, validar transferencias y hacer devoluciones.</li>
             <li>Avisarte cambios sobre la fiesta, como fecha, lugar o cancelación.</li>
-            <li>Manejar tu cuenta y tus pedidos de barra.</li>
+            <li>Manejar tu cuenta, tus pedidos de barra y tu lugar en el bus.</li>
+            <li>
+              Mandarte los mails que explicamos en «Los mails que te mandamos»: el recordatorio antes de la fiesta, la
+              encuesta del día después y la preventa de la próxima fecha si tuviste entrada para una anterior.
+            </li>
             <li>Prevenir fraudes y cumplir con la ley.</li>
           </ul>
+          {/* A CONFIRMAR (abogado): base legal del mail de preventa a quienes compraron antes (art. 21 de la Ley
+              18.331) y si hace falta pedir el consentimiento aparte al comprar. */}
           <p>
             Los usamos con tu consentimiento, que das al comprar, y porque los necesitamos para cumplir con tu compra.
-            No vendemos ni alquilamos tus datos y no te mandamos publicidad. Si algún día queremos mandarte novedades,
-            te vamos a pedir permiso antes.
+            No vendemos ni alquilamos tus datos, y no le pasamos tu email a nadie para que te mande publicidad. Fuera de
+            los mails que explicamos abajo, no te mandamos novedades sin pedirte permiso antes.
+          </p>
+        </>
+      ),
+    },
+    {
+      id: 'mails',
+      title: 'Los mails que te mandamos',
+      body: (
+        <>
+          {/* A CONFIRMAR (abogado): estos mails, sus destinatarios y la forma de darse de baja. */}
+          <p>
+            Además de los mails de tu compra (tu entrada, el aviso de que recibimos tu comprobante o de que se anuló una
+            entrada) y los de tu cuenta, te podemos mandar estos:
+          </p>
+          <ul>
+            <li>
+              <strong>Antes de ir.</strong> En general el día anterior a la fiesta, si tenés una entrada válida: la
+              fecha y la hora, el lugar y cómo llegar, qué llevar, las reglas de la casa y tu QR. Usamos tu nombre, tu
+              email y tu entrada.
+            </li>
+            <li>
+              <strong>Encuesta.</strong> El día después, si entraste a la fiesta: un link para contarnos cómo estuvo.
+              Usamos tu nombre, tu email y el registro de que entraste.
+            </li>
+            <li>
+              <strong>Preventa.</strong> Si tuviste entrada para una fecha anterior, te podemos mandar el link para
+              comprar en preventa la próxima. Usamos tu nombre, tu email y el registro de esa entrada. No se lo mandamos
+              a quien ya tiene entrada para la próxima fecha.
+            </li>
+          </ul>
+          <p>
+            <strong>Para no recibir más la preventa:</strong> respondé ese mail o escribinos por {instagram} y te
+            sacamos de la lista. Lo dice también al pie de cada mail de preventa. El recordatorio y la encuesta te
+            llegan solo por la fiesta para la que tuviste entrada.
+          </p>
+        </>
+      ),
+    },
+    {
+      id: 'encuesta',
+      title: 'La encuesta',
+      body: (
+        <>
+          {/* A CONFIRMAR (abogado): plazo de conservación de las respuestas. */}
+          <p>
+            Es opcional. Si la respondés, guardamos tu puntaje del 1 al 5, lo que escribas en «¿Qué mejorarías?» (si
+            escribís algo) y si volverías a la próxima.
+          </p>
+          <p>
+            La respuesta queda asociada a tu entrada, así podés cambiarla si volvés a abrir el link. El equipo
+            organizador ve los resultados juntos (promedio y puntajes) y los comentarios sin tu nombre. La usamos solo
+            para mejorar la fiesta. No hace falta que pongas datos personales en el comentario.
           </p>
         </>
       ),
@@ -119,12 +185,17 @@ export default async function PrivacyPage() {
               El equipo organizador y el staff de puerta, que ve tu nombre y tu cédula para cotejarla con tu documento.
             </li>
             <li>
+              Si sumaste transporte, quien maneja el bus, que recibe la lista de pasajeros con tu nombre, tu cédula y tu
+              celular.
+            </li>
+            <li>
               La página de tu entrada muestra solo los últimos 4 dígitos de tu cédula, porque cualquiera con el link la
               puede abrir.
             </li>
             <li>
               Los proveedores que nos dan el servicio, que usan los datos solo para eso: Supabase (base de datos y
-              archivos), Vercel (alojamiento del sitio), Mercado Pago (pagos) y Google (envío de mails).
+              archivos), Vercel (alojamiento del sitio), Mercado Pago (pagos), Google (envío de mails) y Fontshare (la
+              tipografía del sitio: tu navegador la descarga de sus servidores, que reciben tu dirección IP).
             </li>
             <li>Las autoridades, solo cuando la ley lo exige.</li>
           </ul>

@@ -16,6 +16,9 @@ export async function createEventAction(
   if (!eventParsed.success) {
     return { error: eventParsed.error.issues[0].message }
   }
+  if (eventParsed.data.status === 'archived' && admin.role !== 'owner') {
+    return { error: 'Solo los owners pueden archivar un evento.' }
+  }
 
   const tiersParsed = tiersSchema.safeParse(tiers)
   if (!tiersParsed.success) {
@@ -24,11 +27,11 @@ export async function createEventAction(
 
   const tierNames = tiersParsed.data.map((t) => t.name.toLowerCase().trim())
   if (tierNames.length !== new Set(tierNames).size) {
-    return { error: 'No puede haber dos tiers con el mismo nombre.' }
+    return { error: 'No puede haber dos tandas con el mismo nombre.' }
   }
   const presaleCodes = tiersParsed.data.map((t) => t.presale_code).filter(Boolean)
   if (presaleCodes.length !== new Set(presaleCodes).size) {
-    return { error: 'No puede haber dos tiers con el mismo código de preventa.' }
+    return { error: 'No puede haber dos tandas con el mismo código de preventa.' }
   }
 
   const db = createAdminClient()
@@ -58,13 +61,26 @@ export async function createEventAction(
     sort_order: i + 1,
   }))
 
+  // Si las tandas no entran, se borra el evento recién creado (todavía no tiene nada colgado):
+  // así no queda un evento a medias y se puede volver a intentar con el mismo slug.
   const { error: tiersError } = await db.from('ticket_tiers').insert(tiersToInsert)
   if (tiersError) {
-    if (tiersError.code === '23505') return { error: 'No puede haber dos tiers con el mismo nombre.' }
-    return { error: 'Evento creado pero error al guardar los tiers.' }
+    const { error: rollbackError } = await db.from('events').delete().eq('id', event.id)
+    if (rollbackError) {
+      return { error: 'Se creó el evento pero no sus tandas. Entrá al evento y agregalas desde Editar.' }
+    }
+    if (tiersError.message.includes('presale_code')) {
+      return { error: 'Ese código de preventa no es válido o está repetido. No se creó el evento.' }
+    }
+    if (tiersError.code === '23505') return { error: 'No puede haber dos tandas con el mismo nombre. No se creó el evento.' }
+    return { error: 'No se pudieron guardar las tandas, así que no se creó el evento. Probá de nuevo.' }
   }
 
-  await logAdminAction(admin.id, 'create', 'event', event.id)
+  await logAdminAction(admin.id, 'create', 'event', event.id, {
+    title: eventParsed.data.title,
+    status: eventParsed.data.status,
+    tiers: tiersParsed.data.map((t) => t.name),
+  })
 
   return { id: event.id }
 }

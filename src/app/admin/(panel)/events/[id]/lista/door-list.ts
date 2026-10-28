@@ -1,5 +1,5 @@
 import { entryTime } from '@/lib/events';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { createAdminClient, fetchAll } from '@/lib/supabase/admin';
 import { formatDocument, SOURCE_LABELS, STATUS_LABELS } from '@/lib/tickets';
 
 export type DoorListRow = {
@@ -17,16 +17,22 @@ export type DoorListRow = {
 // por orden alfabético del nombre como lo escribió la persona.
 export async function getDoorList(eventId: string) {
   const db = createAdminClient();
-  const [{ data: event }, { data: tiers }, { data: tickets }] = await Promise.all([
+  const [{ data: event }, { data: tiers }, tickets] = await Promise.all([
     db.from('events').select('title, slug, date_start').eq('id', eventId).single(),
     db.from('ticket_tiers').select('id, name, entry_until').eq('event_id', eventId),
-    db
-      .from('tickets')
-      .select(
-        'buyer_name, buyer_document, buyer_email, buyer_phone, tier_id, source, payment_method, status, used_at',
-      )
-      .eq('event_id', eventId)
-      .in('status', ['paid', 'used']),
+    // De a páginas: PostgREST corta en 1000 filas y a la lista de la puerta no le puede faltar nadie.
+    fetchAll((from, to) =>
+      db
+        .from('tickets')
+        .select(
+          'buyer_name, buyer_document, buyer_email, buyer_phone, tier_id, source, payment_method, status, used_at',
+        )
+        .eq('event_id', eventId)
+        .in('status', ['paid', 'used'])
+        .order('created_at')
+        .order('id')
+        .range(from, to),
+    ),
   ]);
   if (!event) return null;
 
@@ -34,7 +40,7 @@ export async function getDoorList(eventId: string) {
   const tierName = new Map(
     (tiers ?? []).map((t) => [t.id, t.entry_until ? `${t.name} · hasta ${entryTime(t.entry_until)}` : t.name]),
   );
-  const rows: DoorListRow[] = (tickets ?? [])
+  const rows: DoorListRow[] = tickets
     .map((t) => ({
       name: t.buyer_name.trim(),
       document: formatDocument(t.buyer_document),

@@ -9,11 +9,11 @@ import { cn } from '@/lib/utils';
 // Las tandas y los precios se ven recién en /entradas: acá solo la fecha y el botón para ir.
 export function NextDate({ event }: { event: NextEvent }) {
   const details: [string, React.ReactNode][] = [
-    ['Cuándo', `${event.weekday} ${event.dateLong} · ${event.time} hs`],
+    ['Cuándo', event.id ? `${event.weekday} ${event.dateLong} · ${event.time} hs` : 'A confirmar'],
     ['Formato', 'Open air'],
     [
       'Dónde',
-      event.locationName ? (
+      event.id && event.locationName ? (
         <a
           key="d"
           href={mapsUrl(event.locationName, event.locationUrl)}
@@ -36,9 +36,13 @@ export function NextDate({ event }: { event: NextEvent }) {
       <div className="mx-auto grid max-w-page gap-12 px-5 py-20 md:px-10 md:py-28 lg:grid-cols-[1.25fr_1fr] lg:gap-20">
         <Reveal>
           <Eyebrow>Próxima fecha</Eyebrow>
-          <p className="mt-5 text-[clamp(4rem,17vw,12rem)] font-bold leading-[0.85] tracking-[-0.04em]">
-            {event.dateShort}
-          </p>
+          {event.id ? (
+            <p className="mt-5 text-[clamp(4rem,17vw,12rem)] font-bold leading-[0.85] tracking-[-0.04em]">
+              {event.dateShort}
+            </p>
+          ) : (
+            <p className="mt-5 text-[clamp(3rem,13vw,8rem)] font-bold leading-[0.9] tracking-[-0.04em]">A confirmar</p>
+          )}
           <span aria-hidden className="mt-8 block h-px w-24 bg-electric shadow-[0_0_18px_2px_rgba(36,71,245,0.7)]" />
         </Reveal>
 
@@ -46,7 +50,7 @@ export function NextDate({ event }: { event: NextEvent }) {
           <dl className="divide-y divide-bone/10 border-y border-bone/10">
             {details.map(([term, value]) => (
               <div key={term} className="grid grid-cols-[6.5rem_1fr] gap-4 py-4">
-                <dt className="text-sm text-bone/45">{term}</dt>
+                <dt className="text-sm text-bone/55">{term}</dt>
                 <dd className="text-sm font-medium first-letter:uppercase">{value}</dd>
               </div>
             ))}

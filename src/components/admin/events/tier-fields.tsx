@@ -49,7 +49,7 @@ export function TierFields({
             placeholder="1200"
           />
         </Field>
-        <Field label="Cantidad">
+        <Field label="Cupo">
           <Input
             type="number"
             min={1}

@@ -103,7 +103,7 @@ export function House() {
                 <Photo key={tile.src} tile={tile} delay={0.06 * (i % 2)} />
               ))}
             </div>
-            <p className="mt-4 text-xs text-bone/45">Fotos: @photolechu · Video: @xbengala</p>
+            <p className="mt-4 text-xs text-bone/55">Fotos: @photolechu · Video: @xbengala</p>
           </div>
         </div>
       </div>

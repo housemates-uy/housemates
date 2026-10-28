@@ -19,7 +19,7 @@ export function Rules() {
           <ol className="mt-8 space-y-5">
             {RULES.map((rule, i) => (
               <li key={rule} className="grid grid-cols-[2.5rem_1fr] items-baseline text-lg md:text-xl">
-                <span className="text-sm font-bold text-bone/45">{String(i + 1).padStart(2, '0')}</span>
+                <span className="text-sm font-bold text-bone/50">{String(i + 1).padStart(2, '0')}</span>
                 <span className="font-medium leading-snug">{rule}</span>
               </li>
             ))}

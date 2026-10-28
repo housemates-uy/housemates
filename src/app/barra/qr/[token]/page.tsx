@@ -37,13 +37,13 @@ export default async function BarUnitPage({ params }: { params: { token: string 
   return (
     <main
       id="contenido"
-      className="print-ink relative isolate h-[100dvh] overflow-hidden print:h-auto print:bg-white"
+      className="print-ink relative isolate min-h-[100dvh] print:min-h-0 print:bg-white"
     >
       <LiveRefresh active={valid || pendingPayment} />
       <DoodleBackdrop className="-z-10 print:hidden" />
-      <div className="mx-auto flex h-full max-w-md flex-col items-center gap-[2.4dvh] px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.75rem,env(safe-area-inset-top))]">
+      <div className="mx-auto flex min-h-[100dvh] max-w-md flex-col items-center gap-[2dvh] px-6 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-[max(1.25rem,env(safe-area-inset-top))] print:min-h-0">
         <Link href="/" aria-label="House Mates, inicio" className="shrink-0 print:text-ink">
-          <Logo className="h-[clamp(64px,13dvh,112px)]" />
+          <Logo className="h-[clamp(52px,11dvh,112px)]" />
         </Link>
         <p className="shrink-0 text-[11px] font-bold uppercase tracking-label text-bone/55">
           Barra{event && ` · ${formatLocal(event.date_start, 'dd.MM.yy')}`}
@@ -63,18 +63,20 @@ export default async function BarUnitPage({ params }: { params: { token: string 
             />
             {valid ? 'Para retirar' : unit.delivered_at ? 'Entregado' : pendingPayment ? 'Pago pendiente' : 'No válido'}
           </span>
-          <p className="mt-3 text-center text-[2rem] font-bold leading-tight tracking-tight">{unit.product_name}</p>
+          <h1 className="mt-3 text-center text-[clamp(1.5rem,5dvh,2rem)] font-bold leading-tight tracking-tight">
+            {unit.product_name}
+          </h1>
           {svg ? (
-            <div className="mt-5 rounded-[14px] bg-white p-3">
+            <div className="mt-4 rounded-[14px] bg-white p-3">
               <div
                 role="img"
                 aria-label={`Código QR de ${unit.product_name}`}
-                className="aspect-square w-[min(260px,64vw,32dvh)] [&>svg]:h-full [&>svg]:w-full"
+                className="aspect-square w-[min(260px,64vw,calc(36dvh_-_58px))] [&>svg]:h-full [&>svg]:w-full"
                 dangerouslySetInnerHTML={{ __html: svg }}
               />
             </div>
           ) : (
-            <div className="mt-5 flex aspect-square w-[min(284px,70vw,36dvh)] flex-col items-center justify-center gap-3 rounded-[14px] border border-dashed border-bone/20 px-4 text-center">
+            <div className="mt-4 flex aspect-square w-[min(284px,70vw,calc(36dvh_-_34px))] flex-col items-center justify-center gap-3 rounded-[14px] border border-dashed border-bone/20 px-4 text-center">
               {unit.delivered_at ? (
                 <>
                   <Check size={40} strokeWidth={1.5} aria-hidden className="text-bone/70" />
@@ -96,20 +98,21 @@ export default async function BarUnitPage({ params }: { params: { token: string 
           )}
         </section>
 
-        <div className="mt-auto" />
-        {valid && (
-          <a
-            href={`/barra/qr/${unit.qr_token}/imagen`}
-            download
-            className="flex h-10 shrink-0 items-center justify-center gap-2 rounded-control border border-bone/25 px-4 text-sm text-bone/85 transition-colors hover:border-bone hover:text-bone print:hidden"
-          >
-            <Download size={16} strokeWidth={1.5} aria-hidden />
-            Guardar imagen
-          </a>
-        )}
-        <p className="shrink-0 text-center text-xs text-bone/60 print:text-ink/70">
-          Mostralo en la barra · Vale un trago y se usa una sola vez
-        </p>
+        <div className="mt-auto flex shrink-0 flex-col items-center gap-[2dvh]">
+          {valid && (
+            <a
+              href={`/barra/qr/${unit.qr_token}/imagen`}
+              download
+              className="flex h-10 items-center justify-center gap-2 rounded-control border border-bone/25 px-4 text-sm text-bone/85 transition-colors hover:border-bone hover:text-bone print:hidden"
+            >
+              <Download size={16} strokeWidth={1.5} aria-hidden />
+              Guardar imagen
+            </a>
+          )}
+          <p className="text-center text-xs text-bone/60 print:text-ink/70">
+            Mostralo en la barra · Vale un trago y se usa una sola vez
+          </p>
+        </div>
       </div>
     </main>
   );

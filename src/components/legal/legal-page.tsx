@@ -148,7 +148,7 @@ function Toc({ items }: { items: TocItem[] }) {
 
       <nav aria-label="En esta página" className="hidden lg:block">
         <div className="sticky top-8">
-          <p className="text-[11px] font-bold uppercase tracking-label text-bone/45">En esta página</p>
+          <p className="text-[11px] font-bold uppercase tracking-label text-bone/55">En esta página</p>
           <ul className="mt-4 space-y-1 border-l border-bone/10">
             {links('-ml-px block border-l border-transparent py-1.5 pl-4 text-sm text-bone/60 transition-colors hover:border-bone/50 hover:text-bone')}
           </ul>
@@ -179,7 +179,7 @@ export function LegalSection({
         id={`${id}-titulo`}
         className="grid grid-cols-[2.25rem_1fr] items-baseline text-xl font-bold tracking-[-0.015em] md:text-2xl"
       >
-        <span className="text-sm text-bone/40">{String(number).padStart(2, '0')}</span>
+        <span className="text-sm text-bone/50">{String(number).padStart(2, '0')}</span>
         <span>{title}</span>
       </h2>
       <div className={cn(proseClass, 'mt-5 md:pl-9')}>{children}</div>

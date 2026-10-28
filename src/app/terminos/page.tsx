@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { LegalPage, LegalSection } from '@/components/legal/legal-page';
-import { SERVICE_FEE_RATE } from '@/lib/pricing';
+import { SERVICE_FEE_LABEL } from '@/lib/pricing';
 import { getIgHandle, igUrl } from '@/lib/site';
 
 // A CONFIRMAR: texto pendiente de revisión de un abogado (ver docs/BACKLOG.md).
@@ -15,7 +15,6 @@ export const metadata: Metadata = {
 export const revalidate = 3600;
 
 const UPDATED = { iso: '2026-10-28', label: '28 de octubre de 2026' };
-const FEE = `${(SERVICE_FEE_RATE * 100).toLocaleString('es-UY')} %`;
 
 export default async function TermsPage() {
   const handle = await getIgHandle();
@@ -34,7 +33,7 @@ export default async function TermsPage() {
           {/* A CONFIRMAR: razón social, RUT y domicilio del organizador. */}
           <p>
             House Mates es una fiesta privada que se hace en Uruguay. Estos términos valen para todo lo que comprás en
-            este sitio: entradas, tragos de barra y, cuando esté disponible, transporte.
+            este sitio: entradas, tragos de barra y transporte.
           </p>
           <p>
             Al comprar, confirmás que los leíste y que los aceptás. Para cualquier consulta, escribinos por {instagram}.
@@ -79,8 +78,9 @@ export default async function TermsPage() {
           </p>
           <p>
             <strong>Mercado Pago.</strong> Con tarjeta de crédito o débito, saldo de Mercado Pago, o en efectivo en
-            Abitab o RedPagos. Se suma un <strong>cargo por servicio del {FEE}</strong> sobre el precio de la entrada (ya
-            con el descuento, si hay), que corresponde a la comisión de la plataforma y se muestra en pesos, separado.
+            Abitab o RedPagos. Se suma un <strong>cargo por servicio del {SERVICE_FEE_LABEL}</strong> sobre todo lo que
+            pagás por Mercado Pago: la entrada (ya con el descuento, si hay) y el transporte, si lo sumás. Corresponde a
+            la comisión de la plataforma y se muestra en pesos, separado.
             El pago lo procesa Mercado Pago según sus propios términos: nosotros no vemos los datos de tu tarjeta. Si
             elegís cuotas con interés, el interés lo pagás vos. Al ir a pagar, tu lugar queda reservado 20 minutos; si
             el pago no se completa, se libera. Con pago en efectivo, la entrada se confirma cuando Mercado Pago lo
@@ -90,8 +90,9 @@ export default async function TermsPage() {
           <p>
             <strong>Transferencia bancaria.</strong> No tiene cargo por servicio. Transferís el total exacto a la cuenta
             que te mostramos y subís el comprobante. Tu lugar queda reservado mientras lo validamos. Si no podemos
-            validarlo (por ejemplo, porque el monto no coincide o la plata no se acreditó), la compra se anula, el lugar
-            se libera y te avisamos por mail. Si la plata llegó, te la devolvemos por transferencia.
+            validarlo (porque el monto no coincide, el comprobante no se lee o no encontramos la transferencia), la
+            compra se anula, el lugar se libera y te avisamos por mail. Si la plata llegó, te la devolvemos por
+            transferencia.
           </p>
           <p>
             <strong>Códigos de descuento.</strong> Se usa uno por compra. Pueden tener usos limitados y vencimiento, no
@@ -260,11 +261,11 @@ export default async function TermsPage() {
       title: 'Transporte',
       body: (
         <>
-          {/* A CONFIRMAR: todo el servicio de transporte (quién lo opera, horarios, puntos de salida, precio, si es
-              nominativo y condiciones propias). */}
+          {/* A CONFIRMAR: quién opera el bus, si el lugar es nominativo y condiciones propias del servicio. */}
           <p>
-            Lo estamos armando. Cuando esté, vas a poder sumar al final de la compra un lugar en un bus de ida y vuelta.
-            Horarios, puntos de salida y precio se informan antes de pagar.
+            Al comprar tu entrada, antes de pagar, podés sumar un lugar en el bus: ida, vuelta o ida y vuelta, según las
+            opciones de cada fecha. Cada opción muestra el horario, el punto de salida, el precio y los lugares
+            disponibles. El precio se suma al total de la compra; el código de descuento vale solo para la entrada.
           </p>
           <p>
             Es un servicio aparte de la entrada, con lugares limitados. Si cancelamos la fiesta, también te devolvemos

@@ -473,6 +473,7 @@ export type Database = {
           bar_order_id: string | null
           id: string
           provider_id: string | null
+          send_key: string | null
           sent_at: string
           status: Database["public"]["Enums"]["email_status"]
           ticket_id: string | null
@@ -482,6 +483,7 @@ export type Database = {
           bar_order_id?: string | null
           id?: string
           provider_id?: string | null
+          send_key?: string | null
           sent_at?: string
           status?: Database["public"]["Enums"]["email_status"]
           ticket_id?: string | null
@@ -491,6 +493,7 @@ export type Database = {
           bar_order_id?: string | null
           id?: string
           provider_id?: string | null
+          send_key?: string | null
           sent_at?: string
           status?: Database["public"]["Enums"]["email_status"]
           ticket_id?: string | null
@@ -1193,6 +1196,8 @@ export type Database = {
         }[]
       }
       discount_code_uses: { Args: { p_code_id: string }; Returns: number }
+      event_available: { Args: { p_event_id: string }; Returns: number }
+      extend_ticket_hold: { Args: { p_ticket_id: string; p_until: string }; Returns: string }
       entry_deadline: { Args: { p_entry_until: string; p_event_start: string }; Returns: string }
       presale_audience: {
         Args: { p_tier_id: string }
@@ -1211,6 +1216,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      reverse_ticket_payment: { Args: { p_payment_id: string; p_ticket_id: string }; Returns: string }
       reject_transfer: {
         Args: { p_admin_id: string; p_ticket_id: string }
         Returns: string
@@ -1243,7 +1249,7 @@ export type Database = {
         | "not_paid"
         | "door_closed"
         | "id_mismatch"
-      email_status: "sent" | "failed" | "bounced"
+      email_status: "sent" | "failed" | "bounced" | "sending"
       email_type:
         | "confirmation"
         | "reminder"
@@ -1254,6 +1260,7 @@ export type Database = {
         | "transfer_admin_alert"
         | "bar_order"
         | "survey"
+        | "payment_alert"
       event_status: "draft" | "published" | "archived"
       ticket_source: "purchase" | "invitation" | "manual"
       payment_method: "mercadopago" | "transfer"
@@ -1426,7 +1433,7 @@ export const Constants = {
         "door_closed",
         "id_mismatch",
       ],
-      email_status: ["sent", "failed", "bounced"],
+      email_status: ["sent", "failed", "bounced", "sending"],
       email_type: [
         "confirmation",
         "reminder",
@@ -1437,6 +1444,7 @@ export const Constants = {
         "transfer_admin_alert",
         "bar_order",
         "survey",
+        "payment_alert",
       ],
       event_status: ["draft", "published", "archived"],
       ticket_source: ["purchase", "invitation", "manual"],

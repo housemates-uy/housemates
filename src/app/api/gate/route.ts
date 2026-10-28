@@ -7,8 +7,9 @@ import { allowAttempt, TOO_MANY_ATTEMPTS } from '@/lib/rate-limit';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+// Se recorta: un espacio que se arrastra al copiar la contraseña de un mensaje no la invalida.
 const bodySchema = z.object({
-  password: z.string().min(1).max(200),
+  password: z.string().trim().min(1).max(200),
 });
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

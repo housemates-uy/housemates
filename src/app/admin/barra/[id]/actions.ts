@@ -10,6 +10,7 @@ import { barCounts, parseBarScan } from '@/lib/bar';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { isValidEmail, normalizeEmail } from '@/lib/validation/email';
 
+// 'error': no se pudo consultar la base (caída, timeout). No dice nada del trago.
 export type BarScanResult =
   | 'valid'
   | 'delivered'
@@ -21,7 +22,8 @@ export type BarScanResult =
   | 'list'
   | 'all_delivered'
   | 'not_found'
-  | 'session_expired';
+  | 'session_expired'
+  | 'error';
 
 export type BarUnitView = { token: string; name: string; buyer: string | null; deliveredAt: string | null };
 
@@ -47,10 +49,14 @@ type UnitRow = {
 
 const device = () => headers().get('user-agent')?.slice(0, 200) ?? undefined;
 const expired = (): BarScanOutcome => ({ result: 'session_expired', delivered: 0, sold: 0 });
+const failed = (): BarScanOutcome => ({ result: 'error', delivered: 0, sold: 0 });
 
-async function toOutcome(eventId: string, token: string, row: UnitRow | null): Promise<BarScanOutcome> {
+// Las dos funciones devuelven siempre una fila. Sin fila (o con error) falló la consulta:
+// eso es 'error', nunca 'invalid'.
+async function toOutcome(eventId: string, token: string, data: unknown, error: unknown): Promise<BarScanOutcome> {
+  const row = (Array.isArray(data) ? data[0] : null) as UnitRow | null;
+  if (error || typeof row?.result !== 'string') return failed();
   const counts = await barCounts(eventId);
-  if (!row) return { result: 'invalid', ...counts };
   return {
     result: row.result as BarScanResult,
     unit: row.unit_id
@@ -68,13 +74,13 @@ async function toOutcome(eventId: string, token: string, row: UnitRow | null): P
 async function inspect(eventId: string, scanned: string, adminId: string): Promise<BarScanOutcome> {
   const parsed = parseBarScan(scanned);
   if ('ticket' in parsed) return { result: 'is_ticket', ...(await barCounts(eventId)) };
-  const { data } = await createAdminClient().rpc('inspect_bar_unit', {
+  const { data, error } = await createAdminClient().rpc('inspect_bar_unit', {
     p_token: parsed.token,
     p_event_id: eventId,
     p_admin_id: adminId,
     p_device: device(),
   });
-  return toOutcome(eventId, parsed.token, (Array.isArray(data) ? data[0] : null) as UnitRow | null);
+  return toOutcome(eventId, parsed.token, data, error);
 }
 
 // Paso 1 con QR (o el código pegado a mano).
@@ -89,13 +95,13 @@ export async function inspectBarUnitAction(eventId: string, scanned: string): Pr
 export async function deliverBarUnitAction(eventId: string, token: string): Promise<BarScanOutcome> {
   const admin = await requireAdmin().catch(() => null);
   if (!admin) return expired();
-  const { data } = await createAdminClient().rpc('deliver_bar_unit', {
+  const { data, error } = await createAdminClient().rpc('deliver_bar_unit', {
     p_token: token,
     p_event_id: eventId,
     p_admin_id: admin.id,
     p_device: device(),
   });
-  return toOutcome(eventId, token, (Array.isArray(data) ? data[0] : null) as UnitRow | null);
+  return toOutcome(eventId, token, data, error);
 }
 
 // Sin QR: por email muestra los tragos pendientes de esa persona; si no tiene arroba, se
@@ -110,15 +116,16 @@ export async function searchBarAction(eventId: string, query: string): Promise<B
   if (!isValidEmail(q)) return { result: 'not_found', email: q, ...counts };
 
   const db = createAdminClient();
-  const { data: orders } = await db
+  const { data: orders, error } = await db
     .from('bar_orders')
     .select('id, buyer_name, buyer_email')
     .eq('event_id', eventId)
     .eq('buyer_email_normalized', normalizeEmail(q))
     .eq('status', 'paid');
-  if (!orders?.length) return { result: 'not_found', email: q, ...counts };
+  if (error) return failed();
+  if (!orders.length) return { result: 'not_found', email: q, ...counts };
 
-  const { data: units } = await db
+  const { data: units, error: unitsError } = await db
     .from('bar_order_units')
     .select('order_id, product_name, qr_token, delivered_at, position')
     .in(
@@ -127,8 +134,9 @@ export async function searchBarAction(eventId: string, query: string): Promise<B
     )
     .is('delivered_at', null)
     .order('position', { ascending: true });
+  if (unitsError) return failed();
   const byId = new Map(orders.map((o) => [o.id, o]));
-  const matches: BarUnitView[] = (units ?? []).map((u) => {
+  const matches: BarUnitView[] = units.map((u) => {
     const o = byId.get(u.order_id);
     return { token: u.qr_token, name: u.product_name, buyer: o?.buyer_name || o?.buyer_email || null, deliveredAt: null };
   });

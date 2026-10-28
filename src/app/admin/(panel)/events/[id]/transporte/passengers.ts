@@ -1,4 +1,4 @@
-import { createAdminClient } from '@/lib/supabase/admin';
+import { createAdminClient, fetchAll } from '@/lib/supabase/admin';
 import { formatDocument, STATUS_LABELS } from '@/lib/tickets';
 import { getTransportOptions, type TransportOption } from '@/lib/transport';
 import type { TicketStatus } from '@/types/database';
@@ -27,18 +27,23 @@ const byName = (a: Passenger, b: Passenger) => a.name.localeCompare(b.name, 'es'
 // Pasajeros del bus por opción, por orden alfabético del nombre como lo escribió la persona.
 export async function getPassengers(eventId: string) {
   const db = createAdminClient();
-  const [{ data: event }, options, { data: rows }] = await Promise.all([
+  const [{ data: event }, options, rows] = await Promise.all([
     db.from('events').select('title, slug, date_start').eq('id', eventId).single(),
     getTransportOptions(eventId),
-    db
-      .from('ticket_transport')
-      .select('option_id, price_uyu, tickets!inner(buyer_name, buyer_document, buyer_phone, buyer_email, status, reserved_until)')
-      .eq('event_id', eventId),
+    // De a páginas: PostgREST corta en 1000 filas.
+    fetchAll((from, to) =>
+      db
+        .from('ticket_transport')
+        .select('option_id, price_uyu, tickets!inner(buyer_name, buyer_document, buyer_phone, buyer_email, status, reserved_until)')
+        .eq('event_id', eventId)
+        .order('ticket_id')
+        .range(from, to),
+    ),
   ]);
   if (!event) return null;
 
   const now = Date.now();
-  const all = (rows ?? []).map((r) => {
+  const all = rows.map((r) => {
     const t = r.tickets as unknown as {
       buyer_name: string;
       buyer_document: string;

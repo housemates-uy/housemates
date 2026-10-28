@@ -24,7 +24,7 @@ export function Field({
         {label}
       </label>
       {React.cloneElement(children, { id, 'aria-invalid': error ? true : undefined })}
-      {hint && !error && <p className="text-xs text-bone/45">{hint}</p>}
+      {hint && !error && <p className="text-xs text-bone/55">{hint}</p>}
       {error && (
         <p role="alert" className="text-xs text-alert">
           {error}

@@ -149,6 +149,7 @@ function SendNotice({ eventId, searchParams }: { eventId: string; searchParams: 
   const sent = Number(searchParams.ok ?? 0);
   const failed = Number(searchParams.fallaron ?? 0);
   const left = Number(searchParams.quedan ?? 0);
+  const skipped = Number(searchParams.salteados ?? 0);
   const since = searchParams.desde;
   const what = kind === 'reminder' ? 'Recordatorio' : 'Encuesta';
 
@@ -157,6 +158,9 @@ function SendNotice({ eventId, searchParams }: { eventId: string; searchParams: 
     message = `${what}: no salió ningún mail. Revisá la configuración del correo o si se llegó al límite diario de Gmail.`;
   } else if (failed > 0) {
     message += ` ${failed === 1 ? '1 no salió' : `${failed} no salieron`}: quedan pendientes.`;
+  }
+  if (skipped > 0) {
+    message += ` ${skipped === 1 ? 'A 1 persona ya se lo estaba' : `A ${skipped} personas ya se lo estaba`} mandando otro envío al mismo tiempo: no se repitió.`;
   }
   if (left > 0 && sent > 0) message += ` Quedan ${left} por mandar: tocá de nuevo para seguir.`;
 

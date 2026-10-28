@@ -4,6 +4,7 @@
 import QRCode from 'qrcode';
 import { barOrderUrl, barUnitUrl, groupUnits, loadBarOrderById } from '@/lib/bar';
 import { formatLocal } from '@/lib/events';
+import { getIgHandle } from '@/lib/site';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendMail } from './send';
 import { barOrderEmail } from './templates';
@@ -11,11 +12,10 @@ import { barOrderEmail } from './templates';
 export async function sendBarOrderMail(orderId: string): Promise<boolean> {
   const order = await loadBarOrderById(orderId);
   if (!order || order.status !== 'paid' || order.units.length === 0) return false;
-  const { data: event } = await createAdminClient()
-    .from('events')
-    .select('title, date_start')
-    .eq('id', order.eventId)
-    .single();
+  const [{ data: event }, igHandle] = await Promise.all([
+    createAdminClient().from('events').select('title, date_start').eq('id', order.eventId).single(),
+    getIgHandle(),
+  ]);
   if (!event) return false;
 
   const units = order.units.map((u, i) => ({ ...u, cid: `qr${i + 1}` }));
@@ -27,6 +27,7 @@ export async function sendBarOrderMail(orderId: string): Promise<boolean> {
     lines: groupUnits(order.units),
     units: units.map((u) => ({ name: u.name, cid: u.cid })),
     total: order.total,
+    igHandle,
   });
   const attachments = await Promise.all(
     units.map(async (u) => ({

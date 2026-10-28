@@ -4,6 +4,7 @@ import { useFormState } from 'react-dom';
 import { SubmitButton } from '@/components/admin/submit-button';
 import { Field } from '@/components/ui/field';
 import { Textarea } from '@/components/ui/input';
+import { SERVICE_FEE_LABEL } from '@/lib/pricing';
 import { saveSaleConfigAction, type SaleConfigState } from './actions';
 
 type Values = {
@@ -37,7 +38,17 @@ function Toggle({ name, label, hint, defaultChecked, disabled }: {
   );
 }
 
-export function SaleConfigForm({ values, mpConfigured, editable }: { values: Values; mpConfigured: boolean; editable: boolean }) {
+export function SaleConfigForm({
+  values,
+  mpConfigured,
+  editable,
+  saved,
+}: {
+  values: Values;
+  mpConfigured: boolean;
+  editable: boolean;
+  saved: boolean;
+}) {
   const [state, action] = useFormState<SaleConfigState, FormData>(saveSaleConfigAction, null);
 
   return (
@@ -54,7 +65,7 @@ export function SaleConfigForm({ values, mpConfigured, editable }: { values: Val
           label="Mercado Pago"
           hint={
             mpConfigured
-              ? 'Tarjeta, débito, saldo o efectivo, con 7,5 % de cargo por servicio. La entrada llega al instante.'
+              ? `Tarjeta, débito, saldo o efectivo, con ${SERVICE_FEE_LABEL} de cargo por servicio. La entrada llega al instante.`
               : 'Todavía no está conectado (falta MP_ACCESS_TOKEN): se muestra en la compra, pero avisa que se habilita pronto y no cobra.'
           }
           defaultChecked={values.mpEnabled}
@@ -73,12 +84,12 @@ export function SaleConfigForm({ values, mpConfigured, editable }: { values: Val
       {editable && (
         <div className="flex flex-wrap items-center gap-4">
           <SubmitButton variant="outline">Guardar</SubmitButton>
-          {state && 'ok' in state && (
+          {saved && !state && (
             <p role="status" className="text-sm text-bone/75">
               Guardado.
             </p>
           )}
-          {state && 'error' in state && (
+          {state && (
             <p role="alert" className="text-sm text-alert">
               {state.error}
             </p>

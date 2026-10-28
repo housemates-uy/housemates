@@ -5,6 +5,7 @@
 // un evento anterior, sin quienes ya tienen entrada para este evento. Cada envío queda en
 // presale_sends (uno por tanda y email): "Mandar" va solo a quien no lo recibió todavía.
 import { entryTime, formatLocal, formatUYU } from '@/lib/events';
+import { DEFAULT_IG_HANDLE, getIgHandle, igUrl } from '@/lib/site';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { appUrl } from '@/lib/tickets';
 import { sendMail } from './send';
@@ -31,10 +32,14 @@ export type PresaleMailData = {
   price: number;
   entryUntil: string | null; // "00:30"
   url: string;
+  igHandle?: string;
 };
 
+// La preventa no es un mail de la compra: lleva al pie cómo darse de baja (ver /privacidad).
+// Para sacar a alguien: su email en whitelist con status 'banned' (presale_audience lo excluye).
 export function presaleEmail(d: PresaleMailData) {
   const subject = `Preventa para vos: ${d.eventTitle} · ${d.dateShort}`;
+  const ig = d.igHandle ?? DEFAULT_IG_HANDLE;
   const details: [string, string][] = [
     ['Fecha', d.dateLong],
     ['Lugar', d.location ?? 'A confirmar'],
@@ -54,16 +59,21 @@ ${button(d.url, 'Comprar en preventa')}
 ${blend(`<strong style="color:${C.bone};">La entrada es personal</strong><br>Una por persona, a tu nombre y con tu cédula. En puerta te la pedimos.${
     d.entryUntil ? `<br>Esta tanda es de ingreso temprano: tenés que entrar antes de las ${esc(d.entryUntil)}.` : ''
   }`)}
-</td></tr></table></td></tr>`;
+</td></tr></table></td></tr>
+<tr><td align="center" style="padding-top:24px;font-size:12px;line-height:1.6;color:${C.muted};">${blend(
+    `Si no querés recibir más estos mails, respondé este mail o escribinos por <a href="${esc(igUrl(ig))}" style="color:${C.bone};">Instagram</a> y te sacamos.`,
+  )}</td></tr>`;
 
   const text = [
     `${d.firstName}, como ya viniste a una House Mates, te mandamos el link de la preventa de ${d.eventTitle} (${d.dateLong}).`,
     `${d.tierName}: ${formatUYU(d.price)}${d.entryUntil ? ` · ingreso hasta las ${d.entryUntil}` : ''}`,
     `Comprá en preventa: ${d.url}`,
     'La entrada es personal: una por persona, a tu nombre y con tu cédula.',
+    '',
+    `Si no querés recibir más estos mails, respondé este mail o escribinos por Instagram (${igUrl(ig)}) y te sacamos.`,
   ].join('\n');
 
-  return { subject, html: layout(inner, `Preventa de ${d.eventTitle}: solo con este link.`), text };
+  return { subject, html: layout(inner, `Preventa de ${d.eventTitle}: solo con este link.`, ig), text };
 }
 
 // ---------- Destinatarios ----------
@@ -90,7 +100,74 @@ export async function presaleAudience(tierId: string) {
 
 // ---------- Envío ----------
 
-export type PresaleResult = { sent: number; failed: number; left: number };
+// Por qué no se puede mandar la preventa de esta tanda (null = se puede). El mail dice
+// "Comprar en preventa": si el link no deja comprar, no se manda.
+export async function presaleBlocker(tierId: string): Promise<string | null> {
+  const db = createAdminClient();
+  const { data: tier, error } = await db
+    .from('ticket_tiers')
+    .select('event_id, active, sold_out_override, sales_start, presale_code, events!inner(status, sales_active, date_end)')
+    .eq('id', tierId)
+    .single();
+  if (error || !tier) return 'No se encontró la tanda.';
+  const event = tier.events as unknown as { status: string; sales_active: boolean; date_end: string };
+  if (!tier.presale_code) return 'La tanda no es de preventa.';
+  if (new Date(event.date_end).getTime() <= Date.now()) return 'El evento terminó.';
+  if (event.status !== 'published') return 'El evento no está publicado: publicalo antes de mandar la preventa.';
+  if (!event.sales_active) return 'Las ventas del evento están pausadas: activalas antes de mandar la preventa.';
+  if (!tier.active) return 'La tanda está inactiva: activala antes de mandar la preventa.';
+  if (tier.sold_out_override) return 'La tanda está agotada a mano: restaurala antes de mandar la preventa.';
+  if (tier.sales_start && new Date(tier.sales_start).getTime() > Date.now()) {
+    return `La tanda sale a la venta el ${formatLocal(tier.sales_start, "d/MM 'a las' HH:mm")}: mandá la preventa desde ese momento.`;
+  }
+  const [{ data: tierLeft }, { data: eventLeft }] = await Promise.all([
+    db.rpc('tier_available', { p_tier_id: tierId }),
+    db.rpc('event_available', { p_event_id: tier.event_id }),
+  ]);
+  if ((tierLeft ?? 0) <= 0) return 'La tanda no tiene lugares disponibles.';
+  if ((eventLeft ?? 0) <= 0) return 'El evento llegó a su capacidad.';
+  return null;
+}
+
+// Antes de mandar, cada email se reserva en presale_sends (única por tanda y email): la fila
+// pasa a 'sending' solo si no existía, si falló antes o si quedó colgada de un envío que se
+// cortó. Si otro envío la tiene (dos owners o un doble clic a la vez), ese mail no sale.
+const STALE_CLAIM_MS = 10 * 60_000;
+
+async function claimPresaleSend(
+  db: ReturnType<typeof createAdminClient>,
+  row: { tier_id: string; email_normalized: string; email: string; sent_by_admin_id: string },
+): Promise<'claimed' | 'taken' | 'error'> {
+  const claim = { ...row, status: 'sending' as const, sent_at: new Date().toISOString() };
+  const inserted = await db
+    .from('presale_sends')
+    .upsert(claim, { onConflict: 'tier_id,email_normalized', ignoreDuplicates: true })
+    .select('id');
+  if (inserted.error) return 'error';
+  if (inserted.data.length > 0) return 'claimed';
+  const retry = await db
+    .from('presale_sends')
+    .update(claim)
+    .eq('tier_id', row.tier_id)
+    .eq('email_normalized', row.email_normalized)
+    .eq('status', 'failed')
+    .select('id');
+  if (retry.error) return 'error';
+  if (retry.data.length > 0) return 'claimed';
+  const stale = await db
+    .from('presale_sends')
+    .update(claim)
+    .eq('tier_id', row.tier_id)
+    .eq('email_normalized', row.email_normalized)
+    .eq('status', 'sending')
+    .lt('sent_at', new Date(Date.now() - STALE_CLAIM_MS).toISOString())
+    .select('id');
+  if (stale.error) return 'error';
+  return stale.data.length > 0 ? 'claimed' : 'taken';
+}
+
+// skipped: los tenía otro envío que corría a la vez (no se cuentan como pendientes).
+export type PresaleResult = { sent: number; failed: number; skipped: number; left: number };
 
 // Manda a los pendientes hasta terminar o hasta agotar `budgetMs`. Lo que queda sale en el
 // próximo clic, sin repetir a nadie.
@@ -100,13 +177,14 @@ export async function sendPresaleMails(
 ): Promise<PresaleResult> {
   const startedAt = Date.now();
   const db = createAdminClient();
-  const [{ data: tier, error }, audience] = await Promise.all([
+  const [{ data: tier, error }, audience, igHandle] = await Promise.all([
     db
       .from('ticket_tiers')
       .select('id, name, price_uyu, entry_until, presale_code, events!inner(title, date_start, location_name)')
       .eq('id', tierId)
       .single(),
     presaleAudience(tierId),
+    getIgHandle(),
   ]);
   if (error || !tier?.presale_code) throw error ?? new Error('La tanda no es de preventa');
   const event = tier.events as unknown as { title: string; date_start: string; location_name: string | null };
@@ -120,28 +198,32 @@ export async function sendPresaleMails(
     price: Number(tier.price_uyu),
     entryUntil: entryTime(tier.entry_until),
     url: presaleUrl(tier.presale_code),
+    igHandle,
   };
   const queue = audience.pending;
 
-  async function sendOne(r: (typeof queue)[number]): Promise<boolean> {
+  async function sendOne(r: (typeof queue)[number]): Promise<'sent' | 'failed' | 'skipped'> {
+    const claim = await claimPresaleSend(db, {
+      tier_id: tierId,
+      email_normalized: r.email_normalized,
+      email: r.email,
+      sent_by_admin_id: opts.adminId,
+    });
+    if (claim === 'taken') return 'skipped';
+    if (claim === 'error') return 'failed';
     const mail = presaleEmail({ ...base, firstName: r.name.split(' ')[0] });
     const ok = await sendMail({ to: r.email, ...mail });
-    await db.from('presale_sends').upsert(
-      {
-        tier_id: tierId,
-        email_normalized: r.email_normalized,
-        email: r.email,
-        status: ok ? 'sent' : 'failed',
-        sent_by_admin_id: opts.adminId,
-        sent_at: new Date().toISOString(),
-      },
-      { onConflict: 'tier_id,email_normalized' },
-    );
-    return ok;
+    await db
+      .from('presale_sends')
+      .update({ status: ok ? 'sent' : 'failed', sent_at: new Date().toISOString() })
+      .eq('tier_id', tierId)
+      .eq('email_normalized', r.email_normalized);
+    return ok ? 'sent' : 'failed';
   }
 
   let sent = 0;
   let failed = 0;
+  let skipped = 0;
   let failsInRow = 0;
   let next = 0;
   const canContinue = () =>
@@ -149,17 +231,19 @@ export async function sendPresaleMails(
 
   async function worker() {
     while (canContinue()) {
-      const ok = await sendOne(queue[next++]);
-      if (ok) {
+      const outcome = await sendOne(queue[next++]);
+      if (outcome === 'sent') {
         sent++;
         failsInRow = 0;
-      } else {
+      } else if (outcome === 'failed') {
         failed++;
         failsInRow++;
+      } else {
+        skipped++;
       }
     }
   }
   await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 
-  return { sent, failed, left: queue.length - sent };
+  return { sent, failed, skipped, left: queue.length - sent - skipped };
 }

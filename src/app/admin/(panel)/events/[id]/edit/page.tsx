@@ -9,7 +9,7 @@ import { EventEditForm } from './event-edit-form';
 export const metadata = { title: 'Editar evento' };
 
 export default async function EditEventPage({ params }: { params: { id: string } }) {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const db = createAdminClient();
 
   const { data: event } = await db
@@ -38,7 +38,7 @@ export default async function EditEventPage({ params }: { params: { id: string }
 
   return (
     <div className="max-w-2xl">
-      <EventEditForm id={params.id} initial={initial} existingTiers={tiers} />
+      <EventEditForm id={params.id} initial={initial} existingTiers={tiers} isOwner={admin.role === 'owner'} />
     </div>
   );
 }

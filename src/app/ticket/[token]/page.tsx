@@ -67,9 +67,9 @@ export default async function TicketPage({ params }: { params: { token: string }
 
         {event && (
           <div className="shrink-0 text-center">
-            <p className="text-[clamp(2.5rem,7dvh,3.5rem)] font-bold leading-[0.9] tracking-[-0.045em]">
+            <h1 className="text-[clamp(2.5rem,7dvh,3.5rem)] font-bold leading-[0.9] tracking-[-0.045em]">
               {formatLocal(event.date_start, 'dd.MM.yy')}
-            </p>
+            </h1>
             <p className="mt-2 text-sm text-bone/80 first-letter:uppercase">
               {formatLocal(event.date_start, "EEEE · HH:mm 'hs'")} · Open air
             </p>

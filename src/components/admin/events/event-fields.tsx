@@ -4,13 +4,17 @@ import { Field } from '@/components/ui/field';
 import { Input, Textarea, inputClass } from '@/components/ui/input';
 import type { EventInput } from '@/lib/validation/schemas';
 
+// canArchive: archivar y desarchivar es de los owners (el servidor también lo controla).
 export function EventFields({
   event,
   onChange,
+  canArchive = true,
 }: {
   event: EventInput;
   onChange: (field: keyof EventInput, value: string | number) => void;
+  canArchive?: boolean;
 }) {
+  const archiveLocked = !canArchive && event.status === 'archived';
   return (
     <div className="space-y-5">
       <Field label="Título">
@@ -21,7 +25,7 @@ export function EventFields({
         />
       </Field>
 
-      <Field label="Slug" hint="Se genera desde el título. Podés editarlo.">
+      <Field label="Dirección (slug)" hint="Se genera desde el título. Podés editarlo.">
         <Input
           value={event.slug}
           onChange={(e) => onChange('slug', e.target.value)}
@@ -72,15 +76,27 @@ export function EventFields({
             onChange={(e) => onChange('capacity', e.target.value)}
           />
         </Field>
-        <Field label="Estado">
+        <Field
+          label="Estado"
+          hint={
+            canArchive
+              ? undefined
+              : archiveLocked
+                ? 'Solo un owner puede desarchivarlo.'
+                : 'Solo los owners pueden archivar.'
+          }
+        >
           <select
             className={inputClass}
             value={event.status}
+            disabled={archiveLocked}
             onChange={(e) => onChange('status', e.target.value)}
           >
             <option value="draft">Borrador</option>
             <option value="published">Publicado</option>
-            <option value="archived">Archivado</option>
+            <option value="archived" disabled={!canArchive}>
+              Archivado
+            </option>
           </select>
         </Field>
       </div>
@@ -93,5 +109,18 @@ export function EventFields({
         />
       </Field>
     </div>
+  );
+}
+
+// Aviso cuando las tandas activas suman más lugares que la capacidad: create_ticket corta la
+// venta al llegar a la capacidad del evento (invitaciones incluidas), aunque quede cupo en
+// alguna tanda.
+export function TierCapacityNotice({ capacity, tierTotal }: { capacity: number; tierTotal: number }) {
+  if (!capacity || tierTotal <= capacity) return null;
+  return (
+    <p role="status" className="rounded-control border border-alert/30 bg-alert/[0.06] px-4 py-3 text-sm text-bone/80">
+      Las tandas activas suman {tierTotal} lugares y la capacidad del evento es {capacity}: se vende hasta la
+      capacidad ({capacity}). Las invitaciones también ocupan lugar.
+    </p>
   );
 }

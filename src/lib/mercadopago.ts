@@ -9,7 +9,8 @@ import { MercadoPagoConfig, Payment, PaymentRefund, Preference } from 'mercadopa
 import { BAR_REF_PREFIX } from '@/lib/bar';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendBarOrderMail } from '@/lib/mail/bar-mails';
-import { sendTicketConfirmedMail } from '@/lib/mail/ticket-mails';
+import { sendMail } from '@/lib/mail/send';
+import { sendTicketCancelledMail, sendTicketConfirmedMail } from '@/lib/mail/ticket-mails';
 import { appUrl } from '@/lib/tickets';
 
 function client() {
@@ -69,6 +70,8 @@ export async function createPreference(params: {
       notification_url: base.startsWith('https://') ? `${base}/api/mp/webhook` : undefined,
       expires: true,
       expiration_date_to: params.expiresAt.toISOString(),
+      // Cupón de Abitab/RedPagos: mientras no venza, la reserva lo espera (syncPayment).
+      date_of_expiration: new Date(Date.now() + CASH_VOUCHER_HOURS * 3_600_000).toISOString(),
       statement_descriptor: 'HOUSE MATES',
     },
   });
@@ -76,10 +79,72 @@ export async function createPreference(params: {
   return { id: pref.id, initPoint: pref.init_point };
 }
 
+const CASH_VOUCHER_HOURS = 24;
+// Tarjeta "en revisión" de MP: puede tardar hasta dos días hábiles.
+const PENDING_HOLD_HOURS = 48;
+const MAX_HOLD_HOURS = 72;
+const PENDING_STATUSES = new Set(['pending', 'in_process', 'authorized']);
+const REVERSED_STATUSES = new Set(['refunded', 'charged_back']);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+// Pagos que hay que resolver a mano (devolver plata o revisar). Docs: §5.2.
+const PAYMENT_PROBLEMS = {
+  duplicate_live_ticket:
+    'Mercado Pago aprobó el pago de una reserva que ya estaba anulada, y la persona ya tiene otra entrada para esta fecha. Hay que devolver este pago desde Mercado Pago.',
+  duplicate_payment:
+    'Mercado Pago aprobó un segundo pago para una entrada que ya estaba paga. Hay que devolver este pago desde Mercado Pago.',
+  amount_mismatch:
+    'Mercado Pago informó un monto menor al total de la entrada. La entrada NO se confirmó: revisá el pago en Mercado Pago.',
+  confirmed_late:
+    'Se confirmó el pago de una entrada que estaba anulada (la anuló un admin o la persona volvió a intentar la compra). La entrada vale y se le mandó; revisá que la tanda no se haya pasado del cupo.',
+  reversed: 'Mercado Pago informó una devolución o un contracargo: la entrada se anuló y se le avisó a la persona.',
+  reversed_used:
+    'Mercado Pago informó una devolución o un contracargo de una entrada que ya se usó en puerta. La entrada no se tocó.',
+};
+type PaymentProblem = keyof typeof PAYMENT_PROBLEMS;
+const isPaymentProblem = (r: string): r is PaymentProblem => r in PAYMENT_PROBLEMS;
+
+const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+// Aviso por mail a los owners, una sola vez por entrada (queda en email_log).
+async function alertOwners(ticketId: string, problem: PaymentProblem, paymentId: string) {
+  console.error('[mp] pago para revisar', { problem, ticketId, paymentId });
+  const db = createAdminClient();
+  const { count } = await db
+    .from('email_log')
+    .select('id', { count: 'exact', head: true })
+    .eq('ticket_id', ticketId)
+    .eq('type', 'payment_alert')
+    .eq('status', 'sent');
+  if (count) return;
+  const [{ data: owners }, { data: ticket }] = await Promise.all([
+    db.from('admins').select('email').eq('role', 'owner').eq('active', true),
+    db.from('tickets').select('buyer_name, buyer_email, buyer_document').eq('id', ticketId).maybeSingle(),
+  ]);
+  const to = (owners ?? []).map((o) => o.email).filter(Boolean);
+  if (to.length === 0) return;
+  const lines = [
+    PAYMENT_PROBLEMS[problem],
+    ticket ? `Comprador: ${ticket.buyer_name} · ${ticket.buyer_email} · CI ${ticket.buyer_document}` : '',
+    `Pago de Mercado Pago: ${paymentId}`,
+    `Entrada: ${ticketId}`,
+  ].filter(Boolean);
+  await sendMail({
+    to: to.join(', '),
+    subject: 'Pago para revisar · House Mates',
+    text: lines.join('\n'),
+    html: lines.map((l) => `<p>${escapeHtml(l)}</p>`).join(''),
+    log: { ticketId, type: 'payment_alert' },
+  });
+}
+
 // Consulta el estado real de un pago a la API de MP. Nunca confiamos en lo que viene
 // en la URL de vuelta ni en el cuerpo del webhook: siempre se pregunta a MP.
-// Si está aprobado, confirma la entrada o el pedido de barra (idempotente). Los pedidos de
-// barra se reconocen por el prefijo "bar:" del external_reference.
+// - Aprobado: confirma la entrada o el pedido de barra (idempotente).
+// - Pendiente (efectivo, tarjeta en revisión): la reserva espera al pago.
+// - Devuelto o contracargo: anula la entrada pagada con ese pago.
+// Si la base falla, tira error: el webhook responde 500 y MP vuelve a avisar.
+// Los pedidos de barra se reconocen por el prefijo "bar:" del external_reference.
 export async function syncPayment(paymentId: string): Promise<{
   ticketId: string | null;
   barOrderId: string | null;
@@ -89,36 +154,60 @@ export async function syncPayment(paymentId: string): Promise<{
   const payment = await new Payment(client()).get({ id: paymentId });
   const ref = payment.external_reference ?? null;
   const status = payment.status ?? 'unknown';
+  const mpId = String(payment.id);
   const barOrderId = ref?.startsWith(BAR_REF_PREFIX) ? ref.slice(BAR_REF_PREFIX.length) : null;
-  const ticketId = barOrderId ? null : ref;
+  const ticketId = !barOrderId && ref && UUID.test(ref) ? ref : null;
 
   if (barOrderId) {
     if (status !== 'approved') return { ticketId, barOrderId, status };
-    const result = await confirmBarOrder(barOrderId, String(payment.id), payment.transaction_amount ?? null);
+    // Sin monto informado no se confirma (amount_mismatch), igual que las entradas.
+    const result = await confirmBarOrder(barOrderId, mpId, payment.transaction_amount ?? 0);
+    if (result === 'error') throw new Error(`confirm_bar_order_payment falló (${barOrderId})`);
     return { ticketId, barOrderId, status, result };
   }
+  if (!ticketId) return { ticketId, barOrderId, status };
 
-  if (ticketId && status === 'approved') {
-    const db = createAdminClient();
-    const { data } = await db.rpc('confirm_ticket_payment', {
+  const db = createAdminClient();
+
+  if (status === 'approved') {
+    const { data, error } = await db.rpc('confirm_ticket_payment', {
       p_ticket_id: ticketId,
-      p_payment_id: String(payment.id),
+      p_payment_id: mpId,
       p_amount: payment.transaction_amount ?? 0,
     });
+    if (error) throw new Error(`confirm_ticket_payment: ${error.message}`);
     // Solo la llamada que efectivamente confirmó manda el mail (webhook y página de vuelta
     // pueden llegar los dos; la segunda recibe 'already_paid' y no reenvía).
-    if (data === 'confirmed') await sendTicketConfirmedMail(ticketId);
-    // MP informó menos que el total de la entrada: no se confirma ni se manda mail. Queda en
-    // los logs para revisarlo a mano.
-    if (data === 'amount_mismatch') {
-      console.error('[mp] pago con monto menor al total, entrada sin confirmar', {
-        ticketId,
-        paymentId: String(payment.id),
-        amount: payment.transaction_amount ?? null,
-      });
-    }
-    return { ticketId, barOrderId, status, result: data as string };
+    if (data === 'confirmed' || data === 'confirmed_late') await sendTicketConfirmedMail(ticketId);
+    if (isPaymentProblem(data)) await alertOwners(ticketId, data, mpId);
+    return { ticketId, barOrderId, status, result: data };
   }
+
+  if (PENDING_STATUSES.has(status)) {
+    const voucherEnds = payment.date_of_expiration ? Date.parse(payment.date_of_expiration) : NaN;
+    const until = Math.min(
+      Number.isNaN(voucherEnds) ? Date.now() + PENDING_HOLD_HOURS * 3_600_000 : voucherEnds,
+      Date.now() + MAX_HOLD_HOURS * 3_600_000,
+    );
+    const { data, error } = await db.rpc('extend_ticket_hold', {
+      p_ticket_id: ticketId,
+      p_until: new Date(until).toISOString(),
+    });
+    if (error) throw new Error(`extend_ticket_hold: ${error.message}`);
+    return { ticketId, barOrderId, status, result: data };
+  }
+
+  if (REVERSED_STATUSES.has(status)) {
+    const { data, error } = await db.rpc('reverse_ticket_payment', { p_ticket_id: ticketId, p_payment_id: mpId });
+    if (error) throw new Error(`reverse_ticket_payment: ${error.message}`);
+    if (data === 'cancelled') {
+      await sendTicketCancelledMail(ticketId, true);
+      await alertOwners(ticketId, 'reversed', mpId);
+    }
+    if (data === 'already_used') await alertOwners(ticketId, 'reversed_used', mpId);
+    return { ticketId, barOrderId, status, result: data };
+  }
+
   return { ticketId, barOrderId, status };
 }
 
@@ -163,11 +252,15 @@ export async function createBarPreference(params: {
 // la simulación del modo local. Solo la llamada que confirmó manda el mail con los QRs.
 export async function confirmBarOrder(orderId: string, paymentId: string | null, amount: number | null) {
   if (!/^[0-9a-f-]{36}$/.test(orderId)) return 'not_found';
-  const { data } = await createAdminClient().rpc('confirm_bar_order_payment', {
+  const { data, error } = await createAdminClient().rpc('confirm_bar_order_payment', {
     p_order_id: orderId,
     p_payment_id: paymentId ?? undefined,
     p_amount: amount ?? undefined,
   });
+  if (error) {
+    console.error('[mp] no se pudo confirmar el pedido de barra', orderId, error.message);
+    return 'error';
+  }
   if (data === 'confirmed') await sendBarOrderMail(orderId);
   if (data === 'amount_mismatch') {
     console.error('[mp] pago de barra con monto menor al total, pedido sin confirmar', { orderId, paymentId, amount });

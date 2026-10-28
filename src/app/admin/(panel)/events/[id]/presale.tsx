@@ -1,7 +1,7 @@
 import { ConfirmSubmitButton } from '@/components/admin/submit-button';
 import { Card } from '@/components/ui/card';
 import { formatUYU } from '@/lib/events';
-import { presaleAudience, presaleUrl } from '@/lib/mail/presale-mails';
+import { presaleAudience, presaleBlocker, presaleUrl } from '@/lib/mail/presale-mails';
 import type { TicketTier } from '@/types/database';
 import { sendPresaleAction } from './actions';
 import { CopyLinkButton } from './tickets/copy-link-button';
@@ -25,7 +25,10 @@ export async function PresaleSection({
 }) {
   const presale = tiers.filter((t) => t.presale_code);
   if (presale.length === 0) return null;
-  const audiences = await Promise.all(presale.map((t) => presaleAudience(t.id)));
+  const [audiences, blockers] = await Promise.all([
+    Promise.all(presale.map((t) => presaleAudience(t.id))),
+    Promise.all(presale.map((t) => presaleBlocker(t.id))),
+  ]);
 
   return (
     <section id="preventa" aria-labelledby="preventa-titulo" className="scroll-mt-6 space-y-4">
@@ -42,6 +45,7 @@ export async function PresaleSection({
 
       {presale.map((tier, i) => {
         const audience = audiences[i];
+        const blocker = blockers[i];
         const url = presaleUrl(tier.presale_code!);
         const pending = audience.pending.length;
         return (
@@ -58,7 +62,7 @@ export async function PresaleSection({
               <CopyLinkButton url={url} />
             </div>
 
-            <PresaleNotice tierId={tier.id} searchParams={searchParams} />
+            <PresaleNotice tierId={tier.id} blocker={blocker} searchParams={searchParams} />
 
             <div className="flex flex-wrap items-end justify-between gap-3">
               <p className="text-3xl font-bold tracking-tight">
@@ -69,6 +73,8 @@ export async function PresaleSection({
                 <p className="text-xs text-bone/55">Solo los owners pueden mandar.</p>
               ) : !canSend ? (
                 <p className="text-xs text-bone/55">El evento terminó.</p>
+              ) : blocker && pending > 0 ? (
+                <p className="max-w-xs text-right text-xs text-alert">{blocker}</p>
               ) : pending > 0 ? (
                 <form key={`presale-${tier.id}-${searchParams.t}`} action={sendPresaleAction.bind(null, eventId, tier.id)}>
                   <ConfirmSubmitButton variant="outline" size="sm" confirmLabel={`Sí, mandar ${pending}`}>
@@ -89,17 +95,36 @@ export async function PresaleSection({
 }
 
 // Resultado del último envío (llega por la URL desde sendPresaleAction).
-function PresaleNotice({ tierId, searchParams }: { tierId: string; searchParams: SearchParams }) {
+function PresaleNotice({
+  tierId,
+  blocker,
+  searchParams,
+}: {
+  tierId: string;
+  blocker: string | null;
+  searchParams: SearchParams;
+}) {
   if (searchParams.preventa !== tierId) return null;
   const sent = Number(searchParams.p_ok ?? 0);
   const failed = Number(searchParams.p_fallaron ?? 0);
   const left = Number(searchParams.p_quedan ?? 0);
+  const skipped = Number(searchParams.p_salteados ?? 0);
+  if (searchParams.p_bloqueada) {
+    return (
+      <p role="alert" className="rounded-card border border-alert/40 px-4 py-3 text-sm text-alert">
+        No se mandó la preventa.{blocker ? ` ${blocker}` : ' Probá de nuevo.'}
+      </p>
+    );
+  }
 
   let message = sent === 1 ? 'Se mandó 1 mail.' : `Se mandaron ${sent} mails.`;
   if (sent === 0 && failed > 0) {
     message = 'No salió ningún mail. Revisá la configuración del correo o si se llegó al límite diario de Gmail.';
   } else if (failed > 0) {
     message += ` ${failed === 1 ? '1 no salió' : `${failed} no salieron`}: quedan pendientes.`;
+  }
+  if (skipped > 0) {
+    message += ` ${skipped === 1 ? 'A 1 persona ya se la estaba' : `A ${skipped} personas ya se la estaba`} mandando otro envío al mismo tiempo: no se repitió.`;
   }
   if (left > 0 && sent > 0) message += ` Quedan ${left} por mandar: tocá de nuevo para seguir.`;
 

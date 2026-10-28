@@ -6,6 +6,7 @@ import QRCode from 'qrcode';
 import { entryTime, formatLocal } from '@/lib/events';
 import { mapsUrl } from '@/lib/next-event';
 import { quote, type PayMethod } from '@/lib/pricing';
+import { getIgHandle } from '@/lib/site';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { appUrl, ticketUrl } from '@/lib/tickets';
 import { getTicketTransport } from '@/lib/transport';
@@ -30,7 +31,7 @@ async function loadTicket(ticketId: string) {
     .single();
   if (!t?.qr_token) return null;
 
-  const [{ data: event }, { data: tier }, { data: code }, bus] = await Promise.all([
+  const [{ data: event }, { data: tier }, { data: code }, bus, igHandle] = await Promise.all([
     db.from('events').select('title, date_start, location_name, location_url').eq('id', t.event_id).single(),
     t.tier_id
       ? db.from('ticket_tiers').select('name, price_uyu, entry_until').eq('id', t.tier_id).single()
@@ -39,6 +40,7 @@ async function loadTicket(ticketId: string) {
       ? db.from('discount_codes').select('code').eq('id', t.discount_code_id).single()
       : Promise.resolve({ data: null }),
     getTicketTransport(t.id),
+    getIgHandle(),
   ]);
   if (!event) return null;
 
@@ -71,6 +73,7 @@ async function loadTicket(ticketId: string) {
     total,
     transport: bus,
     entryUntil: entryTime(tier?.entry_until),
+    igHandle,
   };
   return { ticket: t, data };
 }
@@ -129,7 +132,7 @@ export async function sendTransferAdminAlert(
   const { subject, html, text } = transferAdminAlertEmail({
     ...loaded.data,
     instagram: loaded.ticket.buyer_instagram,
-    adminUrl: `${appUrl()}/admin/events/${loaded.ticket.event_id}/tickets#a-validar`,
+    adminUrl: `${appUrl()}/admin/confirmar`,
   });
   return sendMail({
     to: to.join(', '),

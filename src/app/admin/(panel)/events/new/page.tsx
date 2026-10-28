@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus } from 'lucide-react';
-import { EventFields } from '@/components/admin/events/event-fields';
+import { EventFields, TierCapacityNotice } from '@/components/admin/events/event-fields';
 import { TierFields } from '@/components/admin/events/tier-fields';
 import { PageHeader } from '@/components/admin/page-header';
 import { Button } from '@/components/ui/button';
@@ -103,13 +103,18 @@ export default function NewEventPage() {
       {step === 2 && (
         <div className="space-y-5">
           <p className="text-sm text-bone/60">
-            Agregá los tiers de tickets. Podés sumar más después desde la edición del evento.
+            Agregá las tandas de entradas. Podés sumar más después desde la edición del evento.
           </p>
+
+          <TierCapacityNotice
+            capacity={Number(event.capacity)}
+            tierTotal={tiers.reduce((sum, t) => sum + (Number(t.quantity_total) || 0), 0)}
+          />
 
           {tiers.map((tier, i) => (
             <TierFields
               key={i}
-              title={`Tier ${i + 1}`}
+              title={`Tanda ${i + 1}`}
               tier={tier}
               onChange={(field, value) => handleTierChange(i, field, value)}
               onRemove={
@@ -127,7 +132,7 @@ export default function NewEventPage() {
             onClick={() => setTiers((prev) => [...prev, emptyTier()])}
           >
             <Plus size={15} strokeWidth={1.5} aria-hidden />
-            Agregar tier
+            Agregar tanda
           </Button>
 
           {error && (

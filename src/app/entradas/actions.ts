@@ -10,6 +10,7 @@
 //       la entrada pasa a `review` (el lugar reservado) hasta que un owner la valida.
 //   4. Cuenta (opcional, src/lib/customers.ts): con la compra ya hecha, la entrada queda en
 //      la cuenta de la persona; si eligió contraseña, la cuenta se crea recién ahí.
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { hasGateAccess } from '@/lib/auth/gate';
 import {
@@ -28,7 +29,7 @@ import { uploadReceipt, validateReceipt } from '@/lib/receipts';
 import { allowAttempt, TOO_MANY_ATTEMPTS } from '@/lib/rate-limit';
 import { getSaleConfig } from '@/lib/sale-config';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { buyerSchema, createTicket } from '@/lib/tickets';
+import { buyerSchema, createTicket, PURCHASE_COOKIE } from '@/lib/tickets';
 import { findTransportChoice, reserveTransport } from '@/lib/transport';
 
 const HOLD_MINUTES = 20;
@@ -36,6 +37,10 @@ const HOLD_MINUTES = 20;
 const TRANSFER_HOLD_MINUTES = 15;
 
 export type CheckoutState = { error: string; field?: string; accountExists?: boolean } | null;
+
+// Con transferencia, la persona transfiere antes de enviar: si la compra no sale por algo que
+// no puede corregir (sin lugar, código agotado, bus lleno), tiene que saber qué hacer con la plata.
+const TRANSFER_NOTE = 'Si ya transferiste, escribinos por Instagram con el comprobante y lo resolvemos.';
 
 type SaleTier = { id: string; name: string; price: number; eventId: string; eventTitle: string };
 
@@ -75,7 +80,13 @@ export async function checkDiscountAction(tierId: string, rawCode: string): Prom
 export async function startCheckoutAction(_prev: CheckoutState, formData: FormData): Promise<CheckoutState> {
   // El acceso se vuelve a chequear acá: la página lo pidió, pero una acción del servidor
   // se puede llamar directo. Si rotaron la contraseña mientras completaba, vuelve a /access.
-  if (!(await hasGateAccess())) redirect('/access?next=/entradas');
+  if (!(await hasGateAccess())) {
+    const back = new URLSearchParams();
+    const presale = String(formData.get('presale') ?? '');
+    if (presale) back.set('preventa', presale);
+    const here = back.toString() ? `/entradas?${back}` : '/entradas';
+    redirect(`/access?next=${encodeURIComponent(here)}`);
+  }
 
   const config = await getSaleConfig();
   const method: PayMethod = formData.get('method') === 'transfer' ? 'transfer' : 'mercadopago';
@@ -85,13 +96,20 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
   // La opción se muestra antes de conectar Mercado Pago; hasta entonces no se cobra nada.
   if (method === 'mercadopago' && !config.mpReady) {
     return {
-      error: 'El pago con Mercado Pago se habilita pronto. Por ahora podés pagar por transferencia.',
+      error: config.transferEnabled
+        ? 'El pago con Mercado Pago se habilita pronto. Por ahora podés pagar por transferencia.'
+        : 'El pago con Mercado Pago se habilita pronto.',
       field: 'method',
     };
   }
   if (method === 'transfer' && !config.transferEnabled) {
     return { error: 'El pago por transferencia no está disponible.', field: 'method' };
   }
+
+  const fail = (error: string, field?: string): CheckoutState => ({
+    error: method === 'transfer' ? `${error} ${TRANSFER_NOTE}` : error,
+    field,
+  });
 
   if (formData.get('accept') !== 'on') {
     return { error: 'Tenés que aceptar que la entrada es personal.', field: 'accept' };
@@ -124,32 +142,39 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
 
   // Después de las validaciones del formulario (un error de tipeo no gasta intentos) y
   // antes de todo lo que consulta la base: cuentas, códigos y la creación de la entrada.
-  if (!(await allowAttempt('checkout'))) return { error: TOO_MANY_ATTEMPTS };
+  if (!(await allowAttempt('checkout'))) return fail(TOO_MANY_ATTEMPTS);
 
   if (password && (await accountExists(parsed.data.email))) {
     return { error: 'Ya tenés cuenta con este email.', field: 'password', accountExists: true };
   }
 
   const tier = await loadSaleTier(String(formData.get('tier') ?? ''));
-  if (!tier) return { error: 'Esa tanda no está a la venta.', field: 'tier' };
+  if (!tier) return fail('Esa tanda no está a la venta.', 'tier');
 
   // Código de descuento (opcional). Si no sirve, se avisa y no se cobra nada.
   const rawCode = String(formData.get('code') ?? '').trim();
   let code: FoundDiscount | null = null;
   if (rawCode) {
     const found = await findDiscount(tier.eventId, rawCode);
-    if ('error' in found) return { error: found.error, field: 'code' };
+    if ('error' in found) return fail(found.error, 'code');
     code = found;
   }
   const discount = discountAmount(tier.price, code);
-  if (code && discount >= tier.price) return { error: 'Ese código no se puede usar en la compra web.', field: 'code' };
+  if (code && discount >= tier.price) return fail('Ese código no se puede usar en la compra web.', 'code');
 
   // Transporte (opcional): se suma al total y el descuento no lo toca.
   const bus = await findTransportChoice(tier.eventId, String(formData.get('transport') ?? ''));
-  if ('error' in bus) return { error: bus.error, field: 'transport' };
+  if ('error' in bus) return fail(bus.error, 'transport');
 
   // amount_paid_uyu guarda el total que paga la persona (entrada + transporte + cargo).
   const price = quote(tier.price, discount, method, bus.option?.price ?? 0);
+
+  // Si el precio de la tanda o del bus cambió mientras completaba, no se cobra un total
+  // distinto al que vio (con transferencia, ya transfirió ese monto).
+  const expected = String(formData.get('expected_total') ?? '');
+  if (expected && Number(expected) !== price.total) {
+    return fail('El precio cambió mientras completabas la compra. Recargá la página para ver el total actualizado.');
+  }
 
   let receipt: File | null = null;
   if (method === 'transfer') {
@@ -176,18 +201,25 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
   });
   if ('error' in ticket) {
     if (customer && ticket.code === 'duplicate_email') {
-      return { error: 'Ya tenés una entrada para esta fecha. La ves en Mi cuenta.' };
+      return fail('Ya tenés una entrada para esta fecha. La ves en Mi cuenta.');
     }
-    return { error: ticket.error, field: ticket.code?.startsWith('discount') ? 'code' : undefined };
+    return fail(ticket.error, ticket.code?.startsWith('discount') ? 'code' : undefined);
   }
 
   // Si se llenó el bus mientras completaba, la entrada recién creada se borra y no se cobra nada.
   if (bus.option) {
     const reserved = await reserveTransport(ticket.id, bus.option);
-    if ('error' in reserved) return { error: reserved.error, field: 'transport' };
+    if ('error' in reserved) return fail(reserved.error, 'transport');
   }
 
   const db = createAdminClient();
+  cookies().set(PURCHASE_COOKIE, ticket.id, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/compra',
+    maxAge: 7 * 24 * 3600,
+  });
 
   if (method === 'transfer' && receipt) {
     const path = await uploadReceipt(tier.eventId, ticket.id, receipt);
@@ -206,7 +238,7 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
     if (!path || !inReview) {
       // Sin comprobante no hay nada que validar: se libera el lugar.
       await db.rpc('cancel_ticket', { p_ticket_id: ticket.id, p_refunded: false });
-      return { error: 'No pudimos subir el comprobante. Probá de nuevo.', field: 'receipt' };
+      return { error: 'No pudimos subir el comprobante. Probá de nuevo: no hace falta transferir otra vez.', field: 'receipt' };
     }
     await attachAccount(ticket.id, parsed.data, customer, password);
     // Los mails nunca frenan la compra (sendMail no tira errores).

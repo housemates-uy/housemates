@@ -39,7 +39,13 @@ export function Hero({ event }: { event: NextEvent }) {
 
       <div className="mx-auto w-full max-w-page px-5 pb-12 pt-28 md:px-10 md:pb-16">
         <p className="animate-fade-up text-sm font-medium text-bone/75 [animation-delay:80ms]">
-          <span className="capitalize">{event.weekday}</span> {event.dateShort} · {event.time} hs · Open air
+          {event.id ? (
+            <>
+              <span className="capitalize">{event.weekday}</span> {event.dateShort} · {event.time} hs · Open air
+            </>
+          ) : (
+            'Próxima fecha a confirmar · Open air'
+          )}
         </p>
         <h1 className="mt-4 max-w-[13ch] animate-fade-up text-[clamp(2.75rem,9vw,6.5rem)] md:text-[clamp(3.5rem,6vw,5.5rem)] font-bold uppercase leading-[0.92] tracking-[-0.03em] [animation-delay:160ms]">
           Tu casa favorita vuelve a MVD

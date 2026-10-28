@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAdminUser } from '@/lib/auth/admin';
 import { formatLocal } from '@/lib/events';
+import { formatPhone } from '@/lib/tickets';
 import { getDoorList } from './door-list';
 
 export const dynamic = 'force-dynamic';
@@ -36,7 +37,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       r.name,
       r.document,
       r.email,
-      r.phone,
+      formatPhone(r.phone),
       r.tier,
       r.origin,
       r.status,

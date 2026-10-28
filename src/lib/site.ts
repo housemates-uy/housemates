@@ -1,7 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export const SITE_NAME = 'House Mates';
-const DEFAULT_IG_HANDLE = '@house__mates';
+export const DEFAULT_IG_HANDLE = '@house__mates';
 
 export async function getIgHandle(): Promise<string> {
   try {

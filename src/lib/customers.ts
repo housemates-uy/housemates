@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { formatLocal } from '@/lib/events';
 import { sendMail } from '@/lib/mail/send';
 import { accountConfirmEmail, passwordResetEmail } from '@/lib/mail/templates';
+import { getIgHandle } from '@/lib/site';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { appUrl, normalizeDocument } from '@/lib/tickets';
@@ -89,6 +90,7 @@ export async function sendAccountConfirmMail(email: string, name: string): Promi
   const mail = accountConfirmEmail({
     firstName: name.split(' ')[0] || 'Hola',
     url: confirmUrl(data.properties.hashed_token, 'magiclink'),
+    igHandle: await getIgHandle(),
   });
   return sendMail({ to: email, ...mail });
 }
@@ -100,7 +102,10 @@ export async function sendPasswordResetMail(rawEmail: string): Promise<void> {
   if (!user || sentLessThanAMinuteAgo(user.recovery_sent_at)) return;
   const { data, error } = await createAdminClient().auth.admin.generateLink({ type: 'recovery', email });
   if (error || !data.properties?.hashed_token) return;
-  const mail = passwordResetEmail({ url: confirmUrl(data.properties.hashed_token, 'recovery') });
+  const mail = passwordResetEmail({
+    url: confirmUrl(data.properties.hashed_token, 'recovery'),
+    igHandle: await getIgHandle(),
+  });
   await sendMail({ to: email, ...mail });
 }
 

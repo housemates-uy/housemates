@@ -16,7 +16,17 @@ export async function updatePasswordAction(
 
   const supabase = await createClient();
   const { error } = await supabase.auth.updateUser({ password: parsed.data });
-  if (error) return { error: 'No se pudo guardar la contraseña. Probá de nuevo.' };
+  // Repetir la misma vale: así se puede reintentar si falló el cierre de las otras sesiones.
+  if (error && error.code !== 'same_password') {
+    return { error: 'No se pudo guardar la contraseña. Probá de nuevo.' };
+  }
+
+  // Las otras sesiones dejan de valer: por ejemplo, la de alguien que creó el usuario de Auth
+  // con este email antes del alta como admin.
+  const { error: signOutError } = await supabase.auth.signOut({ scope: 'others' });
+  if (signOutError) {
+    return { error: 'Se guardó la contraseña, pero no se pudieron cerrar las otras sesiones. Probá de nuevo.' };
+  }
 
   return { ok: true };
 }

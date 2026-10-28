@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAdminUser } from '@/lib/auth/admin';
+import { formatPhone } from '@/lib/tickets';
 import { getPassengers } from '../passengers';
 
 export const dynamic = 'force-dynamic';
@@ -36,7 +37,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
   const lines = [
     HEADERS,
     ...options.flatMap((o) =>
-      o.confirmed.map((p) => [o.name, o.departure.replace(/\s*\n\s*/g, ' · '), p.name, p.document, p.phone, p.email, p.statusLabel]),
+      o.confirmed.map((p) => [o.name, o.departure.replace(/\s*\n\s*/g, ' · '), p.name, p.document, formatPhone(p.phone), p.email, p.statusLabel]),
     ),
   ].map((values) => values.map(cell).join(';'));
 
