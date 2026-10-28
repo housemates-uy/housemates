@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { timingSafeEqual } from 'crypto';
 import { z } from 'zod';
-import { getGateSession } from '@/lib/auth/gate';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { getGatePassword, getGateSession, gateVersion } from '@/lib/auth/gate';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,16 +21,6 @@ function safeEqual(a: string, b: string): boolean {
     return false;
   }
   return timingSafeEqual(aBuf, bBuf);
-}
-
-async function getGatePassword(): Promise<string | null> {
-  const db = createAdminClient();
-  const { data } = await db
-    .from('site_config')
-    .select('value')
-    .eq('key', 'gate_password')
-    .single();
-  return data?.value ?? process.env.GATE_PASSWORD ?? null;
 }
 
 export async function POST(req: Request) {
@@ -62,6 +51,7 @@ export async function POST(req: Request) {
   const session = await getGateSession();
   session.granted = true;
   session.grantedAt = Date.now();
+  session.version = gateVersion(expected);
   await session.save();
 
   return NextResponse.json({ ok: true });

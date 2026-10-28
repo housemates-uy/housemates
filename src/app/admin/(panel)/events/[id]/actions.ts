@@ -3,15 +3,9 @@
 import { requireAdmin, requireOwner, logAdminAction } from '@/lib/auth/admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { eventSchema, tiersSchema, tierEditSchema, type EventInput, type TierInput, type TierEditInput } from '@/lib/validation/schemas'
-import { fromZonedTime } from 'date-fns-tz'
+import { toUTC } from '@/lib/events'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-
-const TZ = 'America/Montevideo'
-
-function toUTC(localDatetime: string): string {
-  return fromZonedTime(new Date(localDatetime), TZ).toISOString()
-}
 
 export async function updateEventAction(
   id: string,

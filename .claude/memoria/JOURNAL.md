@@ -251,3 +251,26 @@ y tiers, completando las stub pages de `feature/admin-base`.
 ### Estado al cerrar
 Panel de admin completo para gestión de eventos. Listo para `feature/admin-whitelist` y
 `feature/admin-tickets` como próximas ramas.
+
+---
+
+## 2026-10-02 — Tato — `feature/rebrand` → `develop`
+
+### Contexto
+Rebranding completo del frontend según el Manual de Marca v1 y primer deploy en Vercel.
+
+### Qué se hizo
+- Sistema de diseño: tokens del manual (ink, bone, electric, violet, amber, alert), Neue Montreal,
+  logo vectorial, primitivas en `src/components/ui/`.
+- Landing nueva y pública: hero duotono, próxima fecha con estado de tandas, "la casa", reglas.
+- Gate movido a `/entradas`, con invalidación de sesiones al rotar la contraseña.
+- Admin re-tematizado y responsive (barra inferior en mobile), formularios de evento sin duplicación.
+- Migración `0005` con el drift de `ticket_tiers`; `vercel.json` sin el cron horario ni el rewrite `admin.*`.
+- Instalada taste-skill (`.agents/skills`, `.claude/skills`).
+
+### Decisiones clave tomadas
+- **#017** landing pública + rotación de contraseña, **#018** fuentes fuera del repo, **#019** validador web y QR opaco.
+
+### Problemas / consideraciones
+- El host del proyecto Supabase de dev no resuelve DNS (proyecto pausado o borrado): el admin no
+  se pudo probar contra datos reales. La landing tiene fallbacks y no reintenta.

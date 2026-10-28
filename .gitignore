@@ -72,3 +72,8 @@ temp/
 # --- NOTA ---
 # .claude/ SE COMMITEA — es el contexto compartido del equipo.
 # Ver .claude/CLAUDE.md para detalles.
+
+# --- Fuentes licenciadas (Neue Montreal) ---
+# El repo es público: los .woff2 no se commitean. Ver src/lib/fonts.ts.
+public/fonts/
+.env*

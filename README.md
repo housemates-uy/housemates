@@ -7,14 +7,16 @@ Landing + ticketera con Mercado Pago + panel admin.
 
 ## Estado
 
-Scaffold Next.js 14 listo. Gate de password universal + landing placeholder funcionales.
-Próximo: deploy a Vercel + dominio. Luego integración Supabase, admin, tickets, etc.
+En producción en https://housemates-rho.vercel.app: landing pública, compra de entradas con
+contraseña y Mercado Pago, entradas manuales/invitaciones con QR y scanner de puerta.
+Estado detallado en [.claude/HANDOFF.md](.claude/HANDOFF.md).
 
 ---
 
 ## Documentación
 
-- **[.claude/CLAUDE.md](.claude/CLAUDE.md)** — instrucciones del proyecto para Claude Code (leerlo primero)
+- **[docs/LOGICA_DE_NEGOCIO.md](docs/LOGICA_DE_NEGOCIO.md)** — **cómo funciona la app**: rutas, entradas, compra, puerta (empezar por acá)
+- **[.claude/CLAUDE.md](.claude/CLAUDE.md)** — instrucciones del proyecto para Claude Code
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — arquitectura completa: stack, rutas, modelo de datos, flujos, seguridad, roadmap
 - **[docs/API.md](docs/API.md)** — especificación de endpoints (públicos + admin + cron)
 - **[docs/SCAFFOLD.md](docs/SCAFFOLD.md)** — plan de la base del proyecto: estructura, deps, configs, checklist
