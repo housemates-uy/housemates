@@ -1,0 +1,79 @@
+# --- Node / Next.js ---
+node_modules/
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+next-env.d.ts
+
+# --- Env vars (NUNCA commitear secrets) ---
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test.local
+.env.production
+.env.production.local
+!.env.example
+
+# --- Logs ---
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# --- Supabase ---
+supabase/.branches
+supabase/.temp
+supabase/.env
+
+# --- Vercel ---
+.vercel
+
+# --- TypeScript ---
+*.tsbuildinfo
+
+# --- Editor / IDE ---
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+.idea/
+*.swp
+*.swo
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Testing / Coverage ---
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+
+# --- Cache ---
+.cache/
+.parcel-cache/
+.turbo/
+.eslintcache
+
+# --- Temporary ---
+tmp/
+temp/
+*.tmp
+
+# --- Claude Code ---
+.claude/worktrees/
+
+# --- NOTA ---
+# .claude/ SE COMMITEA — es el contexto compartido del equipo.
+# Ver .claude/CLAUDE.md para detalles.
+
+# --- Fuentes licenciadas (Neue Montreal) ---
+# El repo es público: los .woff2 no se commitean. Ver src/lib/fonts.ts.
+public/fonts/
+.env*
