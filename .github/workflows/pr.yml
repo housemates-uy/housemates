@@ -1,0 +1,32 @@
+# Revisión automática de cada pull request: lint, tipos y que compile.
+# No usa secrets, así que corre también en PRs que vienen de un fork.
+name: Revisar pull request
+
+on:
+  pull_request:
+
+jobs:
+  revisar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Tipos
+        run: npm run typecheck
+      - name: Compilar
+        run: npm run build
+        env:
+          # Valores falsos: alcanza con que existan para compilar, la
+          # compilación no le pega a Supabase ni a Mercado Pago.
+          NEXT_PUBLIC_SUPABASE_URL: https://ci.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: solo-para-compilar-en-ci
+          SUPABASE_SERVICE_ROLE_KEY: solo-para-compilar-en-ci
+          GATE_PASSWORD: solo-para-compilar-en-ci
+          GATE_COOKIE_SECRET: solo-para-compilar-en-ci-0123456789abcdef
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
