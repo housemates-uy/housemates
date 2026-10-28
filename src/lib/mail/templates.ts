@@ -11,7 +11,8 @@
 //     Gmail no invierte;
 //   - el texto va envuelto en `blend()`: el truco "gmail-blend" (mix-blend-mode screen +
 //     difference) que deshace la inversión y lo deja blanco;
-//   - el QR y el logo son imágenes con su propio fondo, nunca se tocan;
+//   - el QR (con su fondo blanco) y el logo (blanco, sobre los doodles) son imágenes: no se tocan;
+//   - el fondo se repite en mosaico para cubrir todo el ancho en Gmail web;
 //   - los botones son oscuros con borde blanco (un botón blanco con texto oscuro se rompe).
 // Cada plantilla devuelve { subject, html, text }: el texto plano es para clientes que no
 // muestran HTML y mejora la entrega (menos spam).
@@ -51,11 +52,11 @@ u + .body .gmail-blend-difference { background:#000; mix-blend-mode:difference; 
 </style></head>
 <body class="body" style="margin:0;padding:0;${solid(C.ink)}">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${esc(preheader)}</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" background="${bg}" style="${solid(C.ink)}background-image:url('${bg}');background-repeat:repeat-y;background-position:center top;background-size:600px auto;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" background="${bg}" style="${solid(C.ink)}background-image:url('${bg}');background-repeat:repeat;background-position:center top;background-size:600px auto;">
 <tr><td align="center" style="padding:40px 20px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;font-family:${FONT};color:${C.bone};">
 <tr><td align="center" style="padding-bottom:32px;">
-<img src="${appUrl()}/brand/logo-mail.png?v=2" width="120" height="120" alt="House Mates" style="display:block;border:0;">
+<img src="${appUrl()}/brand/logo-mail.png?v=3" width="120" height="120" alt="House Mates" style="display:block;border:0;">
 </td></tr>
 ${inner}
 <tr><td align="center" style="padding-top:36px;font-size:12px;line-height:1.6;color:${C.muted};">
