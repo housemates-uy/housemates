@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { fontFaceCss, fontPreloads } from '@/lib/fonts';
+import { FALLBACK_FONT_CSS, fontFaceCss, fontPreloads } from '@/lib/fonts';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -19,7 +19,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {fontPreloads.map((href) => (
           <link key={href} rel="preload" href={href} as="font" type="font/woff2" crossOrigin="anonymous" />
         ))}
-        <style dangerouslySetInnerHTML={{ __html: fontFaceCss }} />
+        {fontFaceCss && <style dangerouslySetInnerHTML={{ __html: fontFaceCss }} />}
+        <link rel="preconnect" href="https://api.fontshare.com" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://cdn.fontshare.com" crossOrigin="anonymous" />
+        {/* eslint-disable-next-line @next/next/no-page-custom-font -- fuente de respaldo del manual */}
+        <link rel="stylesheet" href={FALLBACK_FONT_CSS} />
       </head>
       <body className="min-h-[100dvh] bg-ink font-sans text-bone antialiased">
         <a

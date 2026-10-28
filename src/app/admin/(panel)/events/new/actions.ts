@@ -3,7 +3,7 @@
 import { requireAdmin, logAdminAction } from '@/lib/auth/admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { eventSchema, tiersSchema, type EventInput, type TierInput } from '@/lib/validation/schemas'
-import { toUTC } from '@/lib/events'
+import { tierExtrasToDb, toUTC } from '@/lib/events'
 
 export async function createEventAction(
   eventData: EventInput,
@@ -25,6 +25,10 @@ export async function createEventAction(
   const tierNames = tiersParsed.data.map((t) => t.name.toLowerCase().trim())
   if (tierNames.length !== new Set(tierNames).size) {
     return { error: 'No puede haber dos tiers con el mismo nombre.' }
+  }
+  const presaleCodes = tiersParsed.data.map((t) => t.presale_code).filter(Boolean)
+  if (presaleCodes.length !== new Set(presaleCodes).size) {
+    return { error: 'No puede haber dos tiers con el mismo código de preventa.' }
   }
 
   const db = createAdminClient()
@@ -48,6 +52,7 @@ export async function createEventAction(
 
   const tiersToInsert = tiersParsed.data.map((tier, i) => ({
     ...tier,
+    ...tierExtrasToDb(tier),
     description: tier.description || null,
     event_id: event.id,
     sort_order: i + 1,

@@ -1,6 +1,8 @@
 import Link from 'next/link';
+import { User } from 'lucide-react';
 import { Logo } from '@/components/ui/logo';
 import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 export function SiteNav({ igHandle, igHref }: { igHandle: string; igHref: string }) {
   return (
@@ -13,15 +15,32 @@ export function SiteNav({ igHandle, igHref }: { igHandle: string; igHref: string
           <Logo className="h-11" />
         </Link>
         <div className="flex items-center gap-2">
+          <Link href="/barra" className={buttonVariants({ variant: 'ghost', size: 'md', className: 'px-3.5' })}>
+            Barra
+          </Link>
           <a
             href={igHref}
             target="_blank"
             rel="noreferrer"
-            className={buttonVariants({ variant: 'ghost', size: 'sm', className: 'hidden sm:inline-flex' })}
+            className={buttonVariants({ variant: 'ghost', size: 'md', className: 'hidden sm:inline-flex' })}
           >
             {igHandle}
           </a>
-          <Link href="/entradas" className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+          <Link
+            href="/cuenta"
+            aria-label="Mi cuenta"
+            className={buttonVariants({ variant: 'ghost', size: 'md', className: 'px-3' })}
+          >
+            <User size={18} strokeWidth={1.5} aria-hidden className="sm:hidden" />
+            <span className="hidden sm:inline">Mi cuenta</span>
+          </Link>
+          <Link
+            href="/entradas"
+            className={cn(
+              buttonVariants({ variant: 'outline', size: 'md' }),
+              'border-bone/45 bg-ink/30 font-semibold backdrop-blur-sm hover:border-bone hover:bg-ink/50',
+            )}
+          >
             Entradas
           </Link>
         </div>

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { timingSafeEqual } from 'crypto';
 import { z } from 'zod';
 import { getGatePassword, getGateSession, gateVersion } from '@/lib/auth/gate';
+import { allowAttempt, TOO_MANY_ATTEMPTS } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -41,6 +42,11 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     await sleep(500);
     return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
+  }
+
+  // 5 intentos cada 15 minutos por IP (CLAUDE.md §7.2), antes de comparar la contraseña.
+  if (!(await allowAttempt('gate'))) {
+    return NextResponse.json({ error: 'too_many_attempts', message: TOO_MANY_ATTEMPTS }, { status: 429 });
   }
 
   if (!safeEqual(parsed.data.password, expected)) {

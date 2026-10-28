@@ -10,6 +10,11 @@ const securityHeaders = [
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // El comprobante de transferencia viaja en la acción de compra (hasta 4 MB). Vercel no
+  // acepta pedidos de más de 4,5 MB, así que el formulario achica las fotos grandes antes.
+  experimental: {
+    serverActions: { bodySizeLimit: '5mb' },
+  },
   async headers() {
     return [
       {

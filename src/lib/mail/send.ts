@@ -16,6 +16,16 @@ type EmailType = Database['public']['Enums']['email_type'];
 let transporter: Transporter | null = null;
 
 function getTransporter() {
+  // En local, SMTP_HOST apunta a la bandeja de Supabase local (Inbucket, puerto 54325):
+  // los mails se ven en http://127.0.0.1:54324 y no le llegan a nadie de verdad.
+  if (process.env.SMTP_HOST) {
+    transporter ??= nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT ?? 25),
+      secure: false,
+    });
+    return transporter;
+  }
   const user = process.env.GMAIL_USER;
   const pass = process.env.GMAIL_APP_PASSWORD;
   if (!user || !pass) return null;
@@ -33,8 +43,9 @@ export async function sendMail(params: {
   subject: string;
   html: string;
   text: string;
-  attachments?: { filename: string; content: Buffer; cid: string }[];
-  log?: { ticketId: string; type: EmailType };
+  attachments?: { filename: string; content: Buffer; cid?: string }[];
+  // Entrada (ticketId) o pedido de barra (barOrderId).
+  log?: { ticketId?: string; barOrderId?: string; type: EmailType };
 }): Promise<boolean> {
   const t = getTransporter();
   if (!t) {
@@ -63,7 +74,8 @@ export async function sendMail(params: {
     await createAdminClient()
       .from('email_log')
       .insert({
-        ticket_id: params.log.ticketId,
+        ticket_id: params.log.ticketId ?? null,
+        bar_order_id: params.log.barOrderId ?? null,
         type: params.log.type,
         provider_id: providerId,
         status: ok ? 'sent' : 'failed',

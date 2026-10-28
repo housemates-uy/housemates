@@ -3,9 +3,12 @@
 import { requireAdmin, requireOwner, logAdminAction } from '@/lib/auth/admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { eventSchema, tiersSchema, tierEditSchema, type EventInput, type TierInput, type TierEditInput } from '@/lib/validation/schemas'
-import { toUTC } from '@/lib/events'
+import { tierExtrasToDb, toUTC } from '@/lib/events'
+import { sendPresaleMails } from '@/lib/mail/presale-mails'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+
+const PRESALE_TAKEN = 'Ese código de preventa ya lo usa otro tier de este evento.'
 
 export async function updateEventAction(
   id: string,
@@ -61,12 +64,14 @@ export async function updateEventAction(
     const { error: tiersError } = await db.from('ticket_tiers').insert(
       tiersParsed.data.map((t, i) => ({
         ...t,
+        ...tierExtrasToDb(t),
         description: t.description || null,
         event_id: id,
         sort_order: nextOrder + i,
       }))
     )
     if (tiersError) {
+      if (tiersError.message.includes('presale_code')) return { error: PRESALE_TAKEN }
       if (tiersError.code === '23505') return { error: 'Ya existe un tier con ese nombre en este evento.' }
       return { error: 'Error al guardar los tiers.' }
     }
@@ -108,10 +113,12 @@ export async function updateTierAction(
       quantity_total: parsed.data.quantity_total,
       description: parsed.data.description || null,
       active: parsed.data.active,
+      ...tierExtrasToDb(parsed.data),
     })
     .eq('id', tierId)
 
   if (error) {
+    if (error.message.includes('presale_code')) return { error: PRESALE_TAKEN }
     if (error.code === '23505') return { error: 'Ya existe un tier con ese nombre en este evento.' }
     return { error: 'Error al guardar el tier.' }
   }
@@ -160,4 +167,20 @@ export async function archiveEventAction(id: string): Promise<void> {
   await db.from('events').update({ status: 'archived', sales_active: false }).eq('id', id)
   await logAdminAction(admin.id, 'archive', 'event', id)
   redirect('/admin/events')
+}
+
+// "Mandar preventa a quienes vinieron antes" (solo owners). Manda hasta 45 s por clic (la
+// página exporta maxDuration = 60); si quedan pendientes, salen con el próximo clic.
+export async function sendPresaleAction(eventId: string, tierId: string): Promise<void> {
+  const admin = await requireOwner()
+  const r = await sendPresaleMails(tierId, { budgetMs: 45_000, adminId: admin.id })
+  await logAdminAction(admin.id, 'send_presale', 'tier', tierId, r)
+  const q = new URLSearchParams({
+    preventa: tierId,
+    p_ok: String(r.sent),
+    p_fallaron: String(r.failed),
+    p_quedan: String(r.left),
+    t: String(Date.now()),
+  })
+  redirect(`/admin/events/${eventId}?${q}#preventa`)
 }

@@ -1,4 +1,11 @@
 import Image from 'next/image';
+import Link from 'next/link';
+
+const HELP_LINKS = [
+  ['/preguntas-frecuentes', 'Preguntas frecuentes'],
+  ['/terminos', 'Términos'],
+  ['/privacidad', 'Privacidad'],
+] as const;
 
 export function SiteFooter({ igHandle, igHref }: { igHandle: string; igHref: string }) {
   return (
@@ -21,6 +28,17 @@ export function SiteFooter({ igHandle, igHref }: { igHandle: string; igHref: str
             Instagram {igHandle}
           </a>
           <p>Montevideo, Uruguay · © {new Date().getFullYear()}</p>
+          <nav aria-label="Ayuda y legales" className="mt-3">
+            <ul className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-bone/45">
+              {HELP_LINKS.map(([href, label]) => (
+                <li key={href}>
+                  <Link href={href} className="transition-colors hover:text-bone">
+                    {label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
         </div>
       </div>
     </footer>

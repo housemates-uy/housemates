@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { getIronSession, type SessionOptions } from 'iron-session';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { GATE_COOKIE, GATE_TTL_SECONDS, type GateSession } from '@/lib/auth/gate-shared';
+import { isLocalNoAuth } from '@/lib/auth/local-mode';
 
 export { GATE_COOKIE, GATE_TTL_SECONDS, type GateSession };
 
@@ -50,7 +51,24 @@ export function gateVersion(password: string): string {
   return createHash('sha256').update(password).digest('hex').slice(0, 16);
 }
 
+// La contraseña para comprar se prende y apaga desde /admin/config (site_config.gate_enabled).
+// Solo se apaga con un '0' explícito: si falta la fila o la base falla, se pide.
+export async function isGateEnabled(): Promise<boolean> {
+  try {
+    const { data } = await createAdminClient()
+      .from('site_config')
+      .select('value')
+      .eq('key', 'gate_enabled')
+      .maybeSingle();
+    return data?.value !== '0';
+  } catch {
+    return true;
+  }
+}
+
 export async function hasGateAccess(): Promise<boolean> {
+  if (isLocalNoAuth()) return true;
+  if (!(await isGateEnabled())) return true;
   const session = await getGateSession();
   if (!session.granted || !session.version) return false;
   const password = await getGatePassword();

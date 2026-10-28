@@ -1,10 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { getIronSession } from 'iron-session';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
-import { GATE_COOKIE, GATE_TTL_SECONDS, type GateSession } from '@/lib/auth/gate-shared';
+import { isLocalNoAuth } from '@/lib/auth/local-mode';
 
-// La landing es pública. La contraseña protege solo la compra de entradas.
-const GATED_PREFIXES = ['/entradas', '/checkout'];
+// Protege el admin y mantiene viva la sesión de Supabase (admins y cuentas de compradores).
+// La contraseña para comprar (que se prende y apaga desde /admin/config) la chequea la
+// página /entradas con hasGateAccess(), porque el middleware no puede saber si está prendida
+// sin consultar la base. Las páginas de /cuenta piden la sesión ellas mismas.
 const ADMIN_PUBLIC = ['/admin/login'];
 
 function matchesPrefix(pathname: string, prefixes: string[]) {
@@ -15,14 +16,8 @@ function isAdminPath(pathname: string) {
   return matchesPrefix(pathname, ['/admin', '/api/admin']);
 }
 
-async function handleAdminAuth(request: NextRequest): Promise<NextResponse> {
-  const { pathname } = request.nextUrl;
-
-  if (matchesPrefix(pathname, ADMIN_PUBLIC)) {
-    return NextResponse.next();
-  }
-
-  // Supabase middleware client — refresca tokens y propaga cookies
+// Refresca el token de Supabase si venció y propaga las cookies nuevas en la respuesta.
+async function refreshSession(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -48,6 +43,18 @@ async function handleAdminAuth(request: NextRequest): Promise<NextResponse> {
     data: { user },
   } = await supabase.auth.getUser();
 
+  return { user, response };
+}
+
+async function handleAdminAuth(request: NextRequest): Promise<NextResponse> {
+  if (matchesPrefix(request.nextUrl.pathname, ADMIN_PUBLIC)) {
+    return NextResponse.next();
+  }
+
+  // Esto solo pide un usuario logueado: que sea admin (fila activa en `admins`) lo
+  // chequean el layout del panel y cada acción (src/lib/auth/admin.ts). Así una cuenta
+  // de comprador no entra.
+  const { user, response } = await refreshSession(request);
   if (!user) {
     return NextResponse.redirect(new URL('/admin/login', request.url));
   }
@@ -55,37 +62,23 @@ async function handleAdminAuth(request: NextRequest): Promise<NextResponse> {
   return response;
 }
 
-function redirectToAccess(request: NextRequest) {
-  const url = new URL('/access', request.url);
-  url.searchParams.set('next', request.nextUrl.pathname + request.nextUrl.search);
-  return NextResponse.redirect(url);
-}
-
-// Chequeo rápido de cookie. La comparación contra la contraseña vigente (rotación)
-// la hace cada página protegida con hasGateAccess().
-async function handleGateAuth(request: NextRequest): Promise<NextResponse> {
-  const secret = process.env.GATE_COOKIE_SECRET;
-  if (!secret || secret.length < 32) return redirectToAccess(request);
-
-  const response = NextResponse.next();
-  const session = await getIronSession<GateSession>(request, response, {
-    cookieName: GATE_COOKIE,
-    password: secret,
-    ttl: GATE_TTL_SECONDS,
-  });
-
-  if (!session.granted) return redirectToAccess(request);
-  return response;
-}
-
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (isAdminPath(pathname)) return handleAdminAuth(request);
-  if (matchesPrefix(pathname, GATED_PREFIXES)) return handleGateAuth(request);
-  return NextResponse.next();
+  if (isAdminPath(pathname)) {
+    // Modo local sin claves (src/lib/auth/local-mode.ts): el admin no pide login.
+    if (isLocalNoAuth()) {
+      if (pathname === '/admin/login') return NextResponse.redirect(new URL('/admin', request.url));
+      return NextResponse.next();
+    }
+    return handleAdminAuth(request);
+  }
+
+  // /cuenta, /entradas, /compra/resultado y /barra: las cuentas de compradores andan igual en modo local.
+  const { response } = await refreshSession(request);
+  return response;
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/api/admin/:path*', '/entradas/:path*', '/checkout/:path*'],
+  matcher: ['/admin/:path*', '/api/admin/:path*', '/cuenta/:path*', '/entradas', '/compra/resultado', '/barra/:path*'],
 };

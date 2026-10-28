@@ -100,26 +100,61 @@ export type TicketMailData = {
   dateLong: string; // "Viernes 11 de diciembre · 23:00 hs"
   dateShort: string; // "11.12.26"
   entryLabel: string; // "Tanda 3" o "Invitación"
+  location: string | null; // "Viña Varela Zarranz"
+  locationUrl: string | null; // pin de Google Maps
   ticketUrl: string;
   price: number | null; // precio de la entrada (compra web)
-  fee: number | null; // cargo por servicio (compra web)
+  discount: number; // descuento por código (0 si no hubo)
+  discountCode: string | null;
+  fee: number | null; // cargo por servicio (compra web con Mercado Pago; 0 en transferencia)
   total: number; // lo que pagó (0 en invitaciones)
+  transport?: { name: string; departure: string; price: number } | null; // bus elegido al comprar
+  entryUntil?: string | null; // tanda de ingreso temprano: "00:30"
 };
 
+// Tanda de ingreso temprano: fila "Ingreso · Hasta las 00:30".
+const entryRows = (d: TicketMailData): [string, string][] =>
+  d.entryUntil ? [['Ingreso', `Hasta las ${d.entryUntil}`]] : [];
+
+// Desglose del pago: entrada, descuento (si hubo), cargo por servicio (si hubo) y total.
+function paymentRows(d: TicketMailData, totalLabel: string) {
+  const payment: [string, string][] = [];
+  let total: [string, string] | undefined;
+  if (d.price !== null && d.fee !== null) {
+    payment.push([`Entrada · ${d.entryLabel}`, formatUYU(d.price)]);
+    if (d.discount > 0) {
+      payment.push([`Descuento${d.discountCode ? ` (${d.discountCode})` : ''}`, `−${formatUYU(d.discount)}`]);
+    }
+    if (d.transport) payment.push([`Transporte · ${d.transport.name}`, formatUYU(d.transport.price)]);
+    if (d.fee > 0) payment.push(['Cargo por servicio', formatUYU(d.fee)]);
+    total = [totalLabel, formatUYU(d.total)];
+  } else if (d.total > 0) {
+    total = [d.transport ? totalLabel : `Entrada · ${d.entryLabel}`, formatUYU(d.total)];
+  }
+  return { payment, total };
+}
+
+// Punto y horario del bus, si lo eligió al comprar.
+function busPanel(d: TicketMailData) {
+  if (!d.transport) return '';
+  return `<tr><td style="padding-top:20px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="${solid(C.panel)}border-radius:14px;"><tr><td style="padding:18px 20px;font-size:13px;line-height:1.6;color:${C.soft};">
+${blend(`<strong style="color:${C.bone};">Tu lugar en el bus · ${esc(d.transport.name)}</strong><br>${esc(d.transport.departure).replace(/\n/g, '<br>')}`)}
+</td></tr></table></td></tr>`;
+}
+
+const busText = (d: TicketMailData) =>
+  d.transport ? `Transporte: ${d.transport.name} · ${d.transport.departure.replace(/\s*\n\s*/g, ' · ')}` : '';
+
 const ciMasked = (tail: string) => `CI •••• ${tail.slice(0, 3)}-${tail.slice(3)}`;
+
+// Para los mails de comunicación del evento (src/lib/mail/event-mails.ts).
+export { C as MAIL_COLORS, IG_URL, blend, solid, esc, layout, heading, rows, button, ciMasked };
 
 // 1 · Entrada confirmada: compra web aprobada, entrada manual o invitación.
 // El QR va como imagen adjunta embebida (cid:qr) porque Gmail no muestra imágenes data:.
 export function ticketConfirmedEmail(d: TicketMailData) {
   const subject = `Tu entrada para ${d.eventTitle} · ${d.dateShort}`;
-  const payment: [string, string][] = [];
-  let total: [string, string] | undefined;
-  if (d.price !== null && d.fee !== null) {
-    payment.push([`Entrada · ${d.entryLabel}`, formatUYU(d.price)], ['Cargo por servicio', formatUYU(d.fee)]);
-    total = ['Total pagado', formatUYU(d.total)];
-  } else if (d.total > 0) {
-    total = [`Entrada · ${d.entryLabel}`, formatUYU(d.total)];
-  }
+  const { payment, total } = paymentRows(d, 'Total pagado');
 
   const inner = `${heading(
     d.total === 0 ? 'INVITACIÓN' : 'COMPRA CONFIRMADA',
@@ -141,16 +176,26 @@ export function ticketConfirmedEmail(d: TicketMailData) {
 </td></tr>
 ${button(d.ticketUrl, 'Ver mi entrada')}
 <tr><td align="center" style="padding-top:10px;font-size:12px;color:${C.muted};">${blend('Desde ahí la podés guardar como imagen o PDF.')}</td></tr>
-<tr><td style="padding-top:28px;">${rows([['Fecha', d.dateLong], ['Lugar', 'Se comparte el día del evento'], ...payment], total)}</td></tr>
+<tr><td style="padding-top:28px;">${rows([['Fecha', d.dateLong], ...entryRows(d), ['Lugar', d.location ?? 'A confirmar'], ...payment], total)}</td></tr>
+${busPanel(d)}
 <tr><td style="padding-top:24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="${solid(C.panel)}border-radius:14px;"><tr><td style="padding:18px 20px;font-size:13px;line-height:1.6;color:${C.soft};">
-${blend(`<strong style="color:${C.bone};">Antes de ir</strong><br>La entrada es personal: en puerta te pedimos la cédula. No se venden entradas en puerta. La ubicación exacta la compartimos el día del evento por Instagram.`)}
+${blend(`<strong style="color:${C.bone};">Antes de ir</strong><br>La entrada es personal: en puerta te pedimos la cédula. No se venden entradas en puerta.${
+    d.entryUntil ? `<br>Tu tanda es de ingreso temprano: entrá antes de las ${esc(d.entryUntil)}.` : ''
+  }${
+    d.locationUrl
+      ? `<br><a href="${esc(d.locationUrl)}" style="color:${C.bone};text-decoration:underline;">Cómo llegar: ver en Google Maps</a>`
+      : ''
+  }`)}
 </td></tr></table></td></tr>`;
 
   const text = [
     `${d.firstName}, ya tenés tu entrada para ${d.eventTitle} (${d.dateLong}).`,
     `${d.entryLabel} · ${d.fullName} · ${ciMasked(d.docTail)}`,
+    d.entryUntil ? `Ingreso temprano: entrá antes de las ${d.entryUntil}.` : '',
     `Tu entrada con el QR: ${d.ticketUrl}`,
+    d.location ? `Lugar: ${d.location}${d.locationUrl ? ` (${d.locationUrl})` : ''}` : '',
     d.total > 0 ? `Total pagado: ${formatUYU(d.total)}` : '',
+    busText(d),
     'La entrada es personal: en puerta te pedimos la cédula.',
   ]
     .filter(Boolean)
@@ -191,4 +236,179 @@ ${button(IG_URL, 'Escribinos por Instagram')}`;
     .join('\n');
 
   return { subject, html: layout(inner, 'Tu entrada fue anulada.'), text };
+}
+
+// 2 · Transferencia recibida: la persona subió el comprobante y queda en revisión.
+export function transferReceivedEmail(d: TicketMailData) {
+  const subject = `Recibimos tu comprobante · ${d.eventTitle} ${d.dateShort}`;
+  const { payment, total } = paymentRows(d, 'Total transferido');
+  const inner = `${heading(
+    'TRANSFERENCIA RECIBIDA',
+    `${d.firstName}, recibimos tu comprobante`,
+    'Lo estamos validando. Cuando confirmemos la transferencia te mandamos la entrada con el QR a este mail.',
+  )}
+<tr><td style="padding-top:28px;">${rows([['Fecha', d.dateLong], ['Lugar', d.location ?? 'A confirmar'], ['A nombre de', `${d.fullName} · ${ciMasked(d.docTail)}`], ...payment], total)}</td></tr>
+${busPanel(d)}
+<tr><td style="padding-top:24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="${solid(C.panel)}border-radius:14px;"><tr><td style="padding:18px 20px;font-size:13px;line-height:1.6;color:${C.soft};">
+${blend(`<strong style="color:${C.bone};">Tu lugar queda reservado</strong><br>Mientras validamos el comprobante nadie más puede usar tu lugar. Si algo no coincide te escribimos.`)}
+</td></tr></table></td></tr>`;
+
+  const text = [
+    `${d.firstName}, recibimos tu comprobante para ${d.eventTitle} (${d.dateLong}).`,
+    'Lo estamos validando. Cuando confirmemos la transferencia te mandamos la entrada con el QR a este mail.',
+    `Total transferido: ${formatUYU(d.total)}`,
+    busText(d),
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  return { subject, html: layout(inner, 'Estamos validando tu transferencia.'), text };
+}
+
+// 3 · Transferencia rechazada: el comprobante no coincide con ninguna transferencia.
+export function transferRejectedEmail(d: TicketMailData) {
+  const subject = `No pudimos validar tu transferencia · ${d.eventTitle}`;
+  const inner = `${heading(
+    'NO PUDIMOS VALIDARLA',
+    'Tu transferencia no se pudo validar',
+    'Revisamos el comprobante y no encontramos la transferencia, así que la reserva se anuló.',
+  )}
+<tr><td style="padding-top:28px;">${rows([
+    ['Evento', d.eventTitle],
+    ['Entrada', d.entryLabel],
+    ['A nombre de', `${d.fullName} · ${ciMasked(d.docTail)}`],
+  ])}</td></tr>
+<tr><td align="center" style="padding-top:24px;font-size:14px;line-height:1.55;color:${C.bone};">${blend('Si ya transferiste, escribinos por Instagram con el comprobante y lo revisamos.')}</td></tr>
+${button(IG_URL, 'Escribinos por Instagram')}`;
+
+  const text = [
+    `No pudimos validar tu transferencia para ${d.eventTitle} (${d.fullName}) y la reserva se anuló.`,
+    `Si ya transferiste, escribinos por Instagram con el comprobante: ${IG_URL}`,
+  ].join('\n');
+
+  return { subject, html: layout(inner, 'Tu transferencia no se pudo validar.'), text };
+}
+
+// 4 · Aviso a los owners: hay una transferencia para validar (con el comprobante adjunto).
+export function transferAdminAlertEmail(d: TicketMailData & { adminUrl: string; instagram: string | null }) {
+  const subject = `Transferencia para validar: ${d.fullName} · ${formatUYU(d.total)}`;
+  const inner = `${heading(
+    'PARA VALIDAR',
+    'Hay una transferencia nueva',
+    `${d.fullName} subió el comprobante. Fijate que la plata haya llegado y aprobá o rechazá la entrada.`,
+  )}
+<tr><td style="padding-top:28px;">${rows([
+    ['Comprador', d.fullName],
+    ['Instagram', d.instagram ? `@${d.instagram}` : '—'],
+    ['Entrada', d.entryLabel],
+    ...(d.discount > 0 ? ([[`Descuento${d.discountCode ? ` (${d.discountCode})` : ''}`, `−${formatUYU(d.discount)}`]] as [string, string][]) : []),
+    ...(d.transport ? ([[`Transporte · ${d.transport.name}`, formatUYU(d.transport.price)]] as [string, string][]) : []),
+  ], ['Total a recibir', formatUYU(d.total)])}</td></tr>
+${button(d.adminUrl, 'Validar en el admin')}
+<tr><td align="center" style="padding-top:10px;font-size:12px;color:${C.muted};">${blend('El comprobante va adjunto a este mail.')}</td></tr>`;
+
+  const text = [
+    `Transferencia para validar: ${d.fullName} (${d.entryLabel}), ${formatUYU(d.total)}.`,
+    `Validala en: ${d.adminUrl}`,
+  ].join('\n');
+
+  return { subject, html: layout(inner, `${d.fullName} subió un comprobante.`), text };
+}
+
+// 5 · Cuenta de comprador: confirmar el email. Hasta confirmarlo, "Mi cuenta" muestra solo
+// las entradas compradas desde la cuenta (ver docs/LOGICA_DE_NEGOCIO.md → "Cuentas").
+export function accountConfirmEmail(d: { firstName: string; url: string }) {
+  const subject = 'Confirmá tu email · House Mates';
+  const inner = `${heading(
+    'TU CUENTA',
+    `${d.firstName}, confirmá tu email`,
+    'Tocá el botón y elegí tu contraseña: así en Mi cuenta aparecen todas las entradas a tu nombre, también las que te mandaron a este mail.',
+  )}
+${button(d.url, 'Confirmar mi email')}
+<tr><td align="center" style="padding-top:14px;font-size:12px;line-height:1.6;color:${C.muted};">${blend('El link vence en 1 hora. Si se te vence, pedí otro desde Mi cuenta.<br>Si no creaste una cuenta en House Mates, ignorá este mail.')}</td></tr>`;
+
+  const text = [
+    `${d.firstName}, confirmá tu email y elegí tu contraseña para ver todas tus entradas en Mi cuenta:`,
+    d.url,
+    'El link vence en 1 hora. Si no creaste una cuenta en House Mates, ignorá este mail.',
+  ].join('\n');
+
+  return { subject, html: layout(inner, 'Confirmá tu email para ver tus entradas.'), text };
+}
+
+// 6 · Cuenta de comprador: elegir una contraseña nueva.
+export function passwordResetEmail(d: { url: string }) {
+  const subject = 'Elegí una contraseña nueva · House Mates';
+  const inner = `${heading(
+    'TU CUENTA',
+    'Elegí una contraseña nueva',
+    'Pediste recuperar el acceso a tu cuenta. Tocá el botón y elegí una contraseña nueva.',
+  )}
+${button(d.url, 'Elegir contraseña')}
+<tr><td align="center" style="padding-top:14px;font-size:12px;line-height:1.6;color:${C.muted};">${blend('El link vence en 1 hora y sirve una sola vez.<br>Si no lo pediste, ignorá este mail: tu contraseña no cambia.')}</td></tr>`;
+
+  const text = [
+    'Pediste recuperar el acceso a tu cuenta de House Mates. Elegí una contraseña nueva acá:',
+    d.url,
+    'El link vence en 1 hora. Si no lo pediste, ignorá este mail.',
+  ].join('\n');
+
+  return { subject, html: layout(inner, 'Elegí una contraseña nueva.'), text };
+}
+
+export type BarOrderMailData = {
+  firstName: string | null;
+  eventTitle: string;
+  dateShort: string;
+  orderUrl: string;
+  lines: { name: string; quantity: number; price: number }[];
+  units: { name: string; cid: string }[]; // un QR por trago, en el orden del pedido
+  total: number;
+};
+
+// 7 · Pedido de barra pago: un QR por trago, cada uno con su nombre, de a dos por fila.
+// Cada QR va como imagen adjunta embebida (cid:qr1, cid:qr2…), igual que el de la entrada.
+export function barOrderEmail(d: BarOrderMailData) {
+  const subject = `Tu pedido de barra · ${d.eventTitle} ${d.dateShort}`;
+  const n = d.units.length;
+  const cells = d.units.map(
+    (u, i) => `<td width="50%" valign="top" style="padding:6px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="${solid(C.ink)}border:1px solid ${C.line};border-radius:14px;">
+<tr><td align="center" style="padding:14px 10px 0;font-size:14px;font-weight:700;line-height:1.3;color:${C.bone};">${blend(esc(u.name))}</td></tr>
+<tr><td align="center" style="padding:4px 10px 0;font-size:11px;letter-spacing:1px;color:${C.muted};">${blend(`TRAGO ${i + 1} DE ${n}`)}</td></tr>
+<tr><td align="center" style="padding:12px 10px 14px;"><table role="presentation" cellpadding="0" cellspacing="0" style="background:#FFFFFF;border-radius:10px;"><tr><td style="padding:8px;">
+<img src="cid:${u.cid}" width="150" height="150" alt="QR de ${esc(u.name)}" style="display:block;border:0;width:150px;max-width:100%;height:auto;">
+</td></tr></table></td></tr>
+</table></td>`,
+  );
+  const grid: string[] = [];
+  for (let i = 0; i < cells.length; i += 2) {
+    grid.push(`<tr>${cells[i]}${cells[i + 1] ?? '<td width="50%" style="padding:6px;"></td>'}</tr>`);
+  }
+
+  const inner = `${heading(
+    'PEDIDO DE BARRA',
+    d.firstName ? `${d.firstName}, tus tragos están pagos` : 'Tus tragos están pagos',
+    'Cada QR vale un trago. Mostralo en la barra y retiralo cuando quieras, de a uno o todos juntos.',
+  )}
+<tr><td style="padding-top:22px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${grid.join('')}</table></td></tr>
+${button(d.orderUrl, 'Ver mi pedido')}
+<tr><td align="center" style="padding-top:10px;font-size:12px;color:${C.muted};">${blend('Desde ahí ves qué te falta retirar: se actualiza sola.')}</td></tr>
+<tr><td style="padding-top:28px;">${rows(
+    d.lines.map((l) => [`${l.quantity} × ${l.name}`, formatUYU(l.quantity * l.price)] as [string, string]),
+    ['Total pagado', formatUYU(d.total)],
+  )}</td></tr>
+<tr><td style="padding-top:24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="${solid(C.panel)}border-radius:14px;"><tr><td style="padding:18px 20px;font-size:13px;line-height:1.6;color:${C.soft};">
+${blend(`<strong style="color:${C.bone};">Cómo funciona</strong><br>El barman escanea cada QR una sola vez. Si querés invitarle un trago a alguien, mandale ese QR. Valen solo para ${esc(d.eventTitle)} del ${esc(d.dateShort)}.`)}
+</td></tr></table></td></tr>`;
+
+  const text = [
+    `${d.firstName ? `${d.firstName}, tus` : 'Tus'} tragos para ${d.eventTitle} (${d.dateShort}) están pagos.`,
+    ...d.lines.map((l) => `${l.quantity} × ${l.name}`),
+    `Total pagado: ${formatUYU(d.total)}`,
+    `Tus QRs (uno por trago): ${d.orderUrl}`,
+    'Mostrá cada QR en la barra: vale un trago y se usa una sola vez.',
+  ].join('\n');
+
+  return { subject, html: layout(inner, `Tenés ${n} ${n === 1 ? 'trago' : 'tragos'} para retirar en la barra.`), text };
 }

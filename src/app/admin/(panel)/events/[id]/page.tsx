@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { requireAdmin } from '@/lib/auth/admin';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { StatusBadge } from '@/components/admin/events/status-badge';
+import { TierTags } from '@/components/admin/events/tier-fields';
 import { ConfirmSubmitButton, SubmitButton } from '@/components/admin/submit-button';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
@@ -15,8 +16,19 @@ import {
   toggleTierActiveAction,
   toggleTierSoldOutAction,
 } from './actions';
+import { CommsSection } from './comms';
+import { PresaleSection } from './presale';
 
-export default async function EventOverviewPage({ params }: { params: { id: string } }) {
+// Los envíos de "Comunicación" y de "Preventa" corren en las server actions de esta página.
+export const maxDuration = 60;
+
+export default async function EventOverviewPage({
+  params,
+  searchParams,
+}: {
+  params: { id: string };
+  searchParams: Record<string, string | undefined>;
+}) {
   const admin = await requireAdmin();
   const db = createAdminClient();
 
@@ -86,6 +98,7 @@ export default async function EventOverviewPage({ params }: { params: { id: stri
                       <p className="text-sm font-medium">{tier.name}</p>
                       {!tier.active && <Badge>Inactiva</Badge>}
                       {isSoldOut && <Badge tone="alert">Sold out</Badge>}
+                      <TierTags tier={tier} />
                     </div>
                     <p className="mt-1 text-xs text-bone/55">
                       {formatUYU(tier.price_uyu)} · {tier.quantity_sold}/{tier.quantity_total}
@@ -137,6 +150,21 @@ export default async function EventOverviewPage({ params }: { params: { id: stri
           </form>
         )}
       </div>
+
+      <PresaleSection
+        eventId={event.id}
+        tiers={tiers}
+        isOwner={admin.role === 'owner'}
+        canSend={editable && new Date(event.date_end) > new Date()}
+        searchParams={searchParams}
+      />
+
+      <CommsSection
+        eventId={event.id}
+        arrivalInfo={event.arrival_info}
+        isOwner={admin.role === 'owner'}
+        searchParams={searchParams}
+      />
     </div>
   );
 }

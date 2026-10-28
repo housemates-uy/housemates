@@ -55,11 +55,37 @@ export const eventSchema = z.object({
   path: ['date_end'],
 })
 
+export const PRESALE_CODE_RE = /^[A-Z0-9-]{3,30}$/
+
+// Ingreso temprano ("HH:MM", hora de Montevideo), salida a la venta (datetime-local) y
+// código de preventa (en mayúsculas). Vacío = no aplica. Ver docs/LOGICA_DE_NEGOCIO.md → "Tandas".
+const tierExtras = {
+  entry_until: z
+    .string()
+    .optional()
+    .transform((v) => (v ?? '').trim())
+    .refine((v) => v === '' || /^([01]\d|2[0-3]):[0-5]\d$/.test(v), 'Hora de ingreso inválida (HH:MM)'),
+  sales_start: z
+    .string()
+    .optional()
+    .transform((v) => (v ?? '').trim())
+    .refine((v) => v === '' || !Number.isNaN(Date.parse(v)), 'Fecha de salida a la venta inválida'),
+  presale_code: z
+    .string()
+    .optional()
+    .transform((v) => (v ?? '').trim().toUpperCase())
+    .refine(
+      (v) => v === '' || PRESALE_CODE_RE.test(v),
+      'Código de preventa: de 3 a 30 letras sin tilde, números o guiones, sin espacios',
+    ),
+}
+
 export const tierSchema = z.object({
   name: z.string().min(1, 'Nombre requerido'),
   price_uyu: z.coerce.number().positive('Precio debe ser mayor a 0'),
   quantity_total: z.coerce.number().int().positive('Cantidad debe ser mayor a 0'),
   description: z.string().optional(),
+  ...tierExtras,
 })
 
 export const tiersSchema = z.array(tierSchema).min(1, 'Agregá al menos un tier')
@@ -70,6 +96,7 @@ export const tierEditSchema = z.object({
   quantity_total: z.coerce.number().int().positive('Cantidad debe ser mayor a 0'),
   description: z.string().optional(),
   active: z.boolean(),
+  ...tierExtras,
 })
 
 export type EventInput = z.infer<typeof eventSchema>

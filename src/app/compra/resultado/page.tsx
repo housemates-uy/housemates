@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Logo } from '@/components/ui/logo';
+import { getCustomer } from '@/lib/customers';
 import { isMercadoPagoConfigured, syncPayment } from '@/lib/mercadopago';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { ticketUrl } from '@/lib/tickets';
@@ -15,14 +16,16 @@ export const dynamic = 'force-dynamic';
 // No confiamos en esos parámetros: con el payment_id le preguntamos a MP el estado real
 // (syncPayment), y si está aprobado confirmamos la entrada acá mismo. Así la compra
 // funciona aunque el webhook todavía no haya llegado (o falle).
+// Con transferencia vuelve con ?transferencia=<id de la entrada>: no hay pago que consultar,
+// se muestra el estado de la validación.
 // No pide la contraseña del gate: si la rotaron mientras pagaba, igual tiene que ver su entrada.
 export default async function CompraResultadoPage({
   searchParams,
 }: {
-  searchParams: { payment_id?: string; collection_id?: string; external_reference?: string };
+  searchParams: { payment_id?: string; collection_id?: string; external_reference?: string; transferencia?: string };
 }) {
   const paymentId = searchParams.payment_id ?? searchParams.collection_id;
-  let ticketId = searchParams.external_reference ?? null;
+  let ticketId = searchParams.transferencia ?? searchParams.external_reference ?? null;
   let mpStatus: string | null = null;
 
   if (paymentId && paymentId !== 'null' && isMercadoPagoConfigured()) {
@@ -47,7 +50,10 @@ export default async function CompraResultadoPage({
       : null;
 
   const paid = ticket && (ticket.status === 'paid' || ticket.status === 'used') && ticket.qr_token;
+  const inReview = ticket?.status === 'review';
+  const rejected = !!searchParams.transferencia && ticket?.status === 'cancelled';
   const waiting = !paid && (mpStatus === 'pending' || mpStatus === 'in_process');
+  const loggedIn = (paid || inReview || waiting) && !!(await getCustomer());
 
   return (
     <main id="contenido" className="mx-auto flex min-h-[100dvh] max-w-md flex-col justify-center px-5 py-12">
@@ -63,12 +69,30 @@ export default async function CompraResultadoPage({
               Ver mi entrada
             </Link>
           </>
+        ) : inReview ? (
+          <>
+            <h1 className="text-2xl font-bold tracking-tight">
+              Recibimos tu comprobante, {ticket!.buyer_name.split(' ')[0]}.
+            </h1>
+            <p className="mt-3 text-sm leading-relaxed text-bone/65">
+              Lo estamos validando. Cuando confirmemos la transferencia te mandamos la entrada con
+              el QR por mail. Tu lugar queda reservado mientras tanto.
+            </p>
+            <p className="mt-3 text-xs text-bone/45">Si no te llega, revisá también la carpeta de spam.</p>
+          </>
+        ) : rejected ? (
+          <>
+            <h1 className="text-2xl font-bold tracking-tight">No pudimos validar tu transferencia</h1>
+            <p className="mt-3 text-sm text-bone/65">
+              Si ya transferiste, escribinos por Instagram con el comprobante y lo revisamos.
+            </p>
+          </>
         ) : waiting ? (
           <>
             <h1 className="text-2xl font-bold tracking-tight">Tu pago está en proceso</h1>
             <p className="mt-3 text-sm text-bone/65">
               Si pagaste en efectivo (Abitab o RedPagos) puede tardar un poco. Cuando se acredite te
-              confirmamos por Instagram con el link de tu entrada.
+              mandamos la entrada por mail.
             </p>
           </>
         ) : (
@@ -83,6 +107,15 @@ export default async function CompraResultadoPage({
           </>
         )}
       </Card>
+      {loggedIn && (
+        <p className="mt-5 text-center text-sm text-bone/60">
+          Tu entrada también queda en{' '}
+          <Link href="/cuenta" className="text-bone underline decoration-bone/40 underline-offset-4">
+            Mi cuenta
+          </Link>
+          .
+        </p>
+      )}
     </main>
   );
 }

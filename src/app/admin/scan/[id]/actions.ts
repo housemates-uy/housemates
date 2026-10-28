@@ -8,6 +8,7 @@ import { revalidatePath } from 'next/cache';
 import { headers } from 'next/headers';
 import { logAdminAction, requireAdmin, requireOwner } from '@/lib/auth/admin';
 import { doorCounts } from '@/lib/door';
+import { entryTime } from '@/lib/events';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { formatDocument, normalizeDocument, tokenFromScan } from '@/lib/tickets';
 
@@ -31,10 +32,14 @@ export type ScanOutcome = {
   tier?: string | null;
   invitation?: boolean;
   usedAt?: string | null;
+  // Tanda de ingreso temprano ("00:30") y si llegó después: solo avisa, decide el portero.
+  entryUntil?: string | null;
+  late?: boolean;
   inside: number;
   total: number;
 };
 
+// inspect_ticket (0014) suma entry_until y late; check_in_ticket no los devuelve.
 type TicketRow = {
   result: string;
   ticket_id: string | null;
@@ -43,6 +48,8 @@ type TicketRow = {
   tier_name: string | null;
   source: string | null;
   used_at: string | null;
+  entry_until?: string | null;
+  late?: boolean;
 };
 
 const device = () => headers().get('user-agent')?.slice(0, 200) ?? undefined;
@@ -59,6 +66,8 @@ async function toOutcome(eventId: string, token: string, row: TicketRow | null):
     tier: row.tier_name,
     invitation: row.source === 'invitation',
     usedAt: row.used_at,
+    entryUntil: entryTime(row.entry_until),
+    late: !!row.late,
     ...counts,
   };
 }

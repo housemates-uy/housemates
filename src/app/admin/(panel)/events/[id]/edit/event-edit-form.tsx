@@ -3,12 +3,12 @@
 import { useState, useTransition } from 'react';
 import { Pencil, Plus } from 'lucide-react';
 import { EventFields } from '@/components/admin/events/event-fields';
-import { TierFields } from '@/components/admin/events/tier-fields';
+import { TierExtraFields, TierFields, TierTags } from '@/components/admin/events/tier-fields';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { emptyTier, formatUYU, slugify } from '@/lib/events';
+import { emptyTier, entryTime, formatUYU, slugify, toLocalInput } from '@/lib/events';
 import type { EventInput, TierInput, TierEditInput } from '@/lib/validation/schemas';
 import type { TicketTier } from '@/types/database';
 import { updateEventAction, updateTierAction } from '../actions';
@@ -20,6 +20,9 @@ function tierToInput(tier: TicketTier): TierEditInput {
     quantity_total: tier.quantity_total,
     description: tier.description ?? '',
     active: tier.active,
+    entry_until: entryTime(tier.entry_until) ?? '',
+    sales_start: tier.sales_start ? toLocalInput(tier.sales_start) : '',
+    presale_code: tier.presale_code ?? '',
   };
 }
 
@@ -54,6 +57,7 @@ function TierEditRow({ tier, eventId }: { tier: TicketTier; eventId: string }) {
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-medium">{tier.name}</p>
             {!tier.active && <Badge>Inactiva</Badge>}
+            <TierTags tier={tier} />
           </div>
           <p className="mt-1 text-xs text-bone/55">
             {formatUYU(tier.price_uyu)} · {tier.quantity_sold}/{tier.quantity_total}
@@ -104,6 +108,7 @@ function TierEditRow({ tier, eventId }: { tier: TicketTier; eventId: string }) {
           onChange={(e) => setData((p) => ({ ...p, description: e.target.value }))}
         />
       </Field>
+      <TierExtraFields value={data} onChange={(field, value) => setData((p) => ({ ...p, [field]: value }))} />
       <label className="flex cursor-pointer select-none items-center gap-2.5 text-sm text-bone/70">
         <input
           type="checkbox"

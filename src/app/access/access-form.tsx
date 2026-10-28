@@ -37,7 +37,9 @@ export function AccessForm({ next }: { next: string }) {
       setError(
         res.status === 401
           ? 'Contraseña incorrecta. Si cambió, pedinos la nueva por Instagram.'
-          : 'No pudimos verificar la contraseña. Probá de nuevo.',
+          : res.status === 429
+            ? 'Hiciste muchos intentos seguidos. Esperá unos minutos y probá de nuevo.'
+            : 'No pudimos verificar la contraseña. Probá de nuevo.',
       );
     } catch {
       setError('Sin conexión. Probá de nuevo.');

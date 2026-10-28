@@ -2,9 +2,10 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { DoodleBackdrop } from '@/components/ui/doodle-backdrop';
 import { Logo } from '@/components/ui/logo';
-import { formatLocal } from '@/lib/events';
+import { entryTime, formatLocal } from '@/lib/events';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { qrSvg, ticketUrl } from '@/lib/tickets';
+import { getTicketTransport } from '@/lib/transport';
 import { cn } from '@/lib/utils';
 import type { TicketStatus } from '@/types/database';
 import { LiveRefresh } from './live-refresh';
@@ -23,6 +24,7 @@ const STATE: Record<TicketStatus, { label: string; dot: string }> = {
   paid: { label: 'Válida', dot: 'bg-violet' },
   used: { label: 'Usada', dot: 'bg-violet' },
   pending: { label: 'Pago pendiente', dot: 'bg-bone/50' },
+  review: { label: 'En revisión', dot: 'bg-bone/50' },
   cancelled: { label: 'Anulada', dot: 'bg-alert' },
   refunded: { label: 'Anulada', dot: 'bg-alert' },
 };
@@ -31,16 +33,17 @@ export default async function TicketPage({ params }: { params: { token: string }
   const db = createAdminClient();
   const { data: ticket } = await db
     .from('tickets')
-    .select('buyer_name, buyer_document, status, used_at, source, tier_id, event_id, qr_token')
+    .select('id, buyer_name, buyer_document, status, used_at, source, tier_id, event_id, qr_token')
     .eq('qr_token', params.token)
     .maybeSingle();
   if (!ticket || !ticket.qr_token) notFound();
 
-  const [{ data: event }, { data: tier }] = await Promise.all([
+  const [{ data: event }, { data: tier }, bus] = await Promise.all([
     db.from('events').select('title, date_start').eq('id', ticket.event_id).single(),
     ticket.tier_id
-      ? db.from('ticket_tiers').select('name').eq('id', ticket.tier_id).single()
+      ? db.from('ticket_tiers').select('name, entry_until').eq('id', ticket.tier_id).single()
       : Promise.resolve({ data: null }),
+    getTicketTransport(ticket.id),
   ]);
 
   const valid = ticket.status === 'paid';
@@ -48,13 +51,15 @@ export default async function TicketPage({ params }: { params: { token: string }
   const doc = ticket.buyer_document.slice(-4);
   const state = STATE[ticket.status];
   const entryLabel = ticket.source === 'invitation' ? 'Invitación' : (tier?.name ?? 'Entrada');
+  // Tanda de ingreso temprano: hay que entrar antes de esa hora (en puerta se avisa si no).
+  const entryUntil = ticket.status !== 'used' ? entryTime(tier?.entry_until) : null;
 
   return (
     <main
       id="contenido"
       className="print-ink relative isolate h-[100dvh] overflow-hidden print:h-auto print:bg-white"
     >
-      <LiveRefresh active={valid || ticket.status === 'pending'} />
+      <LiveRefresh active={valid || ticket.status === 'pending' || ticket.status === 'review'} />
       <DoodleBackdrop className="-z-10 print:hidden" />
 
       <div className="mx-auto flex h-full max-w-md flex-col items-center gap-[2.2dvh] px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.75rem,env(safe-area-inset-top))]">
@@ -88,7 +93,11 @@ export default async function TicketPage({ params }: { params: { token: string }
               <div
                 role="img"
                 aria-label="Código QR de la entrada"
-                className="aspect-square w-[min(208px,27dvh)] [&>svg]:h-full [&>svg]:w-full"
+                className={cn(
+                  'aspect-square [&>svg]:h-full [&>svg]:w-full',
+                  // Con bus hay una línea más: el QR se achica un poco para que todo entre sin scroll.
+                  bus ? 'w-[min(208px,calc(27dvh_-_24px))]' : 'w-[min(208px,27dvh)]',
+                )}
                 dangerouslySetInnerHTML={{ __html: svg }}
               />
             </div>
@@ -108,6 +117,12 @@ export default async function TicketPage({ params }: { params: { token: string }
                   <p className="text-sm text-bone/65">Cuando se confirme, aparece tu QR acá.</p>
                 </>
               )}
+              {ticket.status === 'review' && (
+                <>
+                  <p className="text-xl font-bold">Validando tu transferencia</p>
+                  <p className="text-sm text-bone/65">Cuando la confirmemos, aparece tu QR acá y te llega por mail.</p>
+                </>
+              )}
               {(ticket.status === 'cancelled' || ticket.status === 'refunded') && (
                 <>
                   <p className="text-xl font-bold">Entrada anulada</p>
@@ -122,6 +137,20 @@ export default async function TicketPage({ params }: { params: { token: string }
             <p className="mt-1 text-[13px] text-bone/70">
               CI •••• {doc.slice(0, 3)}-{doc.slice(3)}
             </p>
+            {entryUntil && (
+              <p className="mt-2 text-[11px] font-bold uppercase tracking-[0.16em]">Ingreso hasta {entryUntil}</p>
+            )}
+            {bus && (
+              <>
+                <p className="mt-2 text-[11px] font-bold uppercase tracking-[0.16em]">Bus · {bus.name}</p>
+                {/* El punto y horario entra solo en pantallas altas; si no, está en el mail y en Mi cuenta. */}
+                <span className="hidden [@media(min-height:760px)]:block">
+                  <span className="mt-1 line-clamp-2 whitespace-pre-line text-xs leading-snug text-bone/70">
+                    {bus.departure}
+                  </span>
+                </span>
+              </>
+            )}
           </div>
         </section>
 

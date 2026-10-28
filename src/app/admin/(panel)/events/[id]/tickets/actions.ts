@@ -3,10 +3,10 @@
 // Acciones del admin sobre las entradas de un evento.
 // Reglas: ver docs/LOGICA_DE_NEGOCIO.md → "Entradas manuales e invitaciones" y "Anular".
 import { revalidatePath } from 'next/cache';
-import { logAdminAction, requireAdmin } from '@/lib/auth/admin';
+import { logAdminAction, requireAdmin, requireOwner } from '@/lib/auth/admin';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { buyerSchema, createTicket, ticketUrl } from '@/lib/tickets';
-import { sendTicketCancelledMail, sendTicketConfirmedMail } from '@/lib/mail/ticket-mails';
+import { sendTicketCancelledMail, sendTicketConfirmedMail, sendTransferRejectedMail } from '@/lib/mail/ticket-mails';
 import { refundPayment } from '@/lib/mercadopago';
 
 export type ManualTicketResult =
@@ -70,6 +70,7 @@ export async function createManualTicketAction(
 // después se anula (queda 'refunded'). Si falla la devolución, no se anula nada.
 // Las manuales e invitaciones se anulan directo ('cancelled'); la devolución de una
 // transferencia se hace por fuera.
+// Una transferencia a validar no se anula acá: la aprueba o la rechaza un owner.
 export async function cancelTicketAction(eventId: string, ticketId: string): Promise<void> {
   const admin = await requireAdmin();
   const db = createAdminClient();
@@ -80,6 +81,9 @@ export async function cancelTicketAction(eventId: string, ticketId: string): Pro
     .eq('id', ticketId)
     .single();
   if (!ticket) return;
+  if (ticket.status === 'review') {
+    throw new Error('Las transferencias a validar se aprueban o se rechazan (solo owners).');
+  }
 
   let refunded = false;
   if (ticket.source === 'purchase' && ticket.status === 'paid' && ticket.mp_payment_id) {
@@ -99,5 +103,30 @@ export async function resendTicketMailAction(eventId: string, ticketId: string):
   const admin = await requireAdmin();
   await sendTicketConfirmedMail(ticketId);
   await logAdminAction(admin.id, 'resend_ticket_mail', 'ticket', ticketId);
+  revalidatePath(`/admin/events/${eventId}/tickets`);
+}
+
+// Transferencias: un owner revisa que la plata haya llegado y aprueba o rechaza.
+// Aprobar → la entrada pasa a válida y le llega el mail con el QR.
+// Rechazar → se anula, el lugar se libera y le llega un mail para que escriba por Instagram.
+export async function approveTransferAction(eventId: string, ticketId: string): Promise<void> {
+  const admin = await requireOwner();
+  const db = createAdminClient();
+  const { data } = await db.rpc('approve_transfer', { p_ticket_id: ticketId, p_admin_id: admin.id });
+  if (data === 'approved') {
+    await logAdminAction(admin.id, 'approve_transfer', 'ticket', ticketId);
+    await sendTicketConfirmedMail(ticketId);
+  }
+  revalidatePath(`/admin/events/${eventId}/tickets`);
+}
+
+export async function rejectTransferAction(eventId: string, ticketId: string): Promise<void> {
+  const admin = await requireOwner();
+  const db = createAdminClient();
+  const { data } = await db.rpc('reject_transfer', { p_ticket_id: ticketId, p_admin_id: admin.id });
+  if (data === 'rejected') {
+    await logAdminAction(admin.id, 'reject_transfer', 'ticket', ticketId);
+    await sendTransferRejectedMail(ticketId);
+  }
   revalidatePath(`/admin/events/${eventId}/tickets`);
 }

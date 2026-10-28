@@ -11,8 +11,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (!admin) {
     // Sesión válida pero sin fila activa en `admins`: avisar en vez de mandar al login a ciegas.
     const supabase = await createClient();
-    const { data: { session } } = await supabase.auth.getSession();
-    redirect(session ? '/admin/login?error=noadmin' : '/admin/login');
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    redirect(user ? '/admin/login?error=noadmin' : '/admin/login');
   }
 
   return (

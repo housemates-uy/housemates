@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { normalizeEmail, isValidEmail } from '@/lib/validation/email';
 import { validateCI } from '@/lib/validation/document';
-import type { TicketSource, TicketStatus } from '@/types/database';
+import type { PaymentMethod, TicketSource, TicketStatus } from '@/types/database';
 
 // ---------- Token del QR ----------
 // 128 bits aleatorios en base64url (22 caracteres). No lleva datos ni firma: es una
@@ -57,11 +57,12 @@ export const buyerSchema = z.object({
   email: z.string().trim().refine(isValidEmail, 'Email inválido'),
   document: z.string().trim().refine(validateCI, 'Cédula uruguaya inválida'),
   phone: z.string().trim().max(30).optional().or(z.literal('')),
+  // Opcional: la compra web ya no lo pide; el admin puede anotarlo en las entradas manuales.
   instagram: z
     .string()
-    .trim()
-    .transform(normalizeInstagram)
-    .refine((v) => /^[a-z0-9._]{1,30}$/.test(v), 'Usuario de Instagram inválido'),
+    .nullish()
+    .transform((v) => (v ? normalizeInstagram(v) : ''))
+    .refine((v) => v === '' || /^[a-z0-9._]{1,30}$/.test(v), 'Usuario de Instagram inválido'),
 });
 export type BuyerInput = z.input<typeof buyerSchema>;
 
@@ -73,19 +74,28 @@ const ERROR_MESSAGES: Record<string, string> = {
   tier_inactive: 'Esa tanda no está disponible.',
   duplicate_email: 'Ya hay una entrada para este evento con ese email.',
   duplicate_document: 'Ya hay una entrada para este evento con esa cédula.',
+  discount_invalid: 'Ese código de descuento ya no es válido.',
+  discount_exhausted: 'Ese código de descuento ya no tiene usos disponibles.',
+  presale_required: 'Esa tanda es de preventa: entrá con el link que te mandamos.',
+  tier_not_started: 'Esa tanda todavía no salió a la venta.',
 };
 
 export async function createTicket(params: {
   eventId: string;
   tierId: string | null;
   source: TicketSource;
-  status: Extract<TicketStatus, 'pending' | 'paid'>;
+  status: Extract<TicketStatus, 'pending' | 'review' | 'paid'>;
   buyer: z.output<typeof buyerSchema>;
   amount: number;
   holdMinutes?: number;
   adminId?: string | null;
   notes?: string | null;
-}): Promise<{ id: string; qrToken: string } | { error: string }> {
+  paymentMethod?: PaymentMethod;
+  discountCodeId?: string | null;
+  discountUyu?: number;
+  // Tandas de preventa: create_ticket lo compara con el de la tanda (solo compra web).
+  presaleCode?: string | null;
+}): Promise<{ id: string; qrToken: string } | { error: string; code?: string }> {
   const db = createAdminClient();
   const qrToken = generateQrToken();
   const { data, error } = await db.rpc('create_ticket', {
@@ -98,17 +108,24 @@ export async function createTicket(params: {
     p_email_norm: normalizeEmail(params.buyer.email),
     p_document: normalizeDocument(params.buyer.document),
     p_phone: params.buyer.phone || (null as unknown as string),
-    p_instagram: params.buyer.instagram,
+    p_instagram: params.buyer.instagram || (null as unknown as string),
     p_amount: params.amount,
     p_qr_token: qrToken,
     p_hold_minutes: params.holdMinutes,
     p_admin_id: params.adminId ?? undefined,
     p_notes: params.notes ?? undefined,
+    p_payment_method: params.paymentMethod,
+    p_discount_code_id: params.discountCodeId ?? undefined,
+    p_discount_uyu: params.discountUyu ?? 0,
+    p_presale_code: params.presaleCode ?? undefined,
   });
 
   if (error) {
     const known = Object.keys(ERROR_MESSAGES).find((k) => error.message.includes(k));
-    return { error: known ? ERROR_MESSAGES[known] : 'No se pudo crear la entrada. Probá de nuevo.' };
+    return {
+      error: known ? ERROR_MESSAGES[known] : 'No se pudo crear la entrada. Probá de nuevo.',
+      code: known,
+    };
   }
   return { id: data as string, qrToken };
 }
@@ -116,6 +133,7 @@ export async function createTicket(params: {
 // ---------- Textos para mostrar ----------
 export const STATUS_LABELS: Record<TicketStatus, string> = {
   pending: 'Pago pendiente',
+  review: 'Transferencia a validar',
   paid: 'Válida',
   used: 'Usada',
   cancelled: 'Anulada',

@@ -87,8 +87,8 @@ export function NewTicketForm({ eventId, tiers }: { eventId: string; tiers: Tier
         <Field label="Email" error={fieldError('email')}>
           <Input name="email" type="email" required autoComplete="off" />
         </Field>
-        <Field label="Instagram" hint="Sin @" error={fieldError('instagram')}>
-          <Input name="instagram" required autoComplete="off" />
+        <Field label="Instagram (opcional)" hint="Sin @" error={fieldError('instagram')}>
+          <Input name="instagram" autoComplete="off" />
         </Field>
         <Field label="Celular (opcional)" hint="Para mandarle la entrada por WhatsApp">
           <Input name="phone" type="tel" autoComplete="off" />

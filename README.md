@@ -63,6 +63,9 @@ npm run dev
 
 Abrir `http://localhost:3000` → redirige a `/access` → ingresar el password → ve la landing.
 
+Para trabajar sin contraseña ni login de admin, poné `LOCAL_SIN_CLAVES=1` en `.env.local`.
+Solo aplica con `npm run dev` (ver `src/lib/auth/local-mode.ts`).
+
 ### Scripts
 
 ```bash

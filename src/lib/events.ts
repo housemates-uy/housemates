@@ -33,7 +33,24 @@ export const emptyTier = (): TierInput => ({
   price_uyu: 0,
   quantity_total: 0,
   description: '',
+  entry_until: '',
+  sales_start: '',
+  presale_code: '',
 });
+
+// Campos de ingreso temprano, salida a la venta y preventa, del formulario a la base.
+export function tierExtrasToDb(t: Pick<TierInput, 'entry_until' | 'sales_start' | 'presale_code'>) {
+  return {
+    entry_until: t.entry_until || null,
+    sales_start: t.sales_start ? toUTC(t.sales_start) : null,
+    presale_code: t.presale_code || null,
+  };
+}
+
+// La base devuelve la hora como "00:30:00"; se muestra "00:30".
+export function entryTime(value: string | null | undefined): string | null {
+  return value ? value.slice(0, 5) : null;
+}
 
 export function formatUYU(amount: number) {
   return `$${amount.toLocaleString('es-UY')}`;

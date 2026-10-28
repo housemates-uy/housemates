@@ -120,7 +120,9 @@ function Door({
     busyRef.current = true;
     setOutcome(o);
     if (o.total) setCounts({ inside: o.inside, total: o.total });
-    if ('vibrate' in navigator) navigator.vibrate(o.result === 'valid' ? 60 : [120, 60, 120]);
+    if ('vibrate' in navigator) {
+      navigator.vibrate(o.result !== 'valid' ? [120, 60, 120] : o.late ? [60, 80, 60] : 60);
+    }
   }, []);
 
   // Cierra el resultado y vuelve a escanear. Ignora el mismo QR 3 s más, por si sigue
@@ -273,11 +275,22 @@ function Door({
       {outcome?.result === 'valid' && (
         <div className="fixed inset-0 z-50 flex flex-col bg-electric px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))]">
           <div className="flex flex-1 flex-col items-center justify-center text-center">
+            {/* Tanda de ingreso temprano escaneada después de su horario: solo avisa. */}
+            {outcome.late && (
+              <div role="alert" className="mb-8 w-full rounded-card border-2 border-bone bg-ink px-5 py-4">
+                <p className="text-2xl font-bold uppercase leading-none tracking-tight">Fuera de horario</p>
+                <p className="mt-2 text-base">Era ingreso hasta {outcome.entryUntil}</p>
+                <p className="mt-1 text-sm text-bone/70">Decidí vos si pasa: podés confirmar el ingreso igual.</p>
+              </div>
+            )}
             <p className="text-sm font-bold uppercase tracking-label opacity-80">Entrada válida</p>
             <p className="mt-6 text-4xl font-bold leading-tight">{outcome.name}</p>
             <p className="mt-4 text-sm opacity-80">Cédula</p>
             <p className="text-4xl font-bold tracking-tight">{outcome.document}</p>
-            <p className="mt-4 text-base opacity-85">{outcome.invitation ? 'Invitación' : outcome.tier}</p>
+            <p className="mt-4 text-base opacity-85">
+              {outcome.invitation ? 'Invitación' : outcome.tier}
+              {outcome.entryUntil && !outcome.late && ` · Ingreso hasta ${outcome.entryUntil}`}
+            </p>
             <p className="mt-10 max-w-[28ch] text-base font-medium">
               Pedí la cédula y verificá que el nombre y el número coincidan.
             </p>

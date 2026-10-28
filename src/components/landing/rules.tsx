@@ -5,7 +5,6 @@ const RULES = [
   'El ingreso es por lista.',
   'Al llegar presentá tu CI y se te coloca un precinto.',
   'No se venden entradas en puerta.',
-  'La ubicación exacta se comparte el día del evento.',
   'Hay ropería: el ticket se compra en barra.',
 ];
 

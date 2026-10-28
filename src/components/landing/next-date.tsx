@@ -1,15 +1,34 @@
 import Link from 'next/link';
+import { ArrowRight, MapPin } from 'lucide-react';
 import { buttonVariants } from '@/components/ui/button';
 import { Eyebrow } from '@/components/ui/eyebrow';
 import { Reveal } from '@/components/ui/reveal';
-import { TandaCard } from '@/components/landing/tanda-card';
-import type { NextEvent } from '@/lib/next-event';
+import { mapsUrl, type NextEvent } from '@/lib/next-event';
+import { cn } from '@/lib/utils';
 
+// Las tandas y los precios se ven recién en /entradas: acá solo la fecha y el botón para ir.
 export function NextDate({ event }: { event: NextEvent }) {
-  const details = [
-    ['Cuándo', `${event.weekday} ${event.dateLong}`],
+  const details: [string, React.ReactNode][] = [
+    ['Cuándo', `${event.weekday} ${event.dateLong} · ${event.time} hs`],
     ['Formato', 'Open air'],
-    ['Dónde', event.locationName ?? 'La ubicación exacta se comparte el día del evento'],
+    [
+      'Dónde',
+      event.locationName ? (
+        <a
+          key="d"
+          href={mapsUrl(event.locationName, event.locationUrl)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 underline decoration-bone/30 underline-offset-4 transition-colors hover:decoration-bone"
+        >
+          <MapPin size={15} strokeWidth={1.75} aria-hidden className="shrink-0 text-violet" />
+          {event.locationName}
+          <span className="sr-only"> (abre Google Maps)</span>
+        </a>
+      ) : (
+        'A confirmar'
+      ),
+    ],
   ];
 
   return (
@@ -33,18 +52,23 @@ export function NextDate({ event }: { event: NextEvent }) {
             ))}
           </dl>
 
-          {event.tandas.length > 0 && (
-            <ul className="mt-8 grid gap-3 sm:grid-cols-2">
-              {event.tandas.map((t) => (
-                <li key={t.id}>
-                  <TandaCard tanda={t} />
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <Link href="/entradas" className={buttonVariants({ size: 'lg', className: 'mt-10 self-start' })}>
-            Entradas
+          <Link
+            href="/entradas"
+            className={cn(
+              buttonVariants({ size: 'lg' }),
+              'group mt-10 h-[4.5rem] w-full justify-between rounded-card px-6 md:h-20 md:px-8',
+            )}
+          >
+            <span className="flex flex-col items-start leading-none">
+              <span className="text-2xl font-bold tracking-[-0.02em] md:text-[1.75rem]">Entradas</span>
+              <span className="mt-1.5 text-[13px] font-medium text-ink/60">Tandas y precios</span>
+            </span>
+            <ArrowRight
+              size={26}
+              strokeWidth={1.75}
+              aria-hidden
+              className="shrink-0 transition-transform duration-200 group-hover:translate-x-1"
+            />
           </Link>
         </Reveal>
       </div>
