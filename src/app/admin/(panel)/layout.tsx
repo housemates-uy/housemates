@@ -18,15 +18,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     redirect(user ? '/admin/login?error=noadmin' : '/admin/login');
   }
 
-  // Transferencias esperando validación, para el contador de "A confirmar". El staff no ve
-  // esa sección (null).
+  // Compras por transferencia esperando validación, para el contador de "A confirmar": una
+  // compra de varias entradas cuenta una vez (order_id). El staff no ve esa sección (null).
   let toConfirm: number | null = null;
   if (admin.role === 'owner') {
-    const { count } = await createAdminClient()
+    const { data } = await createAdminClient()
       .from('tickets')
-      .select('id', { count: 'exact', head: true })
+      .select('id, order_id')
       .eq('status', 'review');
-    toConfirm = count ?? 0;
+    toConfirm = new Set((data ?? []).map((t) => t.order_id ?? t.id)).size;
   }
 
   return (

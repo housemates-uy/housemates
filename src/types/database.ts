@@ -846,6 +846,7 @@ export type Database = {
           event_id: string
           id: string
           mp_payment_id: string | null
+          order_id: string | null
           mp_preference_id: string | null
           notes: string | null
           paid_at: string | null
@@ -878,6 +879,7 @@ export type Database = {
           event_id: string
           id?: string
           mp_payment_id?: string | null
+          order_id?: string | null
           mp_preference_id?: string | null
           notes?: string | null
           paid_at?: string | null
@@ -910,6 +912,7 @@ export type Database = {
           event_id?: string
           id?: string
           mp_payment_id?: string | null
+          order_id?: string | null
           mp_preference_id?: string | null
           notes?: string | null
           paid_at?: string | null
@@ -1196,6 +1199,21 @@ export type Database = {
         }[]
       }
       discount_code_uses: { Args: { p_code_id: string }; Returns: number }
+      create_order: {
+        Args: {
+          p_event_id: string
+          p_tier_id: string
+          p_payment_method: Database["public"]["Enums"]["payment_method"]
+          p_hold_minutes: number
+          p_discount_code_id: string | null
+          p_presale_code: string | null
+          p_people: Json
+        }
+        Returns: string[]
+      }
+      confirm_order_payment: { Args: { p_order_id: string; p_payment_id: string; p_amount: number }; Returns: Json }
+      extend_order_hold: { Args: { p_order_id: string; p_until: string }; Returns: number }
+      reverse_order_payment: { Args: { p_order_id: string; p_payment_id: string }; Returns: Json }
       event_available: { Args: { p_event_id: string }; Returns: number }
       extend_ticket_hold: { Args: { p_ticket_id: string; p_until: string }; Returns: string }
       entry_deadline: { Args: { p_entry_until: string; p_event_start: string }; Returns: string }

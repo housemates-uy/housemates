@@ -1,3 +1,10 @@
+// La CI se guarda solo con dígitos y con 8 cifras (relleno con 0), así "1.234.567-8"
+// y "12345678" son la misma persona para la regla de una entrada por CI. Sin imports de
+// servidor: la usa también el formulario de compra en el navegador.
+export function normalizeDocument(raw: string): string {
+  return raw.replace(/\D/g, '').padStart(8, '0');
+}
+
 // Valida cédula de identidad uruguaya con dígito verificador.
 // Acepta formatos: "12345678", "1.234.567-8", "1234567-8"
 export function validateCI(raw: string): boolean {

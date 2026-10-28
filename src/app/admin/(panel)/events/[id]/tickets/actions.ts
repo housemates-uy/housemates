@@ -76,6 +76,11 @@ export async function createManualTicketAction(
 // devolver se le pregunta el pago a Mercado Pago (syncPayment): si ya figura devuelto (p. ej.
 // lo devolvieron desde el panel de MP), syncPayment la anula como reembolsada y avisa, y acá
 // no se intenta devolver de nuevo.
+// Un pago de Mercado Pago puede pagar una compra de varias entradas (§5.2e): si otras entradas
+// con ese pago siguen válidas (pagas o usadas), se devuelve solo lo que pagó esta
+// (amount_paid_uyu: su entrada, su bus y su parte del cargo). La última válida devuelve lo que
+// quede del pago, como una entrada sola. "Ya figura devuelto" es solo el pago entero: una
+// devolución parcial deja el pago aprobado en MP.
 // Las manuales, invitaciones y transferencias se anulan directo ('cancelled'); la devolución
 // de una transferencia se hace por fuera.
 // No se anulan: una transferencia a validar (la aprueba o la rechaza un owner) ni una compra
@@ -111,7 +116,7 @@ export async function cancelTicketAction(
 
   const { data: ticket, error: readError } = await db
     .from('tickets')
-    .select('id, status, source, mp_payment_id')
+    .select('id, status, source, mp_payment_id, amount_paid_uyu')
     .eq('id', ticketId)
     .eq('event_id', eventId)
     .maybeSingle();
@@ -127,6 +132,7 @@ export async function cancelTicketAction(
   if (ticket.status !== 'paid') return { error: 'La entrada ya estaba anulada.' };
 
   let refunded = false;
+  let partAmount: number | null = null;
   if (ticket.source === 'purchase' && ticket.mp_payment_id) {
     if (!isMercadoPagoConfigured()) {
       return { error: 'Mercado Pago no está conectado: no se puede devolver la plata. La entrada sigue válida.' };
@@ -142,11 +148,31 @@ export async function cancelTicketAction(
       });
       backToList(eventId, ticketId, view, sync.result === 'cancelled' ? 'ya-devuelta' : sync.result === 'already_used' ? 'devuelta-usada' : 'devuelta-revisar');
     }
-    if (!(await refundPayment(ticket.mp_payment_id))) {
-      return { error: 'Mercado Pago no aceptó la devolución. La entrada sigue válida.' };
+    const { count: othersValid, error: othersError } = await db
+      .from('tickets')
+      .select('id', { count: 'exact', head: true })
+      .eq('mp_payment_id', ticket.mp_payment_id)
+      .neq('id', ticketId)
+      .in('status', ['paid', 'used']);
+    if (othersError) {
+      return { error: 'No pudimos leer las otras entradas de esta compra. La entrada sigue válida: probá de nuevo.' };
+    }
+    if (othersValid) {
+      partAmount = Number(ticket.amount_paid_uyu);
+      // Sin monto, refundPayment devolvería el pago entero, también el de las otras entradas.
+      if (!(partAmount > 0)) return { error: 'Esta entrada no tiene monto pagado: no se puede devolver su parte.' };
+    }
+    if (!(await refundPayment(ticket.mp_payment_id, partAmount ?? undefined))) {
+      return {
+        error: partAmount
+          ? 'Mercado Pago no aceptó la devolución de lo que pagó esta entrada. La entrada sigue válida.'
+          : 'Mercado Pago no aceptó la devolución. La entrada sigue válida.',
+      };
     }
     refunded = true;
   }
+  const refundDetail = partAmount ? { refund_amount: partAmount } : undefined;
+  const part = partAmount ? '-parte' : '';
 
   const { data: result, error } = await db.rpc('cancel_ticket', { p_ticket_id: ticketId, p_refunded: refunded });
   if (error || result !== 'cancelled') {
@@ -157,14 +183,20 @@ export async function cancelTicketAction(
       return { error: 'No se pudo anular la entrada. Probá de nuevo.' };
     }
     // La plata ya se devolvió: queda registrado aunque la entrada no se haya podido anular.
-    await logAdminAction(admin.id, 'refund_ticket', 'ticket', ticketId, { result: result ?? 'error' });
+    await logAdminAction(admin.id, 'refund_ticket', 'ticket', ticketId, { result: result ?? 'error', ...refundDetail });
     // already_cancelled: el aviso de Mercado Pago (webhook) llegó primero, la anuló y mandó el mail.
-    backToList(eventId, ticketId, view, result === 'already_used' ? 'devuelta-usada' : result === 'already_cancelled' ? 'reembolsada' : 'devuelta-sin-anular');
+    // Una devolución parcial no la anula sola (el pago sigue aprobado en MP): el aviso lo dice.
+    backToList(
+      eventId,
+      ticketId,
+      view,
+      result === 'already_used' ? 'devuelta-usada' : result === 'already_cancelled' ? `reembolsada${part}` : `devuelta${part}-sin-anular`,
+    );
   }
 
-  await logAdminAction(admin.id, refunded ? 'refund_ticket' : 'cancel_ticket', 'ticket', ticketId);
+  await logAdminAction(admin.id, refunded ? 'refund_ticket' : 'cancel_ticket', 'ticket', ticketId, refundDetail);
   const mailed = await sendTicketCancelledMail(ticketId, refunded);
-  const done = refunded ? 'reembolsada' : 'anulada';
+  const done = refunded ? `reembolsada${part}` : 'anulada';
   backToList(eventId, ticketId, view, mailed ? done : `${done}-sin-mail`);
 }
 

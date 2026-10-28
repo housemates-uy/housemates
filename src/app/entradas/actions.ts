@@ -1,7 +1,8 @@
 'use server';
 
 // Compra web. Ver docs/LOGICA_DE_NEGOCIO.md → "Compra web".
-//   1. Acceso (la contraseña, si está prendida en /admin/config) y datos de la persona.
+//   1. Acceso (la contraseña, si está prendida en /admin/config) y datos de cada persona:
+//      quien compra puede sumar entradas para sus amigos, cada una nominativa (§5.2e).
 //   2. Tanda + código de descuento + transporte (opcional) + medio de pago → precio final
 //      (src/lib/pricing.ts). El lugar en el bus se reserva apenas se crea la entrada.
 //   3a. Mercado Pago: reserva el lugar 20 min (`pending`) y manda a pagar. Pasa a `paid`
@@ -29,8 +30,9 @@ import { uploadReceipt, validateReceipt } from '@/lib/receipts';
 import { allowAttempt, TOO_MANY_ATTEMPTS } from '@/lib/rate-limit';
 import { getSaleConfig } from '@/lib/sale-config';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { buyerSchema, createTicket, PURCHASE_COOKIE } from '@/lib/tickets';
-import { findTransportChoice, reserveTransport } from '@/lib/transport';
+import { buyerSchema, createOrder, normalizeDocument, PURCHASE_COOKIE, type OrderPerson } from '@/lib/tickets';
+import { findTransportChoice } from '@/lib/transport';
+import { normalizeEmail } from '@/lib/validation/email';
 
 const HOLD_MINUTES = 20;
 // Lo que puede tardar en subirse el comprobante antes de que la reserva venza sola.
@@ -77,12 +79,58 @@ export async function checkDiscountAction(tierId: string, rawCode: string): Prom
   return { ok: true, code: found.code, kind: found.kind, value: found.value, label: describeDiscount(found) };
 }
 
+// Cada persona de la compra (§5.2e): la 1 es quien compra (campos sin sufijo, con celular);
+// las demás, sus amigos: `name_2`, `document_2`, `email_2`, `transport_2`, …
+const personField = (field: string, n: number) => (n === 1 ? field : `${field}_${n}`);
+const formText = (formData: FormData, name: string) => String(formData.get(name) ?? '');
+
+type Bus = { id: string; name: string; price: number } | null;
+
+// Un error de create_order ('<motivo>#<n>') → mensaje y campo de esa persona.
+function orderError(
+  err: { error: string; code?: string; person?: number },
+  quantity: number,
+  hasAccount: boolean,
+  buses: Bus[],
+): [string, string?] {
+  const n = err.person ?? 1;
+  const who = quantity > 1 ? `Entrada ${n}: ` : '';
+  switch (err.code) {
+    case 'duplicate_email':
+      if (n === 1 && hasAccount) return ['Ya tenés una entrada para esta fecha. La ves en Mi cuenta.'];
+      return [`${who}${err.error}`, personField('email', n)];
+    case 'duplicate_document':
+      return [`${who}${err.error}`, personField('document', n)];
+    case 'sold_out':
+      return n > 1
+        ? [`Quedan ${n - 1} lugares para esta fecha: bajá la cantidad de entradas.`, 'quantity']
+        : [err.error, 'tier'];
+    case 'discount_exhausted':
+      return n > 1
+        ? [`El código de descuento alcanza para ${n - 1} entradas: bajá la cantidad o sacá el código.`, 'code']
+        : [err.error, 'code'];
+    case 'discount_invalid':
+      return [err.error, 'code'];
+    case 'transport_full':
+      return [
+        `${who}No quedan lugares en el bus "${buses[n - 1]?.name ?? ''}". Elegí otra opción o seguí sin transporte.`,
+        personField('transport', n),
+      ];
+    case 'transport_changed':
+      return ['Cambió el precio del transporte. Recargá la página para ver el total nuevo.', personField('transport', n)];
+    case 'transport_inactive':
+      return [`${who}Esa opción de transporte ya no está disponible. Elegí otra o seguí sin transporte.`, personField('transport', n)];
+    default:
+      return [err.error];
+  }
+}
+
 export async function startCheckoutAction(_prev: CheckoutState, formData: FormData): Promise<CheckoutState> {
   // El acceso se vuelve a chequear acá: la página lo pidió, pero una acción del servidor
   // se puede llamar directo. Si rotaron la contraseña mientras completaba, vuelve a /access.
   if (!(await hasGateAccess())) {
     const back = new URLSearchParams();
-    const presale = String(formData.get('presale') ?? '');
+    const presale = formText(formData, 'presale');
     if (presale) back.set('preventa', presale);
     const here = back.toString() ? `/entradas?${back}` : '/entradas';
     redirect(`/access?next=${encodeURIComponent(here)}`);
@@ -111,48 +159,72 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
     field,
   });
 
-  if (formData.get('accept') !== 'on') {
-    return { error: 'Tenés que aceptar que la entrada es personal.', field: 'accept' };
+  const quantity = Number(formData.get('quantity') ?? 1);
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > config.maxPerOrder) {
+    return { error: `Podés comprar hasta ${config.maxPerOrder} entradas por compra.`, field: 'quantity' };
   }
 
-  // Con la sesión iniciada, la entrada va al email de la cuenta (el formulario no lo pide).
+  if (formData.get('accept') !== 'on') {
+    return {
+      error: quantity > 1 ? 'Tenés que aceptar que las entradas son personales.' : 'Tenés que aceptar que la entrada es personal.',
+      field: 'accept',
+    };
+  }
+
+  // Con la sesión iniciada, la entrada de quien compra va al email de la cuenta.
   const customer = await getCustomer();
   if (!customer && formData.get('as_account') === '1') {
     return { error: 'Tu sesión se cerró. Ingresá de nuevo para comprar con tu cuenta.' };
   }
 
-  const parsed = buyerSchema.safeParse({
-    name: formData.get('name'),
-    email: customer ? customer.email : formData.get('email'),
-    document: formData.get('document'),
-    phone: formData.get('phone'),
-  });
-  if (!parsed.success) {
-    const issue = parsed.error.issues[0];
-    return { error: issue.message, field: String(issue.path[0]) };
+  // Cada entrada es nominativa: nombre, cédula y email propios, sin repetirse en la compra.
+  const people: OrderPerson['buyer'][] = [];
+  for (let n = 1; n <= quantity; n++) {
+    const parsed = buyerSchema.safeParse({
+      name: formText(formData, personField('name', n)),
+      email: n === 1 && customer ? customer.email : formText(formData, personField('email', n)),
+      document: formText(formData, personField('document', n)),
+      phone: n === 1 ? formText(formData, 'phone') : '',
+    });
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      return { error: n === 1 ? issue.message : `Entrada ${n}: ${issue.message}`, field: personField(String(issue.path[0]), n) };
+    }
+    const email = normalizeEmail(parsed.data.email);
+    const document = normalizeDocument(parsed.data.document);
+    const twin = people.findIndex((p) => normalizeEmail(p.email) === email || normalizeDocument(p.document) === document);
+    if (twin >= 0) {
+      const sameEmail = normalizeEmail(people[twin].email) === email;
+      return {
+        error: `Entrada ${n}: ${sameEmail ? 'ese email' : 'esa cédula'} ya está en la entrada ${twin + 1}. Cada entrada es de una persona distinta.`,
+        field: personField(sameEmail ? 'email' : 'document', n),
+      };
+    }
+    people.push(parsed.data);
   }
+  const buyer = people[0];
 
-  // Contraseña opcional para crear la cuenta. Si ya hay una con ese email, no se cobra nada:
-  // se le pide que ingrese.
-  const password = customer ? '' : String(formData.get('password') ?? '');
+  // Contraseña opcional para crear la cuenta de quien compra. Si ya hay una con ese email,
+  // no se cobra nada: se le pide que ingrese.
+  const password = customer ? '' : formText(formData, 'password');
   if (password) {
     const checked = passwordSchema.safeParse(password);
     if (!checked.success) return { error: checked.error.issues[0].message, field: 'password' };
   }
 
   // Después de las validaciones del formulario (un error de tipeo no gasta intentos) y
-  // antes de todo lo que consulta la base: cuentas, códigos y la creación de la entrada.
+  // antes de todo lo que consulta la base: cuentas, códigos y la creación de las entradas.
   if (!(await allowAttempt('checkout'))) return fail(TOO_MANY_ATTEMPTS);
 
-  if (password && (await accountExists(parsed.data.email))) {
+  if (password && (await accountExists(buyer.email))) {
     return { error: 'Ya tenés cuenta con este email.', field: 'password', accountExists: true };
   }
 
-  const tier = await loadSaleTier(String(formData.get('tier') ?? ''));
+  const tier = await loadSaleTier(formText(formData, 'tier'));
   if (!tier) return fail('Esa tanda no está a la venta.', 'tier');
 
-  // Código de descuento (opcional). Si no sirve, se avisa y no se cobra nada.
-  const rawCode = String(formData.get('code') ?? '').trim();
+  // Código de descuento (opcional): se aplica a cada entrada y cada una gasta un uso.
+  const rawCode = formText(formData, 'code').trim();
   let code: FoundDiscount | null = null;
   if (rawCode) {
     const found = await findDiscount(tier.eventId, rawCode);
@@ -162,17 +234,22 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
   const discount = discountAmount(tier.price, code);
   if (code && discount >= tier.price) return fail('Ese código no se puede usar en la compra web.', 'code');
 
-  // Transporte (opcional): se suma al total y el descuento no lo toca.
-  const bus = await findTransportChoice(tier.eventId, String(formData.get('transport') ?? ''));
-  if ('error' in bus) return fail(bus.error, 'transport');
+  // Transporte de cada persona (opcional): se suma a su entrada y el descuento no lo toca.
+  const buses: Bus[] = [];
+  for (let n = 1; n <= quantity; n++) {
+    const bus = await findTransportChoice(tier.eventId, formText(formData, personField('transport', n)));
+    if ('error' in bus) return fail(n === 1 ? bus.error : `Entrada ${n}: ${bus.error}`, personField('transport', n));
+    buses.push(bus.option);
+  }
 
-  // amount_paid_uyu guarda el total que paga la persona (entrada + transporte + cargo).
-  const price = quote(tier.price, discount, method, bus.option?.price ?? 0);
+  // Lo que paga cada entrada (amount_paid_uyu): entrada con descuento + su bus + su cargo.
+  const prices = buses.map((bus) => quote(tier.price, discount, method, bus?.price ?? 0));
+  const total = prices.reduce((sum, p) => sum + p.total, 0);
 
   // Si el precio de la tanda o del bus cambió mientras completaba, no se cobra un total
   // distinto al que vio (con transferencia, ya transfirió ese monto).
-  const expected = String(formData.get('expected_total') ?? '');
-  if (expected && Number(expected) !== price.total) {
+  const expected = formText(formData, 'expected_total');
+  if (expected && Number(expected) !== total) {
     return fail('El precio cambió mientras completabas la compra. Recargá la página para ver el total actualizado.');
   }
 
@@ -183,37 +260,29 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
     receipt = checked.file;
   }
 
-  // Las dos nacen `pending` con reserva. La transferencia pasa a `review` recién con el
-  // comprobante subido: si algo se corta en el medio, la reserva vence sola y no queda una
-  // entrada en revisión sin comprobante bloqueando la cédula, el email y el lugar.
-  const ticket = await createTicket({
+  // Todas nacen `pending` con reserva. La transferencia pasa a `review` recién con el
+  // comprobante subido: si algo se corta en el medio, la reserva vence sola y no quedan
+  // entradas en revisión sin comprobante bloqueando cédulas, emails y lugares.
+  const order = await createOrder({
     eventId: tier.eventId,
     tierId: tier.id,
-    source: 'purchase',
-    status: 'pending',
-    buyer: parsed.data,
-    amount: price.total,
-    holdMinutes: method === 'transfer' ? TRANSFER_HOLD_MINUTES : HOLD_MINUTES,
     paymentMethod: method,
+    holdMinutes: method === 'transfer' ? TRANSFER_HOLD_MINUTES : HOLD_MINUTES,
     discountCodeId: code?.id ?? null,
-    discountUyu: discount,
-    presaleCode: String(formData.get('presale') ?? '') || null,
+    presaleCode: formText(formData, 'presale') || null,
+    people: people.map((person, i) => ({
+      buyer: person,
+      amount: prices[i].total,
+      discountUyu: discount,
+      transport: buses[i] ? { id: buses[i]!.id, price: buses[i]!.price } : null,
+    })),
   });
-  if ('error' in ticket) {
-    if (customer && ticket.code === 'duplicate_email') {
-      return fail('Ya tenés una entrada para esta fecha. La ves en Mi cuenta.');
-    }
-    return fail(ticket.error, ticket.code?.startsWith('discount') ? 'code' : undefined);
-  }
+  if ('error' in order) return fail(...orderError(order, quantity, !!customer, buses));
 
-  // Si se llenó el bus mientras completaba, la entrada recién creada se borra y no se cobra nada.
-  if (bus.option) {
-    const reserved = await reserveTransport(ticket.id, bus.option);
-    if ('error' in reserved) return fail(reserved.error, 'transport');
-  }
-
+  const leadId = order.ids[0];
   const db = createAdminClient();
-  cookies().set(PURCHASE_COOKIE, ticket.id, {
+  const cancelOrder = () => Promise.all(order.ids.map((id) => db.rpc('cancel_ticket', { p_ticket_id: id, p_refunded: false })));
+  cookies().set(PURCHASE_COOKIE, leadId, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
@@ -222,55 +291,65 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
   });
 
   if (method === 'transfer' && receipt) {
-    const path = await uploadReceipt(tier.eventId, ticket.id, receipt);
+    // Un comprobante para toda la compra: queda en cada entrada del grupo.
+    const path = await uploadReceipt(tier.eventId, leadId, receipt);
     let inReview = false;
     if (path) {
-      // `status = 'pending'`: si la reserva se anuló mientras subía (por ejemplo, la misma
-      // persona volvió a intentar), no se revive.
+      // `status = 'pending'`: si una reserva se anuló mientras subía (por ejemplo, la misma
+      // persona volvió a intentar), no se revive y se anula la compra entera.
       const { data, error } = await db
         .from('tickets')
         .update({ status: 'review', receipt_path: path, reserved_until: null })
-        .eq('id', ticket.id)
+        .in('id', order.ids)
         .eq('status', 'pending')
         .select('id');
-      inReview = !error && !!data?.length;
+      inReview = !error && data?.length === order.ids.length;
     }
     if (!path || !inReview) {
-      // Sin comprobante no hay nada que validar: se libera el lugar.
-      await db.rpc('cancel_ticket', { p_ticket_id: ticket.id, p_refunded: false });
+      // Sin comprobante no hay nada que validar: se liberan los lugares.
+      await cancelOrder();
       return { error: 'No pudimos subir el comprobante. Probá de nuevo: no hace falta transferir otra vez.', field: 'receipt' };
     }
-    await attachAccount(ticket.id, parsed.data, customer, password);
+    await attachAccount(leadId, buyer, customer, password);
     // Los mails nunca frenan la compra (sendMail no tira errores).
     const content = Buffer.from(await receipt.arrayBuffer());
     await Promise.all([
-      sendTransferReceivedMail(ticket.id),
-      sendTransferAdminAlert(ticket.id, { content, filename: `comprobante-${parsed.data.name}.${path.split('.').pop()}` }),
+      sendTransferReceivedMail(leadId),
+      sendTransferAdminAlert(leadId, { content, filename: `comprobante-${buyer.name}.${path.split('.').pop()}` }),
     ]);
-    redirect(`/compra/resultado?transferencia=${ticket.id}`);
+    redirect(`/compra/resultado?transferencia=${leadId}`);
   }
 
+  // Mercado Pago: un solo pago para todo el grupo, con el desglose por línea.
+  const transports = new Map<string, { name: string; price: number; quantity: number }>();
+  for (const bus of buses) {
+    if (!bus) continue;
+    const line = transports.get(bus.id) ?? { name: bus.name, price: bus.price, quantity: 0 };
+    line.quantity += 1;
+    transports.set(bus.id, line);
+  }
   let initPoint: string;
   try {
     const pref = await createPreference({
-      ticketId: ticket.id,
+      ticketId: leadId,
       title: `${tier.eventTitle} — ${tier.name}${code ? ` (código ${code.code})` : ''}`,
-      price: price.subtotal,
-      fee: price.fee,
-      transport: bus.option ? { name: bus.option.name, price: price.transport } : undefined,
-      payerEmail: parsed.data.email,
-      payerName: parsed.data.name,
+      price: prices[0].subtotal,
+      quantity,
+      fee: prices.reduce((sum, p) => sum + p.fee, 0),
+      transports: [...transports.values()],
+      payerEmail: buyer.email,
+      payerName: buyer.name,
       expiresAt: new Date(Date.now() + HOLD_MINUTES * 60_000),
     });
-    await db.from('tickets').update({ mp_preference_id: pref.id }).eq('id', ticket.id);
+    await db.from('tickets').update({ mp_preference_id: pref.id }).in('id', order.ids);
     initPoint = pref.initPoint;
   } catch {
-    // Si MP falla, se libera la reserva para no bloquear el lugar ni a la persona.
-    await db.rpc('cancel_ticket', { p_ticket_id: ticket.id, p_refunded: false });
+    // Si MP falla, se liberan las reservas para no bloquear los lugares ni a las personas.
+    await cancelOrder();
     return { error: 'No pudimos conectar con Mercado Pago. Probá de nuevo en un rato.' };
   }
 
-  await attachAccount(ticket.id, parsed.data, customer, password);
+  await attachAccount(leadId, buyer, customer, password);
   redirect(initPoint);
 }
 

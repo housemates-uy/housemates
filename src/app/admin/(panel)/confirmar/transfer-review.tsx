@@ -10,12 +10,20 @@ import { acceptTransferAction, declineTransferAction } from './actions';
 type Props = {
   ticketId: string;
   buyerName: string;
+  count: number; // entradas de la compra: se aceptan o declinan todas juntas
   totalLabel: string;
   receipt: 'image' | 'pdf' | null;
   eventFilter: string | null;
 };
 
-export function TransferReview({ ticketId, buyerName, totalLabel, receipt, eventFilter }: Props) {
+export function TransferReview({
+  ticketId,
+  buyerName,
+  count,
+  totalLabel,
+  receipt,
+  eventFilter,
+}: Props) {
   const [, startTransition] = useTransition();
   const [decision, setDecision] = useState<'accept' | 'decline' | null>(null);
   const [confirmingDecline, setConfirmingDecline] = useState(false);
@@ -82,7 +90,9 @@ export function TransferReview({ ticketId, buyerName, totalLabel, receipt, event
         {confirmingDecline ? (
           <div className="space-y-3 rounded-control border border-alert/30 bg-alert/[0.06] p-3">
             <p className="text-sm text-bone/85">
-              ¿Declinar la transferencia de {buyerName}? Se libera el lugar y le avisamos por mail.
+              {count > 1
+                ? `¿Declinar la compra de ${buyerName}? Se anulan las ${count} entradas, se liberan los lugares y le avisamos por mail a quien compró.`
+                : `¿Declinar la transferencia de ${buyerName}? Se libera el lugar y le avisamos por mail.`}
             </p>
             <div className="grid grid-cols-2 gap-2">
               <Button
@@ -126,7 +136,7 @@ export function TransferReview({ ticketId, buyerName, totalLabel, receipt, event
                 aria-busy={decision === 'accept'}
                 onClick={() => decide('accept')}
               >
-                {decision === 'accept' ? 'Aceptando…' : 'Aceptar'}
+                {decision === 'accept' ? 'Aceptando…' : count > 1 ? `Aceptar las ${count}` : 'Aceptar'}
               </Button>
             )}
           </div>
@@ -142,7 +152,7 @@ export function TransferReview({ ticketId, buyerName, totalLabel, receipt, event
         createPortal(
           <ReceiptViewer
             src={receiptUrl}
-            buyerName={buyerName}
+            buyerName={count > 1 ? `${buyerName} · ${count} entradas` : buyerName}
             totalLabel={totalLabel}
             onClose={closeViewer}
           />,

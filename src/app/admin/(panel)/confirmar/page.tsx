@@ -15,35 +15,47 @@ import { TransferReview } from './transfer-review';
 
 export const metadata = { title: 'Entradas a confirmar' };
 
-// Entradas a confirmar: las transferencias con comprobante de todos los eventos, la más vieja
-// primero. Solo owners (el staff no ve plata ni comprobantes). Ver docs/LOGICA_DE_NEGOCIO.md →
-// "Transferencia".
-const OUTCOMES: Record<string, { ok: boolean; text: (name: string) => string }> = {
+// Entradas a confirmar: las transferencias con comprobante de todos los eventos, una tarjeta
+// por compra (la entrada de quien compró y las de sus amigos se pagan con una sola
+// transferencia), la más vieja primero. Solo owners (el staff no ve plata ni comprobantes).
+// Ver docs/LOGICA_DE_NEGOCIO.md → "Transferencia".
+// n: cuántas entradas resolvió la acción (viaja en la URL).
+const OUTCOMES: Record<string, { ok: boolean; text: (name: string, n: number) => string }> = {
   aceptada: {
     ok: true,
-    text: (n) => `Aceptaste la entrada de ${n}. Le mandamos el mail con la entrada y el QR.`,
+    text: (name, n) =>
+      n > 1
+        ? `Aceptaste la compra de ${name}: ${n} entradas. A cada uno le mandamos su entrada con el QR a su mail.`
+        : `Aceptaste la entrada de ${name}. Le mandamos el mail con la entrada y el QR.`,
   },
   'aceptada-sin-mail': {
     ok: false,
-    text: (n) =>
-      `Aceptaste la entrada de ${n}, pero no se pudo mandar el mail. Reenviáselo desde Entradas del evento.`,
+    text: (name, n) =>
+      n > 1
+        ? `Aceptaste la compra de ${name}: ${n} entradas, pero no se pudo mandar alguno de los mails. Reenvialos desde Entradas del evento.`
+        : `Aceptaste la entrada de ${name}, pero no se pudo mandar el mail. Reenviáselo desde Entradas del evento.`,
   },
   declinada: {
     ok: true,
-    text: (n) => `Declinaste la transferencia de ${n}. Se liberó el lugar y le avisamos por mail.`,
+    text: (name, n) =>
+      n > 1
+        ? `Declinaste la compra de ${name}: ${n} entradas. Se liberaron los lugares y le avisamos por mail a quien compró.`
+        : `Declinaste la transferencia de ${name}. Se liberó el lugar y le avisamos por mail.`,
   },
   'declinada-sin-mail': {
     ok: false,
-    text: (n) =>
-      `Declinaste la transferencia de ${n} y se liberó el lugar, pero no se pudo mandar el mail: avisale por Instagram.`,
+    text: (name, n) =>
+      n > 1
+        ? `Declinaste la compra de ${name}: ${n} entradas. Se liberaron los lugares, pero no se pudo mandar el mail: avisale por Instagram.`
+        : `Declinaste la transferencia de ${name} y se liberó el lugar, pero no se pudo mandar el mail: avisale por Instagram.`,
   },
   'ya-resuelta': {
     ok: false,
-    text: (n) => `La transferencia de ${n} ya estaba resuelta: no se cambió nada.`,
+    text: (name) => `La transferencia de ${name} ya estaba resuelta: no se cambió nada.`,
   },
   'sin-comprobante': {
     ok: false,
-    text: (n) => `La transferencia de ${n} no tiene comprobante: no se puede aceptar.`,
+    text: (name) => `La transferencia de ${name} no tiene comprobante: no se puede aceptar.`,
   },
   error: { ok: false, text: () => 'No se pudo completar. Probá de nuevo.' },
 };
@@ -51,7 +63,7 @@ const OUTCOMES: Record<string, { ok: boolean; text: (name: string) => string }> 
 export default async function ConfirmTransfersPage({
   searchParams,
 }: {
-  searchParams: { evento?: string; hecho?: string; entrada?: string };
+  searchParams: { evento?: string; hecho?: string; entrada?: string; n?: string };
 }) {
   const admin = await getAdminUser();
   if (!admin) redirect('/admin/login');
@@ -60,11 +72,12 @@ export default async function ConfirmTransfersPage({
   const db = createAdminClient();
   const hecho = searchParams.hecho;
   const outcome = hecho && Object.hasOwn(OUTCOMES, hecho) ? OUTCOMES[hecho] : undefined;
+  const outcomeCount = Math.max(1, Math.floor(Number(searchParams.n)) || 1);
   const [{ data: rows }, { data: resolved }] = await Promise.all([
     db
       .from('tickets')
       .select(
-        'id, event_id, buyer_name, buyer_email, buyer_document, buyer_phone, buyer_instagram, amount_paid_uyu, discount_uyu, discount_code_id, receipt_path, created_at, events(title), ticket_tiers(name)',
+        'id, order_id, event_id, buyer_name, buyer_email, buyer_document, buyer_phone, buyer_instagram, amount_paid_uyu, discount_uyu, discount_code_id, receipt_path, created_at, events(title), ticket_tiers(name)',
       )
       .eq('status', 'review')
       .order('created_at', { ascending: true }),
@@ -77,23 +90,39 @@ export default async function ConfirmTransfersPage({
       : Promise.resolve({ data: null }),
   ]);
 
-  const all = rows ?? [];
+  // Una compra = la entrada de quien compró y las de sus amigos (order_id); una entrada sin
+  // grupo es una compra de una. Quien compró va primero y después los demás por nombre (se
+  // crean en la misma transacción: created_at no dice el orden).
+  type ReviewTicket = NonNullable<typeof rows>[number];
+  const byOrder = new Map<string, ReviewTicket[]>();
+  for (const t of rows ?? []) {
+    const key = t.order_id ?? t.id;
+    byOrder.set(key, [...(byOrder.get(key) ?? []), t]);
+  }
+  const all = Array.from(byOrder, ([leadId, tickets]) => {
+    const people = [...tickets].sort((a, b) =>
+      a.id === leadId ? -1 : b.id === leadId ? 1 : a.buyer_name.localeCompare(b.buyer_name, 'es'),
+    );
+    return { lead: people[0], people };
+  });
+
   const events = new Map<string, { title: string; count: number }>();
-  for (const t of all) {
-    const e = events.get(t.event_id) ?? { title: t.events?.title ?? 'Evento', count: 0 };
-    events.set(t.event_id, { ...e, count: e.count + 1 });
+  for (const { lead } of all) {
+    const e = events.get(lead.event_id) ?? { title: lead.events?.title ?? 'Evento', count: 0 };
+    events.set(lead.event_id, { ...e, count: e.count + 1 });
   }
   // Si ese evento ya no tiene pendientes (se resolvió la última), se muestran todas.
   const eventFilter =
     searchParams.evento && events.has(searchParams.evento) ? searchParams.evento : null;
-  const listed = eventFilter ? all.filter((t) => t.event_id === eventFilter) : all;
+  const listed = eventFilter ? all.filter((o) => o.lead.event_id === eventFilter) : all;
+  const listedTickets = listed.reduce((sum, o) => sum + o.people.length, 0);
 
   const codeIds = Array.from(
-    new Set(listed.map((t) => t.discount_code_id).filter((id): id is string => !!id)),
+    new Set(listed.map((o) => o.lead.discount_code_id).filter((id): id is string => !!id)),
   );
   const [busMaps, { data: codes }] = await Promise.all([
     Promise.all(
-      Array.from(new Set(listed.map((t) => t.event_id))).map((eventId) =>
+      Array.from(new Set(listed.map((o) => o.lead.event_id))).map((eventId) =>
         getTransportByTicket({ eventId }),
       ),
     ),
@@ -109,7 +138,7 @@ export default async function ConfirmTransfersPage({
     <div className="max-w-5xl space-y-6">
       <PageHeader
         title="Entradas a confirmar"
-        description="Transferencias con comprobante. Fijate que la plata haya llegado a la cuenta antes de aceptar: al aceptar le llega la entrada con el QR; al declinar se libera el lugar y le avisamos por mail."
+        description="Transferencias con comprobante, una tarjeta por compra. Fijate que la plata haya llegado a la cuenta antes de aceptar: al aceptar, a cada persona le llega su entrada con el QR a su mail; al declinar se liberan los lugares y le avisamos por mail a quien compró."
       />
 
       {/* Pegado abajo del header: después de aceptar o declinar la página no vuelve arriba, y
@@ -133,7 +162,7 @@ export default async function ConfirmTransfersPage({
             />
           )}
           <p className="min-w-0 flex-1">
-            {outcome.text(resolved?.buyer_name ?? 'esa persona')}
+            {outcome.text(resolved?.buyer_name ?? 'esa persona', outcomeCount)}
             {searchParams.hecho === 'ya-resuelta' &&
               resolved &&
               ` Estado: ${STATUS_LABELS[resolved.status]}.`}
@@ -188,38 +217,43 @@ export default async function ConfirmTransfersPage({
       ) : (
         <>
           <p className="text-sm text-bone/55">
-            {listed.length === 1 ? '1 esperando' : `${listed.length} esperando`} · la más vieja
+            {listed.length === 1 ? '1 compra esperando' : `${listed.length} compras esperando`}
+            {listedTickets > listed.length && ` (${listedTickets} entradas)`} · la más vieja
             primero
           </p>
           <ul className="grid items-start gap-4 lg:grid-cols-2">
-            {listed.map((t) => {
-              const bus = buses.get(t.id);
-              const total = Number(t.amount_paid_uyu);
-              const discount = Number(t.discount_uyu);
+            {listed.map(({ lead, people }) => {
+              const isGroup = people.length > 1;
+              const tierLabel = lead.ticket_tiers?.name ?? 'Entrada';
+              const total = people.reduce((sum, t) => sum + Number(t.amount_paid_uyu), 0);
+              const discount = people.reduce((sum, t) => sum + Number(t.discount_uyu), 0);
+              const withBus = people.flatMap((t) => buses.get(t.id) ?? []);
+              const busTotal = withBus.reduce((sum, b) => sum + b.price, 0);
               // Transferencia: total = (precio − descuento) + transporte, sin cargo por servicio.
-              const entryPrice = total - (bus?.price ?? 0) + discount;
-              const code = t.discount_code_id ? codeName.get(t.discount_code_id) : null;
-              const receipt = !t.receipt_path
+              const entryPrice = total - busTotal + discount;
+              const code = lead.discount_code_id ? codeName.get(lead.discount_code_id) : null;
+              const receipt = !lead.receipt_path
                 ? null
-                : t.receipt_path.endsWith('.pdf')
+                : lead.receipt_path.endsWith('.pdf')
                   ? 'pdf'
                   : 'image';
               return (
                 <li
-                  key={t.id}
+                  key={lead.id}
                   className="space-y-4 rounded-card border border-bone/10 bg-bone/[0.03] p-4 sm:p-5"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-bone/45">
-                        {t.events?.title ?? 'Evento'} · {t.ticket_tiers?.name ?? 'Entrada'}
+                        {lead.events?.title ?? 'Evento'} · {tierLabel}
+                        {isGroup && ` · ${people.length} entradas`}
                       </p>
                       <h2 className="mt-1.5 text-lg font-bold leading-snug tracking-tight">
-                        {t.buyer_name}
+                        {lead.buyer_name}
                       </h2>
                     </div>
                     <p className="shrink-0 pt-0.5 text-xs text-bone/50">
-                      {formatDistanceToNowStrict(new Date(t.created_at), {
+                      {formatDistanceToNowStrict(new Date(lead.created_at), {
                         locale: es,
                         addSuffix: true,
                       })}
@@ -228,29 +262,62 @@ export default async function ConfirmTransfersPage({
 
                   <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm">
                     <dt className="text-bone/45">CI</dt>
-                    <dd className="tabular-nums">{formatDocument(t.buyer_document)}</dd>
+                    <dd className="tabular-nums">{formatDocument(lead.buyer_document)}</dd>
                     <dt className="text-bone/45">Email</dt>
-                    <dd className="break-words">{t.buyer_email}</dd>
-                    {t.buyer_phone && (
+                    <dd className="break-words">{lead.buyer_email}</dd>
+                    {lead.buyer_phone && (
                       <>
                         <dt className="text-bone/45">Celular</dt>
-                        <dd className="tabular-nums">{t.buyer_phone}</dd>
+                        <dd className="tabular-nums">{lead.buyer_phone}</dd>
                       </>
                     )}
-                    {t.buyer_instagram && (
+                    {lead.buyer_instagram && (
                       <>
                         <dt className="text-bone/45">Instagram</dt>
-                        <dd>@{t.buyer_instagram}</dd>
+                        <dd>@{lead.buyer_instagram}</dd>
                       </>
                     )}
                     <dt className="text-bone/45">Enviado</dt>
-                    <dd>{formatLocal(t.created_at, "EEE d/MM 'a las' HH:mm 'hs'")}</dd>
+                    <dd>{formatLocal(lead.created_at, "EEE d/MM 'a las' HH:mm 'hs'")}</dd>
                   </dl>
+
+                  {isGroup && (
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-bone/45">
+                        Entradas de la compra
+                      </p>
+                      <ol className="mt-2 divide-y divide-bone/10 rounded-control border border-bone/10">
+                        {people.map((t) => {
+                          const bus = buses.get(t.id);
+                          return (
+                            <li key={t.id} className="px-3.5 py-2.5">
+                              <p className="text-sm font-medium">
+                                {t.buyer_name}
+                                {t.id === lead.id && (
+                                  <span className="font-normal text-bone/45"> · compra</span>
+                                )}
+                              </p>
+                              <p className="mt-0.5 break-words text-xs text-bone/55">
+                                <span className="tabular-nums">
+                                  CI {formatDocument(t.buyer_document)}
+                                </span>
+                                {' · '}
+                                {t.buyer_email}
+                              </p>
+                              <p className="mt-0.5 text-xs text-bone/45">
+                                {bus ? `Transporte · ${bus.name}` : 'Sin transporte'}
+                              </p>
+                            </li>
+                          );
+                        })}
+                      </ol>
+                    </div>
+                  )}
 
                   <dl className="space-y-1.5 rounded-control border border-bone/10 px-4 py-3 text-sm">
                     <div className="flex justify-between gap-4">
                       <dt className="text-bone/60">
-                        Entrada · {t.ticket_tiers?.name ?? 'Entrada'}
+                        {isGroup ? `${people.length} entradas` : 'Entrada'} · {tierLabel}
                       </dt>
                       <dd className="tabular-nums">{formatUYU(entryPrice)}</dd>
                     </div>
@@ -260,10 +327,15 @@ export default async function ConfirmTransfersPage({
                         <dd className="tabular-nums">−{formatUYU(discount)}</dd>
                       </div>
                     )}
-                    {bus && (
+                    {withBus.length > 0 && (
                       <div className="flex justify-between gap-4">
-                        <dt className="text-bone/60">Transporte · {bus.name}</dt>
-                        <dd className="tabular-nums">{formatUYU(bus.price)}</dd>
+                        <dt className="text-bone/60">
+                          Transporte ·{' '}
+                          {isGroup
+                            ? `${withBus.length} ${withBus.length === 1 ? 'lugar' : 'lugares'}`
+                            : withBus[0].name}
+                        </dt>
+                        <dd className="tabular-nums">{formatUYU(busTotal)}</dd>
                       </div>
                     )}
                     <div className="flex items-baseline justify-between gap-4 border-t border-bone/10 pt-2">
@@ -275,8 +347,9 @@ export default async function ConfirmTransfersPage({
                   </dl>
 
                   <TransferReview
-                    ticketId={t.id}
-                    buyerName={t.buyer_name}
+                    ticketId={lead.id}
+                    buyerName={lead.buyer_name}
+                    count={people.length}
                     totalLabel={formatUYU(total)}
                     receipt={receipt}
                     eventFilter={eventFilter}

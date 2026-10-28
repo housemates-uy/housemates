@@ -25,13 +25,15 @@ async function loadTicket(ticketId: string) {
   const { data: t } = await db
     .from('tickets')
     .select(
-      'id, buyer_name, buyer_email, buyer_document, buyer_instagram, source, tier_id, event_id, qr_token, amount_paid_uyu, payment_method, discount_uyu, discount_code_id',
+      'id, buyer_name, buyer_email, buyer_document, buyer_instagram, source, tier_id, event_id, qr_token, amount_paid_uyu, payment_method, discount_uyu, discount_code_id, order_id',
     )
     .eq('id', ticketId)
     .single();
   if (!t?.qr_token) return null;
 
-  const [{ data: event }, { data: tier }, { data: code }, bus, igHandle] = await Promise.all([
+  // Compra de varias entradas (§5.2e): la entrada de quien compró apunta a sí misma.
+  const leadId = t.order_id;
+  const [{ data: event }, { data: tier }, { data: code }, bus, igHandle, { data: group }] = await Promise.all([
     db.from('events').select('title, date_start, location_name, location_url').eq('id', t.event_id).single(),
     t.tier_id
       ? db.from('ticket_tiers').select('name, price_uyu, entry_until').eq('id', t.tier_id).single()
@@ -41,6 +43,13 @@ async function loadTicket(ticketId: string) {
       : Promise.resolve({ data: null }),
     getTicketTransport(t.id),
     getIgHandle(),
+    leadId
+      ? db
+          .from('tickets')
+          .select('id, buyer_name, amount_paid_uyu, created_at')
+          .or(`id.eq.${leadId},order_id.eq.${leadId}`)
+          .order('created_at', { ascending: true })
+      : Promise.resolve({ data: null }),
   ]);
   if (!event) return null;
 
@@ -74,6 +83,15 @@ async function loadTicket(ticketId: string) {
     transport: bus,
     entryUntil: entryTime(tier?.entry_until),
     igHandle,
+    boughtBy: leadId && leadId !== t.id ? (group?.find((g) => g.id === leadId)?.buyer_name ?? null) : null,
+    group:
+      leadId === t.id && group && group.length > 1
+        ? {
+            count: group.length,
+            total: group.reduce((sum, g) => sum + Number(g.amount_paid_uyu), 0),
+            people: group.map((g) => ({ name: g.buyer_name, total: Number(g.amount_paid_uyu) })),
+          }
+        : null,
   };
   return { ticket: t, data };
 }

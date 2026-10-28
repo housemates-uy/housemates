@@ -50,16 +50,23 @@ export default async function CompraResultadoPage({
     }
   }
 
+  const db = createAdminClient();
   const ticket =
     ticketId && /^[0-9a-f-]{36}$/.test(ticketId)
       ? (
-          await createAdminClient()
+          await db
             .from('tickets')
-            .select('status, qr_token, buyer_name, buyer_email_normalized, customer_id, mp_preference_id')
+            .select('id, order_id, status, qr_token, buyer_name, buyer_email_normalized, customer_id, mp_preference_id')
             .eq('id', ticketId)
             .maybeSingle()
         ).data
       : null;
+  // Compra de varias entradas (§5.2e): las de los amigos de quien compró, para decirle que a
+  // cada uno le llega la suya.
+  const others =
+    ticket && ticket.order_id === ticket.id
+      ? ((await db.from('tickets').select('status').eq('order_id', ticket.id).neq('id', ticket.id)).data ?? [])
+      : [];
 
   // El link de la entrada (y el nombre) solo para quien la compró: este navegador, la vuelta
   // de esa misma preferencia de MP o la cuenta que la compró.
@@ -81,6 +88,8 @@ export default async function CompraResultadoPage({
   // nunca decirle que no se le cobró ni invitarla a pagar de nuevo.
   const paidUnconfirmed = !paid && mpStatus === 'approved';
   const loggedIn = (paid || inReview || waiting || paidUnconfirmed) && !!customer;
+  const othersPaid = others.filter((o) => o.status === 'paid' || o.status === 'used').length;
+  const othersInReview = others.filter((o) => o.status === 'review').length;
 
   return (
     <main id="contenido" className="mx-auto flex min-h-[100dvh] max-w-md flex-col justify-center px-5 py-12">
@@ -88,7 +97,14 @@ export default async function CompraResultadoPage({
       <Card className="mt-10 p-6 md:p-8">
         {paid ? (
           <>
-            <h1 className="text-2xl font-bold tracking-tight">Listo{firstName}. Ya tenés tu entrada.</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Listo{firstName ? `,${firstName}` : ''}. Ya tenés tu entrada.</h1>
+            {othersPaid > 0 && (
+              <p className="mt-3 text-sm text-bone/85">
+                {othersPaid === 1
+                  ? 'La otra entrada le llega a esa persona a su mail.'
+                  : `Las otras ${othersPaid} entradas les llegan a cada uno a su mail.`}
+              </p>
+            )}
             {isBuyer ? (
               <>
                 <p className="mt-3 text-sm text-bone/65">
@@ -109,10 +125,17 @@ export default async function CompraResultadoPage({
             <h1 className="text-2xl font-bold tracking-tight">
               Recibimos tu comprobante{firstName ? `,${firstName}` : ''}.
             </h1>
-            <p className="mt-3 text-sm leading-relaxed text-bone/65">
-              Lo estamos validando. Cuando confirmemos la transferencia te mandamos la entrada con
-              el QR por mail. Tu lugar queda reservado mientras tanto.
-            </p>
+            {othersInReview > 0 ? (
+              <p className="mt-3 text-sm leading-relaxed text-bone/65">
+                Lo estamos validando. Cuando lo validemos, a cada uno le llega su entrada con el QR a
+                su mail (son {othersInReview + 1}). Los lugares quedan reservados mientras tanto.
+              </p>
+            ) : (
+              <p className="mt-3 text-sm leading-relaxed text-bone/65">
+                Lo estamos validando. Cuando confirmemos la transferencia te mandamos la entrada con
+                el QR por mail. Tu lugar queda reservado mientras tanto.
+              </p>
+            )}
             <p className="mt-3 text-xs text-bone/55">Si no te llega, revisá también la carpeta de spam.</p>
           </>
         ) : rejected ? (

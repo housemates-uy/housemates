@@ -23,15 +23,17 @@ export function isMercadoPagoConfigured(): boolean {
   return !!process.env.MP_ACCESS_TOKEN;
 }
 
-// Crea la "preferencia" (el carrito de MP) para una entrada ya reservada.
-// external_reference = id de nuestra entrada: es lo que vincula el pago con la entrada.
-// La preferencia vence junto con la reserva, así nadie paga una reserva ya liberada.
+// Crea la "preferencia" (el carrito de MP) para una compra ya reservada: una o varias
+// entradas (§5.2e) y el bus de cada una.
+// external_reference = id de la entrada de quien compró: es lo que vincula el pago con el
+// grupo. La preferencia vence junto con la reserva, así nadie paga una reserva ya liberada.
 export async function createPreference(params: {
   ticketId: string;
   title: string;
   price: number;
+  quantity: number;
   fee: number;
-  transport?: { name: string; price: number };
+  transports: { name: string; price: number; quantity: number }[];
   payerEmail: string;
   payerName: string;
   expiresAt: Date;
@@ -39,21 +41,17 @@ export async function createPreference(params: {
   const base = appUrl();
   const pref = await new Preference(client()).create({
     body: {
-      // Una línea por concepto para que Mercado Pago muestre el desglose: entrada, transporte
-      // (si eligió) y cargo por servicio.
+      // Una línea por concepto para que Mercado Pago muestre el desglose: entradas,
+      // transporte (por opción de bus) y cargo por servicio.
       items: [
-        { id: params.ticketId, title: params.title, quantity: 1, unit_price: params.price, currency_id: 'UYU' },
-        ...(params.transport
-          ? [
-              {
-                id: `${params.ticketId}-bus`,
-                title: `Transporte · ${params.transport.name}`,
-                quantity: 1,
-                unit_price: params.transport.price,
-                currency_id: 'UYU',
-              },
-            ]
-          : []),
+        { id: params.ticketId, title: params.title, quantity: params.quantity, unit_price: params.price, currency_id: 'UYU' },
+        ...params.transports.map((t, i) => ({
+          id: `${params.ticketId}-bus-${i + 1}`,
+          title: `Transporte · ${t.name}`,
+          quantity: t.quantity,
+          unit_price: t.price,
+          currency_id: 'UYU',
+        })),
         ...(params.fee > 0
           ? [{ id: `${params.ticketId}-fee`, title: 'Cargo por servicio', quantity: 1, unit_price: params.fee, currency_id: 'UYU' }]
           : []),
@@ -91,15 +89,17 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const PAYMENT_PROBLEMS = {
   duplicate_live_ticket:
     'Mercado Pago aprobó el pago de una reserva que ya estaba anulada, y la persona ya tiene otra entrada para esta fecha. Hay que devolver este pago desde Mercado Pago.',
+  partial_duplicate:
+    'Mercado Pago aprobó el pago de una compra de varias entradas, pero alguna de esas personas ya tenía otra entrada para esta fecha: esa quedó anulada. Las demás se confirmaron. Hay que devolver la parte de esa entrada desde Mercado Pago.',
   duplicate_payment:
     'Mercado Pago aprobó un segundo pago para una entrada que ya estaba paga. Hay que devolver este pago desde Mercado Pago.',
   amount_mismatch:
     'Mercado Pago informó un monto menor al total de la entrada. La entrada NO se confirmó: revisá el pago en Mercado Pago.',
   confirmed_late:
     'Se confirmó el pago de una entrada que estaba anulada (la anuló un admin o la persona volvió a intentar la compra). La entrada vale y se le mandó; revisá que la tanda no se haya pasado del cupo.',
-  reversed: 'Mercado Pago informó una devolución o un contracargo: la entrada se anuló y se le avisó a la persona.',
+  reversed: 'Mercado Pago informó una devolución o un contracargo: las entradas de ese pago se anularon y se le avisó a cada persona.',
   reversed_used:
-    'Mercado Pago informó una devolución o un contracargo de una entrada que ya se usó en puerta. La entrada no se tocó.',
+    'Mercado Pago informó una devolución o un contracargo de una compra con entradas que ya se usaron en puerta. Esas entradas no se tocaron.',
 };
 type PaymentProblem = keyof typeof PAYMENT_PROBLEMS;
 const isPaymentProblem = (r: string): r is PaymentProblem => r in PAYMENT_PROBLEMS;
@@ -169,18 +169,22 @@ export async function syncPayment(paymentId: string): Promise<{
 
   const db = createAdminClient();
 
+  // ticketId es la entrada de quien compró: el pago es de todo su grupo (§5.2e). Una
+  // entrada sin grupo (las de antes) es un grupo de una.
   if (status === 'approved') {
-    const { data, error } = await db.rpc('confirm_ticket_payment', {
-      p_ticket_id: ticketId,
+    const { data, error } = await db.rpc('confirm_order_payment', {
+      p_order_id: ticketId,
       p_payment_id: mpId,
       p_amount: payment.transaction_amount ?? 0,
     });
-    if (error) throw new Error(`confirm_ticket_payment: ${error.message}`);
-    // Solo la llamada que efectivamente confirmó manda el mail (webhook y página de vuelta
-    // pueden llegar los dos; la segunda recibe 'already_paid' y no reenvía).
-    if (data === 'confirmed' || data === 'confirmed_late') await sendTicketConfirmedMail(ticketId);
-    if (isPaymentProblem(data)) await alertOwners(ticketId, data, mpId);
-    return { ticketId, barOrderId, status, result: data };
+    if (error) throw new Error(`confirm_order_payment: ${error.message}`);
+    const { result, confirmed = [] } = data as { result: string; confirmed?: string[] };
+    // Solo la llamada que efectivamente confirmó manda los mails (webhook y página de vuelta
+    // pueden llegar los dos; la segunda recibe 'already_paid' y no reenvía). A cada persona
+    // le llega su entrada.
+    await Promise.all(confirmed.map((id) => sendTicketConfirmedMail(id)));
+    if (isPaymentProblem(result)) await alertOwners(ticketId, result, mpId);
+    return { ticketId, barOrderId, status, result };
   }
 
   if (PENDING_STATUSES.has(status)) {
@@ -189,23 +193,22 @@ export async function syncPayment(paymentId: string): Promise<{
       Number.isNaN(voucherEnds) ? Date.now() + PENDING_HOLD_HOURS * 3_600_000 : voucherEnds,
       Date.now() + MAX_HOLD_HOURS * 3_600_000,
     );
-    const { data, error } = await db.rpc('extend_ticket_hold', {
-      p_ticket_id: ticketId,
+    const { data, error } = await db.rpc('extend_order_hold', {
+      p_order_id: ticketId,
       p_until: new Date(until).toISOString(),
     });
-    if (error) throw new Error(`extend_ticket_hold: ${error.message}`);
-    return { ticketId, barOrderId, status, result: data };
+    if (error) throw new Error(`extend_order_hold: ${error.message}`);
+    return { ticketId, barOrderId, status, result: data ? 'extended' : 'unchanged' };
   }
 
   if (REVERSED_STATUSES.has(status)) {
-    const { data, error } = await db.rpc('reverse_ticket_payment', { p_ticket_id: ticketId, p_payment_id: mpId });
-    if (error) throw new Error(`reverse_ticket_payment: ${error.message}`);
-    if (data === 'cancelled') {
-      await sendTicketCancelledMail(ticketId, true);
-      await alertOwners(ticketId, 'reversed', mpId);
-    }
-    if (data === 'already_used') await alertOwners(ticketId, 'reversed_used', mpId);
-    return { ticketId, barOrderId, status, result: data };
+    const { data, error } = await db.rpc('reverse_order_payment', { p_order_id: ticketId, p_payment_id: mpId });
+    if (error) throw new Error(`reverse_order_payment: ${error.message}`);
+    const { cancelled = [], used = 0 } = data as { cancelled?: string[]; used?: number };
+    await Promise.all(cancelled.map((id) => sendTicketCancelledMail(id, true)));
+    if (cancelled.length) await alertOwners(ticketId, 'reversed', mpId);
+    if (used) await alertOwners(ticketId, 'reversed_used', mpId);
+    return { ticketId, barOrderId, status, result: cancelled.length ? 'cancelled' : used ? 'already_used' : 'ignored' };
   }
 
   return { ticketId, barOrderId, status };
@@ -268,9 +271,11 @@ export async function confirmBarOrder(orderId: string, paymentId: string | null,
   return (data as string | null) ?? 'error';
 }
 
-export async function refundPayment(paymentId: string): Promise<boolean> {
+// Sin monto devuelve todo el pago. Con monto, solo esa parte: en una compra de varias
+// entradas, reembolsar una devuelve lo que pagó esa entrada, no el grupo entero.
+export async function refundPayment(paymentId: string, amount?: number): Promise<boolean> {
   try {
-    await new PaymentRefund(client()).create({ payment_id: paymentId, body: {} });
+    await new PaymentRefund(client()).create({ payment_id: paymentId, body: amount ? { amount } : {} });
     return true;
   } catch {
     return false;

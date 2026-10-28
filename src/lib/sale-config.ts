@@ -10,9 +10,12 @@ export type SaleConfig = {
   mpReady: boolean; // Mercado Pago conectado (MP_ACCESS_TOKEN): recién ahí cobra
   transferEnabled: boolean; // transferencia activa (y con datos de cuenta cargados)
   transferDetails: string; // datos para transferir, texto libre
+  maxPerOrder: number; // tope de entradas por compra (la de quien compra + las de sus amigos)
 };
 
-const KEYS = ['gate_enabled', 'pay_mp_enabled', 'pay_transfer_enabled', 'transfer_details'] as const;
+export const DEFAULT_MAX_PER_ORDER = 6;
+
+const KEYS = ['gate_enabled', 'pay_mp_enabled', 'pay_transfer_enabled', 'transfer_details', 'max_tickets_per_order'] as const;
 
 export async function getSaleConfig(): Promise<SaleConfig> {
   const map = new Map<string, string>();
@@ -30,5 +33,11 @@ export async function getSaleConfig(): Promise<SaleConfig> {
     // Sin datos de cuenta no tiene sentido ofrecer transferencia.
     transferEnabled: map.get('pay_transfer_enabled') !== '0' && transferDetails.length > 0,
     transferDetails,
+    maxPerOrder: parseMaxPerOrder(map.get('max_tickets_per_order')),
   };
+}
+
+export function parseMaxPerOrder(raw: string | undefined): number {
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 1 && n <= 20 ? n : DEFAULT_MAX_PER_ORDER;
 }

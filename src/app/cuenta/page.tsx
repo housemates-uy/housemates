@@ -178,6 +178,17 @@ function TicketList({
                 {t.eventTitle} · {t.entryLabel}
               </p>
               <BusLine bus={buses.get(t.id)} />
+              {t.boughtFor.length > 0 && (
+                <p className="mt-3 break-words text-sm text-bone/55">
+                  También compraste para:{' '}
+                  {t.boughtFor.map((p, i) => (
+                    <span key={p.email}>
+                      {i > 0 && ', '}
+                      <span className="text-bone/80">{p.name}</span> ({p.email})
+                    </span>
+                  ))}
+                </p>
+              )}
               {t.href && (
                 <Link
                   href={t.href}

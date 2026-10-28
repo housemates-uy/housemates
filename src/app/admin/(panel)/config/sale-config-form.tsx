@@ -3,7 +3,7 @@
 import { useFormState } from 'react-dom';
 import { SubmitButton } from '@/components/admin/submit-button';
 import { Field } from '@/components/ui/field';
-import { Textarea } from '@/components/ui/input';
+import { Input, Textarea } from '@/components/ui/input';
 import { SERVICE_FEE_LABEL } from '@/lib/pricing';
 import { saveSaleConfigAction, type SaleConfigState } from './actions';
 
@@ -12,6 +12,7 @@ type Values = {
   mpEnabled: boolean;
   transferEnabled: boolean;
   transferDetails: string;
+  maxPerOrder: number;
 };
 
 function Toggle({ name, label, hint, defaultChecked, disabled }: {
@@ -78,6 +79,22 @@ export function SaleConfigForm({
         />
         <Field label="Datos para transferir" hint="Banco, titular, tipo y número de cuenta. Se muestran tal cual, con un botón para copiarlos.">
           <Textarea name="transfer_details" rows={5} defaultValue={values.transferDetails} placeholder={'BROU · Caja de ahorro en pesos\nTitular: ...\nCuenta: ...'} />
+        </Field>
+        <Field
+          label="Máximo de entradas por compra"
+          hint="La de quien compra más las de sus amigos, cada una a nombre de una persona. De 1 a 20: con 1 se compra solo la propia."
+        >
+          <Input
+            type="number"
+            name="max_tickets_per_order"
+            inputMode="numeric"
+            min={1}
+            max={20}
+            step={1}
+            required
+            defaultValue={values.maxPerOrder}
+            className="w-28"
+          />
         </Field>
       </fieldset>
 

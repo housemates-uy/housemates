@@ -84,6 +84,7 @@ const FIELDS: Record<string, string> = {
   pay_mp_enabled: 'Mercado Pago',
   pay_transfer_enabled: 'Transferencia',
   transfer_details: 'Datos para transferir',
+  max_tickets_per_order: 'Máximo de entradas por compra',
   new_tiers: 'Tandas nuevas',
   tiers: 'Tandas',
   sent: 'Enviados',
@@ -93,6 +94,8 @@ const FIELDS: Record<string, string> = {
   resend_all: 'Reenvío a todos',
   already_refunded_in_mp: 'Ya figuraba devuelto en Mercado Pago',
   result: 'Resultado',
+  refund_amount: 'Devuelto (solo esta entrada)',
+  entradas: 'Entradas',
 };
 
 const STATUS_VALUES: Record<string, string> = {
@@ -114,7 +117,7 @@ function formatValue(field: string, value: Json | undefined): string {
     return text === '1' ? 'Sí' : text === '0' ? 'No' : text;
   }
   if (field === 'status') return STATUS_VALUES[text] ?? text;
-  if (field === 'price_uyu') return `$${Number(text).toLocaleString('es-UY')}`;
+  if (field === 'price_uyu' || field === 'refund_amount') return `$${Number(text).toLocaleString('es-UY')}`;
   if (/^\d{4}-\d{2}-\d{2}T/.test(text)) return formatLocal(text, "d/MM/yyyy HH:mm");
   if (/^\d{2}:\d{2}(:\d{2})?$/.test(text)) return text.slice(0, 5);
   return text;

@@ -178,6 +178,9 @@ export type AccountTicket = {
   statusLabel: string;
   href: string | null;
   upcoming: boolean;
+  // Si en esa compra también sacó entradas para otros (§5.2e): para quiénes. Sin link a esas
+  // entradas: a cada uno le llega la suya a su mail.
+  boughtFor: { name: string; email: string }[];
 };
 
 const STATUS_LABEL: Record<TicketStatus, string> = {
@@ -190,7 +193,7 @@ const STATUS_LABEL: Record<TicketStatus, string> = {
 };
 
 const TICKET_FIELDS =
-  'id, status, qr_token, source, paid_at, payment_method, reserved_until, events(title, date_start, date_end), ticket_tiers(name)';
+  'id, order_id, status, qr_token, source, paid_at, payment_method, reserved_until, events(title, date_start, date_end), ticket_tiers(name)';
 
 export async function loadAccountTickets(customer: CustomerSession): Promise<AccountTicket[]> {
   const db = createAdminClient();
@@ -201,9 +204,12 @@ export async function loadAccountTickets(customer: CustomerSession): Promise<Acc
       : Promise.resolve({ data: [] }),
   ]);
 
+  // De una compra de varias entradas, a quien compró le corresponde solo la suya (la que
+  // apunta a sí misma): las de sus amigos son de ellos, aunque las haya pagado él.
+  const ownLeads = (own.data ?? []).filter((t) => !t.order_id || t.order_id === t.id);
   const now = Date.now();
   const seen = new Set<string>();
-  const rows = [...(own.data ?? []), ...(byEmail.data ?? [])].filter((t) => {
+  const rows = [...ownLeads, ...(byEmail.data ?? [])].filter((t) => {
     if (seen.has(t.id) || !t.events) return false;
     seen.add(t.id);
     // Fuera de la lista: reservas de Mercado Pago vencidas y compras con Mercado Pago que
@@ -221,6 +227,16 @@ export async function loadAccountTickets(customer: CustomerSession): Promise<Acc
     return isUpcoming(a) ? startsAt(a) - startsAt(b) : startsAt(b) - startsAt(a);
   });
 
+  const leadIds = rows.filter((t) => t.order_id === t.id).map((t) => t.id);
+  const { data: groupTickets } = leadIds.length
+    ? await db.from('tickets').select('id, order_id, buyer_name, buyer_email').in('order_id', leadIds).order('buyer_name')
+    : { data: [] };
+  const boughtFor = new Map<string, { name: string; email: string }[]>();
+  for (const g of groupTickets ?? []) {
+    if (!g.order_id || g.id === g.order_id) continue;
+    boughtFor.set(g.order_id, [...(boughtFor.get(g.order_id) ?? []), { name: g.buyer_name, email: g.buyer_email }]);
+  }
+
   return rows.map((t) => ({
     id: t.id,
     eventTitle: t.events!.title,
@@ -231,5 +247,6 @@ export async function loadAccountTickets(customer: CustomerSession): Promise<Acc
     statusLabel: STATUS_LABEL[t.status],
     href: t.qr_token ? `/ticket/${t.qr_token}` : null,
     upcoming: isUpcoming(t),
+    boughtFor: boughtFor.get(t.id) ?? [],
   }));
 }

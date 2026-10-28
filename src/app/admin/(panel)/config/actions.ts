@@ -40,7 +40,8 @@ export async function updateGatePasswordAction(
   return { ok: true }
 }
 
-// Configuración de la venta: contraseña para comprar, medios de pago y datos para transferir.
+// Configuración de la venta: contraseña para comprar, medios de pago, datos para transferir y
+// máximo de entradas por compra.
 // Ver src/lib/sale-config.ts y docs/LOGICA_DE_NEGOCIO.md → "Compra web".
 export type SaleConfigState = { error: string } | null
 
@@ -56,12 +57,16 @@ export async function saveSaleConfigAction(
   if (transferOn && !transferDetails) {
     return { error: 'Para activar la transferencia cargá los datos de la cuenta.' }
   }
+  const maxPerOrder = Number(formData.get('max_tickets_per_order'))
+  if (!Number.isInteger(maxPerOrder) || maxPerOrder < 1 || maxPerOrder > 20) {
+    return { error: 'El máximo de entradas por compra tiene que ser un número entero de 1 a 20.' }
+  }
 
   const db = createAdminClient()
   const { data: current } = await db
     .from('site_config')
     .select('key, value')
-    .in('key', ['gate_enabled', 'pay_mp_enabled', 'pay_transfer_enabled', 'transfer_details'])
+    .in('key', ['gate_enabled', 'pay_mp_enabled', 'pay_transfer_enabled', 'transfer_details', 'max_tickets_per_order'])
   const before = Object.fromEntries((current ?? []).map((r) => [r.key, r.value]))
 
   const now = new Date().toISOString()
@@ -70,6 +75,7 @@ export async function saveSaleConfigAction(
     { key: 'pay_mp_enabled', value: formData.get('pay_mp_enabled') === 'on' ? '1' : '0' },
     { key: 'pay_transfer_enabled', value: transferOn ? '1' : '0' },
     { key: 'transfer_details', value: transferDetails },
+    { key: 'max_tickets_per_order', value: String(maxPerOrder) },
   ].map((r) => ({ ...r, updated_by: admin.id, updated_at: now }))
 
   const { error } = await db.from('site_config').upsert(rows, { onConflict: 'key' })

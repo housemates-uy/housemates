@@ -19,7 +19,8 @@ import { NewTicketForm } from './new-ticket-form';
 
 // Entradas de un evento: alta manual / invitación, listado con búsqueda y anulación.
 // Las compras web pendientes (todavía pagando) también aparecen, con su estado.
-// Arriba de todo, las transferencias con comprobante que falta validar (solo owners).
+// Arriba de todo, las transferencias con comprobante que falta validar, una fila por compra
+// (solo owners).
 // Como en Ventas, la plata (recaudado, montos) y los comprobantes los ven solo los owners.
 // PostgREST corta cada respuesta en 1000 filas: la búsqueda se hace en la base, la lista va
 // de a páginas y los totales se cuentan en la base (count) o se traen enteros (fetchAll).
@@ -43,6 +44,18 @@ const CANCEL_OUTCOMES: Record<string, { ok: boolean; text: string }> = {
     ok: false,
     text: 'Reembolsada: se devolvió la plata por Mercado Pago, pero no se pudo mandar el mail: avisale por Instagram.',
   },
+  'reembolsada-parte': {
+    ok: true,
+    text: 'Reembolsada: se devolvió por Mercado Pago solo lo que pagó esta entrada y le avisamos por mail. Las otras entradas de la compra siguen válidas.',
+  },
+  'reembolsada-parte-sin-mail': {
+    ok: false,
+    text: 'Reembolsada: se devolvió por Mercado Pago solo lo que pagó esta entrada (las otras de la compra siguen válidas), pero no se pudo mandar el mail: avisale por Instagram.',
+  },
+  'devuelta-parte-sin-anular': {
+    ok: false,
+    text: 'Se devolvió por Mercado Pago lo que pagó esta entrada, pero no se pudo anular. No la reembolses de nuevo (se devolvería otra vez): avisá para anularla a mano.',
+  },
   'ya-devuelta': {
     ok: true,
     text: 'En Mercado Pago el pago ya figuraba devuelto: no se devolvió de nuevo. La entrada quedó reembolsada y le avisamos por mail.',
@@ -62,9 +75,9 @@ const CANCEL_OUTCOMES: Record<string, { ok: boolean; text: string }> = {
 };
 
 const LIST_COLUMNS =
-  'id, buyer_name, buyer_email, buyer_document, buyer_instagram, status, source, tier_id, amount_paid_uyu, qr_token, payment_method, mp_payment_id, notes';
+  'id, order_id, buyer_name, buyer_email, buyer_document, buyer_instagram, status, source, tier_id, amount_paid_uyu, qr_token, payment_method, mp_payment_id, notes';
 const REVIEW_COLUMNS =
-  'id, buyer_name, buyer_email, buyer_document, buyer_instagram, tier_id, amount_paid_uyu, discount_uyu, receipt_path, created_at';
+  'id, order_id, buyer_name, buyer_email, buyer_document, buyer_instagram, tier_id, amount_paid_uyu, discount_uyu, receipt_path, created_at';
 
 // La búsqueda va dentro de un filtro `or` de PostgREST: se sacan los caracteres que lo rompen
 // (coma, paréntesis, comillas, comodines) y cada valor va entre comillas.
@@ -161,7 +174,36 @@ export default async function EventTicketsPage({
   const listed = list.data;
   const listedTotal = list.count ?? listed.length;
   const pages = Math.max(1, Math.ceil(listedTotal / PAGE_SIZE));
-  const buses = await getTransportByTicket({ ticketIds: [...listed, ...toReview].map((t) => t.id) });
+  const orderIds = Array.from(new Set(listed.flatMap((t) => (t.order_id ? [t.order_id] : []))));
+  const [buses, { data: orderTickets }] = await Promise.all([
+    getTransportByTicket({ ticketIds: [...listed, ...toReview].map((t) => t.id) }),
+    orderIds.length > 0
+      ? db.from('tickets').select('id, order_id, buyer_name').in('order_id', orderIds)
+      : Promise.resolve({ data: [] as { id: string; order_id: string | null; buyer_name: string }[] }),
+  ]);
+
+  // Compras de varias entradas (order_id = la entrada de quien compró): cuántas tiene y quién
+  // la hizo, para la lista.
+  const orders = new Map<string, { size: number; buyer: string }>();
+  for (const t of orderTickets ?? []) {
+    if (!t.order_id) continue;
+    const o = orders.get(t.order_id) ?? { size: 0, buyer: '' };
+    orders.set(t.order_id, { size: o.size + 1, buyer: t.id === t.order_id ? t.buyer_name : o.buyer });
+  }
+
+  // Transferencias a validar agrupadas por compra (se pagan con una sola transferencia y se
+  // aprueban o rechazan juntas): quien compró primero y después los demás por nombre.
+  type ReviewTicket = (typeof toReview)[number];
+  const reviewByOrder = new Map<string, ReviewTicket[]>();
+  for (const t of toReview) {
+    const key = t.order_id ?? t.id;
+    reviewByOrder.set(key, [...(reviewByOrder.get(key) ?? []), t]);
+  }
+  const reviewOrders = Array.from(reviewByOrder, ([leadId, tickets]) =>
+    [...tickets].sort((a, b) =>
+      a.id === leadId ? -1 : b.id === leadId ? 1 : a.buyer_name.localeCompare(b.buyer_name, 'es'),
+    ),
+  );
 
   // Disponibilidad real (descuenta reservas de compras web en curso).
   const tierOptions = await Promise.all(
@@ -196,54 +238,77 @@ export default async function EventTicketsPage({
           value={paying.count ?? 0}
           sub="Reservas web en curso"
         />
-        <StatCard label="A validar" value={toReview.length} sub="Transferencias" />
+        <StatCard
+          label="A validar"
+          value={reviewOrders.length}
+          sub={toReview.length > reviewOrders.length ? `Compras · ${toReview.length} entradas` : 'Transferencias'}
+        />
       </div>
 
-      {toReview.length > 0 && (
+      {reviewOrders.length > 0 && (
         <section id="a-validar" className="space-y-4">
           <div>
-            <h2 className="text-lg font-bold tracking-tight">Transferencias a validar ({toReview.length})</h2>
+            <h2 className="text-lg font-bold tracking-tight">Transferencias a validar ({reviewOrders.length})</h2>
             <p className="mt-1 text-sm text-bone/55">
-              Fijate que la plata haya llegado a la cuenta antes de aprobar. Al aprobar le llega la
-              entrada por mail; al rechazar, se libera el lugar y le avisamos.
+              Fijate que la plata haya llegado a la cuenta antes de aprobar. Una compra de varias
+              entradas se aprueba o se rechaza entera: al aprobar, a cada persona le llega su entrada
+              por mail; al rechazar, se liberan los lugares y le avisamos a quien compró.
             </p>
           </div>
           <ul className="divide-y divide-bone/10 rounded-card border border-alert/30">
-            {toReview.map((t) => {
-              const approve = approveTransferAction.bind(null, t.id);
-              const reject = rejectTransferAction.bind(null, t.id);
+            {reviewOrders.map((people) => {
+              const [lead, ...friends] = people;
+              const approve = approveTransferAction.bind(null, lead.id);
+              const reject = rejectTransferAction.bind(null, lead.id);
+              const total = people.reduce((sum, t) => sum + Number(t.amount_paid_uyu), 0);
+              const discount = people.reduce((sum, t) => sum + Number(t.discount_uyu), 0);
+              const busLabel = (id: string) => {
+                const bus = buses.get(id);
+                return bus ? ` · Bus: ${bus.name}${isOwner ? ` ${formatUYU(bus.price)}` : ''}` : '';
+              };
               return (
-                <li key={t.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4">
+                <li key={lead.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4">
                   <div className="min-w-0">
                     <p className="text-sm font-medium">
-                      {t.buyer_name}
+                      {lead.buyer_name}
+                      {friends.length > 0 && <span className="font-normal text-bone/60">{` · ${people.length} entradas`}</span>}
                       {isOwner && (
                         <>
                           {' · '}
-                          <span className="font-bold">{formatUYU(Number(t.amount_paid_uyu))}</span>
+                          <span className="font-bold">{formatUYU(total)}</span>
                         </>
                       )}
                     </p>
                     <p className="mt-1 text-xs text-bone/55">
-                      CI {formatDocument(t.buyer_document)} · {t.buyer_email}
-                      {t.buyer_instagram && ` · @${t.buyer_instagram}`}
+                      CI {formatDocument(lead.buyer_document)} · {lead.buyer_email}
+                      {lead.buyer_instagram && ` · @${lead.buyer_instagram}`}
                     </p>
                     <p className="mt-0.5 text-xs text-bone/45">
-                      {t.tier_id && tierName.get(t.tier_id)}
-                      {isOwner && Number(t.discount_uyu) > 0 && ` · descuento ${formatUYU(Number(t.discount_uyu))}`}
-                      {buses.has(t.id) &&
-                        ` · Bus: ${buses.get(t.id)?.name}${isOwner ? ` ${formatUYU(buses.get(t.id)?.price ?? 0)}` : ''}`}
-                      {` · subido ${formatLocal(t.created_at, "d/MM 'a las' HH:mm")}`}
+                      {lead.tier_id && tierName.get(lead.tier_id)}
+                      {isOwner && discount > 0 && ` · descuento ${formatUYU(discount)}`}
+                      {busLabel(lead.id)}
+                      {` · subido ${formatLocal(lead.created_at, "d/MM 'a las' HH:mm")}`}
                     </p>
+                    {friends.length > 0 && (
+                      <ul className="mt-2 space-y-1 border-l border-bone/15 pl-3 text-xs text-bone/55">
+                        {friends.map((t) => (
+                          <li key={t.id} className="break-words">
+                            <span className="font-medium text-bone/80">{t.buyer_name}</span>
+                            {` · CI ${formatDocument(t.buyer_document)} · ${t.buyer_email}`}
+                            {busLabel(t.id)}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    {!t.receipt_path ? (
+                    {!lead.receipt_path ? (
                       <span className="text-xs text-alert">Sin comprobante</span>
                     ) : (
                       isOwner && (
                         // Link temporal armado en el momento (solo owners): nunca queda vencido.
                         <a
-                          href={`/admin/confirmar/comprobante/${t.id}`}
+                          href={`/admin/confirmar/comprobante/${lead.id}`}
                           target="_blank"
                           rel="noreferrer"
                           className="text-sm underline underline-offset-4"
@@ -255,13 +320,19 @@ export default async function EventTicketsPage({
                     {isOwner ? (
                       <>
                         <form action={reject}>
-                          <ConfirmSubmitButton variant="ghost" size="sm" confirmLabel="Sí, rechazar">
+                          <ConfirmSubmitButton
+                            variant="ghost"
+                            size="sm"
+                            confirmLabel={friends.length > 0 ? `Sí, rechazar las ${people.length}` : 'Sí, rechazar'}
+                          >
                             Rechazar
                           </ConfirmSubmitButton>
                         </form>
-                        {t.receipt_path && (
+                        {lead.receipt_path && (
                           <form action={approve}>
-                            <SubmitButton size="sm">Aprobar</SubmitButton>
+                            <SubmitButton size="sm">
+                              {friends.length > 0 ? `Aprobar las ${people.length}` : 'Aprobar'}
+                            </SubmitButton>
                           </form>
                         )}
                       </>
@@ -325,6 +396,7 @@ export default async function EventTicketsPage({
               // Una compra pendiente no se anula: vence sola (y si paga después, revive igual).
               const refundable = t.source === 'purchase' && !!t.mp_payment_id;
               const cancelMode = t.status !== 'paid' ? null : refundable ? 'refund' : 'cancel';
+              const order = t.order_id ? orders.get(t.order_id) : undefined;
               return (
                 <li key={t.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4">
                   <div className="min-w-0">
@@ -343,6 +415,12 @@ export default async function EventTicketsPage({
                       {t.tier_id && ` · ${tierName.get(t.tier_id) ?? ''}`}
                       {isOwner && Number(t.amount_paid_uyu) > 0 && ` · ${formatUYU(Number(t.amount_paid_uyu))}`}
                     </p>
+                    {order && order.size > 1 && (
+                      <p className="mt-0.5 text-xs text-bone/45">
+                        Compra de {order.size}
+                        {order.buyer && ` · la hizo ${order.buyer}`}
+                      </p>
+                    )}
                     {t.notes && (
                       <p className="mt-1 whitespace-pre-line text-xs text-bone/65">Nota: {t.notes}</p>
                     )}

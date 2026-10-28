@@ -113,7 +113,20 @@ export type TicketMailData = {
   transport?: { name: string; departure: string; price: number } | null; // bus elegido al comprar
   entryUntil?: string | null; // tanda de ingreso temprano: "00:30"
   igHandle?: string;
+  // Compra de varias entradas (§5.2e). boughtBy: quien la compró, si no es esta persona.
+  // group: en los mails a quien compró, todas las entradas de la compra.
+  boughtBy?: string | null;
+  group?: { count: number; total: number; people: { name: string; total: number }[] } | null;
 };
+
+// Varias entradas: una fila por persona con lo que paga cada una, y el total de la compra.
+function groupRows(d: TicketMailData, totalLabel: string) {
+  if (!d.group || d.group.count < 2) return paymentRows(d, totalLabel);
+  const payment = d.group.people.map((p): [string, string] => [`Entrada · ${p.name}`, formatUYU(p.total)]);
+  return { payment, total: [totalLabel, formatUYU(d.group.total)] as [string, string] };
+}
+
+const groupNames = (d: TicketMailData) => (d.group?.people ?? []).map((p) => p.name).join(', ');
 
 // Tanda de ingreso temprano: fila "Ingreso · Hasta las 00:30".
 const entryRows = (d: TicketMailData): [string, string][] =>
@@ -158,12 +171,12 @@ export { C as MAIL_COLORS, IG_URL, blend, solid, esc, layout, heading, rows, but
 // El QR va como imagen adjunta embebida (cid:qr) porque Gmail no muestra imágenes data:.
 export function ticketConfirmedEmail(d: TicketMailData) {
   const subject = `Tu entrada para ${d.eventTitle} · ${d.dateShort}`;
-  const { payment, total } = paymentRows(d, 'Total pagado');
+  const { payment, total } = d.boughtBy ? { payment: [], total: undefined } : paymentRows(d, 'Total pagado');
 
   const inner = `${heading(
-    d.total === 0 ? 'INVITACIÓN' : 'COMPRA CONFIRMADA',
+    d.total === 0 ? 'INVITACIÓN' : d.boughtBy ? 'TE COMPRARON TU ENTRADA' : 'COMPRA CONFIRMADA',
     `${d.firstName}, ya tenés tu entrada`,
-    `Te esperamos el ${d.dateShort}. Mostrá este QR en puerta junto con tu cédula.`,
+    `${d.boughtBy ? `${esc(d.boughtBy)} te compró tu entrada. ` : ''}Te esperamos el ${d.dateShort}. Mostrá este QR en puerta junto con tu cédula.`,
   )}
 <tr><td style="padding-top:28px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="${solid(C.ink)}border:1px solid ${C.line};border-radius:18px;">
@@ -194,11 +207,12 @@ ${blend(`<strong style="color:${C.bone};">Antes de ir</strong><br>La entrada es 
 
   const text = [
     `${d.firstName}, ya tenés tu entrada para ${d.eventTitle} (${d.dateLong}).`,
+    d.boughtBy ? `Te la compró ${d.boughtBy}.` : '',
     `${d.entryLabel} · ${d.fullName} · ${ciMasked(d.docTail)}`,
     d.entryUntil ? `Ingreso temprano: entrá antes de las ${d.entryUntil}.` : '',
     `Tu entrada con el QR: ${d.ticketUrl}`,
     d.location ? `Lugar: ${d.location}${d.locationUrl ? ` (${d.locationUrl})` : ''}` : '',
-    d.total > 0 ? `Total pagado: ${formatUYU(d.total)}` : '',
+    d.total > 0 && !d.boughtBy ? `Total pagado: ${formatUYU(d.total)}` : '',
     busText(d),
     'La entrada es personal: en puerta te pedimos la cédula.',
   ]
@@ -219,7 +233,11 @@ export function ticketCancelledEmail(d: TicketMailData & { refunded: boolean }) 
   const ig = igUrl(d.igHandle ?? DEFAULT_IG_HANDLE);
   const refundBlock = d.refunded
     ? `<tr><td style="padding-top:20px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="${solid(C.panel)}border-radius:14px;"><tr><td style="padding:18px 20px;font-size:13px;line-height:1.6;color:${C.soft};">
-${blend(`<strong style="color:${C.bone};font-size:14px;">Te devolvimos ${esc(formatUYU(d.total))} por Mercado Pago</strong><br>La devolución va al mismo medio con el que pagaste. Según tu banco puede tardar unos días en verse.`)}
+${blend(
+  d.boughtBy
+    ? `<strong style="color:${C.bone};font-size:14px;">Se devolvieron ${esc(formatUYU(d.total))} por Mercado Pago</strong><br>La devolución va al medio con el que se pagó la compra, a ${esc(d.boughtBy)}, que la hizo.`
+    : `<strong style="color:${C.bone};font-size:14px;">Te devolvimos ${esc(formatUYU(d.total))} por Mercado Pago</strong><br>La devolución va al mismo medio con el que pagaste. Según tu banco puede tardar unos días en verse.`,
+)}
 </td></tr></table></td></tr>`
     : '';
 
@@ -240,7 +258,9 @@ ${button(ig, 'Escribinos por Instagram')}`;
   const text = [
     `Tu entrada para ${d.eventTitle} (${d.fullName}) fue anulada y el QR ya no es válido.`,
     d.refunded
-      ? `Te devolvimos ${formatUYU(d.total)} por Mercado Pago. Va al mismo medio con el que pagaste y, según tu banco, puede tardar unos días en verse.`
+      ? d.boughtBy
+        ? `Se devolvieron ${formatUYU(d.total)} por Mercado Pago al medio con el que se pagó la compra (la hizo ${d.boughtBy}).`
+        : `Te devolvimos ${formatUYU(d.total)} por Mercado Pago. Va al mismo medio con el que pagaste y, según tu banco, puede tardar unos días en verse.`
       : '',
     `Si tenés dudas o creés que es un error, escribinos por Instagram: ${ig}`,
   ]
@@ -253,22 +273,27 @@ ${button(ig, 'Escribinos por Instagram')}`;
 // 2 · Transferencia recibida: la persona subió el comprobante y queda en revisión.
 export function transferReceivedEmail(d: TicketMailData) {
   const subject = `Recibimos tu comprobante · ${d.eventTitle} ${d.dateShort}`;
-  const { payment, total } = paymentRows(d, 'Total transferido');
+  const several = !!d.group && d.group.count > 1;
+  const { payment, total } = groupRows(d, 'Total transferido');
   const inner = `${heading(
     'TRANSFERENCIA RECIBIDA',
     `${d.firstName}, recibimos tu comprobante`,
-    'Lo estamos validando. Cuando confirmemos la transferencia te mandamos la entrada con el QR a este mail.',
+    several
+      ? `Lo estamos validando. Cuando confirmemos la transferencia, a cada uno le llega su entrada con el QR a su mail.`
+      : 'Lo estamos validando. Cuando confirmemos la transferencia te mandamos la entrada con el QR a este mail.',
   )}
-<tr><td style="padding-top:28px;">${rows([['Fecha', d.dateLong], ['Lugar', d.location ?? 'A confirmar'], ['A nombre de', `${d.fullName} · ${ciMasked(d.docTail)}`], ...payment], total)}</td></tr>
+<tr><td style="padding-top:28px;">${rows([['Fecha', d.dateLong], ['Lugar', d.location ?? 'A confirmar'], ...(several ? [] : ([['A nombre de', `${d.fullName} · ${ciMasked(d.docTail)}`]] as [string, string][])), ...payment], total)}</td></tr>
 ${busPanel(d)}
 <tr><td style="padding-top:24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="${solid(C.panel)}border-radius:14px;"><tr><td style="padding:18px 20px;font-size:13px;line-height:1.6;color:${C.soft};">
-${blend(`<strong style="color:${C.bone};">Tu lugar queda reservado</strong><br>Mientras validamos el comprobante nadie más puede usar tu lugar. Si algo no coincide te escribimos.`)}
+${blend(`<strong style="color:${C.bone};">${several ? 'Los lugares quedan reservados' : 'Tu lugar queda reservado'}</strong><br>Mientras validamos el comprobante nadie más puede usar ${several ? 'esos lugares' : 'tu lugar'}. Si algo no coincide te escribimos.`)}
 </td></tr></table></td></tr>`;
 
   const text = [
     `${d.firstName}, recibimos tu comprobante para ${d.eventTitle} (${d.dateLong}).`,
-    'Lo estamos validando. Cuando confirmemos la transferencia te mandamos la entrada con el QR a este mail.',
-    `Total transferido: ${formatUYU(d.total)}`,
+    several
+      ? `Lo estamos validando. Cuando confirmemos la transferencia, a cada uno le llega su entrada a su mail (${groupNames(d)}).`
+      : 'Lo estamos validando. Cuando confirmemos la transferencia te mandamos la entrada con el QR a este mail.',
+    `Total transferido: ${formatUYU(several ? d.group!.total : d.total)}`,
     busText(d),
   ]
     .filter(Boolean)
@@ -290,7 +315,9 @@ export function transferRejectedEmail(d: TicketMailData) {
 <tr><td style="padding-top:28px;">${rows([
     ['Evento', d.eventTitle],
     ['Entrada', d.entryLabel],
-    ['A nombre de', `${d.fullName} · ${ciMasked(d.docTail)}`],
+    d.group && d.group.count > 1
+      ? ['Entradas', `${d.group.count} · ${groupNames(d)}`]
+      : ['A nombre de', `${d.fullName} · ${ciMasked(d.docTail)}`],
   ])}</td></tr>
 <tr><td align="center" style="padding-top:24px;font-size:14px;line-height:1.55;color:${C.bone};">${blend('Si ya transferiste, escribinos por Instagram con el comprobante y lo revisamos. Si la plata llegó, te la devolvemos.')}</td></tr>
 ${button(ig, 'Escribinos por Instagram')}`;
@@ -306,24 +333,30 @@ ${button(ig, 'Escribinos por Instagram')}`;
 
 // 4 · Aviso a los owners: hay una transferencia para validar (con el comprobante adjunto).
 export function transferAdminAlertEmail(d: TicketMailData & { adminUrl: string; instagram: string | null }) {
-  const subject = `Transferencia para validar: ${d.fullName} · ${formatUYU(d.total)}`;
+  const several = !!d.group && d.group.count > 1;
+  const toReceive = several ? d.group!.total : d.total;
+  const subject = `Transferencia para validar: ${d.fullName}${several ? ` (${d.group!.count} entradas)` : ''} · ${formatUYU(toReceive)}`;
   const inner = `${heading(
     'PARA VALIDAR',
     'Hay una transferencia nueva',
-    `${d.fullName} subió el comprobante. Fijate que la plata haya llegado y aprobá o rechazá la entrada.`,
+    `${d.fullName} subió el comprobante${several ? ` de ${d.group!.count} entradas` : ''}. Fijate que la plata haya llegado y aprobá o rechazá ${several ? 'la compra' : 'la entrada'}.`,
   )}
 <tr><td style="padding-top:28px;">${rows([
     ['Comprador', d.fullName],
     ['Instagram', d.instagram ? `@${d.instagram}` : '—'],
     ['Entrada', d.entryLabel],
     ...(d.discount > 0 ? ([[`Descuento${d.discountCode ? ` (${d.discountCode})` : ''}`, `−${formatUYU(d.discount)}`]] as [string, string][]) : []),
-    ...(d.transport ? ([[`Transporte · ${d.transport.name}`, formatUYU(d.transport.price)]] as [string, string][]) : []),
-  ], ['Total a recibir', formatUYU(d.total)])}</td></tr>
+    ...(several
+      ? d.group!.people.map((p): [string, string] => [`Entrada · ${p.name}`, formatUYU(p.total)])
+      : d.transport
+        ? ([[`Transporte · ${d.transport.name}`, formatUYU(d.transport.price)]] as [string, string][])
+        : []),
+  ], ['Total a recibir', formatUYU(toReceive)])}</td></tr>
 ${button(d.adminUrl, 'Validar en el admin')}
 <tr><td align="center" style="padding-top:10px;font-size:12px;color:${C.muted};">${blend('El comprobante va adjunto a este mail.')}</td></tr>`;
 
   const text = [
-    `Transferencia para validar: ${d.fullName} (${d.entryLabel}), ${formatUYU(d.total)}.`,
+    `Transferencia para validar: ${d.fullName} (${d.entryLabel}${several ? `, ${d.group!.count} entradas: ${groupNames(d)}` : ''}), ${formatUYU(toReceive)}.`,
     `Validala en: ${d.adminUrl}`,
   ].join('\n');
 

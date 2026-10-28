@@ -120,7 +120,7 @@ export default async function EntradasPage({
         {canBuy ? (
           <Card className="mt-12 p-6 md:p-8">
             <h2 className="text-xl font-bold tracking-tight">Comprá tu entrada</h2>
-            <p className="mt-2 text-sm text-bone/60">Una entrada por persona, a tu nombre.</p>
+            <p className="mt-2 text-sm text-bone/60">Una entrada por persona, a nombre de quien va.</p>
             <div className="mt-7">
               <BuyForm
                 tandas={event.tandas}
@@ -128,6 +128,7 @@ export default async function EntradasPage({
                 presaleCode={presaleTier ? searchParams.preventa : undefined}
                 methods={{ mercadopago: sale.mpEnabled, transfer: sale.transferEnabled }}
                 transferDetails={sale.transferDetails}
+                maxPerOrder={sale.maxPerOrder}
                 transport={transport.map((o) => ({
                   id: o.id,
                   name: o.name,

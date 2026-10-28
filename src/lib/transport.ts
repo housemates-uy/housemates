@@ -64,7 +64,8 @@ export async function getTransportOptions(eventId: string, { onlyActive = false 
 }
 
 // La opción elegida en /entradas (vacío = "No, gracias"). Se revisa antes de crear la
-// entrada para avisar rápido; el cupo en serio lo garantiza reserveTransport.
+// entrada para avisar rápido; el cupo en serio lo garantiza reserve_transport dentro de
+// create_order.
 export async function findTransportChoice(
   eventId: string,
   raw: string,
@@ -86,33 +87,6 @@ export async function findTransportChoice(
 
 const fullMessage = (name: string) =>
   `No quedan lugares en el bus "${name}". Elegí otra opción o seguí sin transporte.`;
-
-// Reserva el lugar para una entrada recién creada. Si no hay lugar, la función de Postgres
-// borra la entrada en la misma transacción: no queda nada creado.
-export async function reserveTransport(
-  ticketId: string,
-  option: { id: string; name: string; price: number },
-): Promise<{ ok: true } | { error: string }> {
-  const db = createAdminClient();
-  const { data, error } = await db.rpc('reserve_transport', {
-    p_ticket_id: ticketId,
-    p_option_id: option.id,
-    p_price: option.price,
-  });
-  if (!error && data === 'reserved') return { ok: true };
-  if (error) {
-    // No sabemos si llegó a reservar: se anula la entrada para no cobrar algo a medias.
-    await db.rpc('cancel_ticket', { p_ticket_id: ticketId, p_refunded: false });
-  }
-  if (data === 'transport_full') return { error: fullMessage(option.name) };
-  if (data === 'transport_changed') {
-    return { error: 'Cambió el precio del transporte. Recargá la página para ver el total nuevo.' };
-  }
-  if (data === 'transport_inactive') {
-    return { error: 'Esa opción de transporte ya no está disponible. Elegí otra o seguí sin transporte.' };
-  }
-  return { error: 'No pudimos reservar el transporte. Probá de nuevo.' };
-}
 
 // El transporte de cada entrada, por evento (admin) o por lista de entradas (Mis entradas).
 export async function getTransportByTicket(

@@ -32,7 +32,7 @@ const NAV = [
   { href: '/admin/logs', label: 'Historial', icon: ScrollText },
 ];
 
-// toConfirm: transferencias esperando validación. null = staff, que no ve "A confirmar".
+// toConfirm: compras por transferencia esperando validación. null = staff, que no ve "A confirmar".
 type NavProps = { toConfirm: number | null };
 
 function navItems(toConfirm: number | null) {

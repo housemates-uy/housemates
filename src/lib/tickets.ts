@@ -7,7 +7,7 @@ import QRCode from 'qrcode';
 import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { normalizeEmail, isValidEmail } from '@/lib/validation/email';
-import { validateCI } from '@/lib/validation/document';
+import { normalizeDocument, validateCI } from '@/lib/validation/document';
 import type { PaymentMethod, TicketSource, TicketStatus } from '@/types/database';
 
 // ---------- Token del QR ----------
@@ -46,11 +46,7 @@ export async function qrSvg(text: string): Promise<string> {
 }
 
 // ---------- Datos del comprador ----------
-// La CI se guarda solo con dígitos y con 8 cifras (relleno con 0), así "1.234.567-8"
-// y "12345678" son la misma persona para la regla de una entrada por CI.
-export function normalizeDocument(raw: string): string {
-  return raw.replace(/\D/g, '').padStart(8, '0');
-}
+export { normalizeDocument };
 
 export function normalizeInstagram(raw: string): string {
   return raw.trim().replace(/^@+/, '').replace(/^https?:\/\/(www\.)?instagram\.com\//, '').replace(/\/.*$/, '').toLowerCase();
@@ -132,6 +128,58 @@ export async function createTicket(params: {
     };
   }
   return { id: data as string, qrToken };
+}
+
+// ---------- Compra de varias entradas (§5.2e) ----------
+// La de quien compra primero y después las de sus amigos, cada una con sus datos. Todo o
+// nada en una transacción (create_order): si una falla no queda ninguna. `person` dice de
+// quién es el problema (1 = quien compra).
+export type OrderPerson = {
+  buyer: z.output<typeof buyerSchema>;
+  amount: number;
+  discountUyu: number;
+  transport: { id: string; price: number } | null;
+};
+
+export async function createOrder(params: {
+  eventId: string;
+  tierId: string;
+  paymentMethod: PaymentMethod;
+  holdMinutes: number;
+  discountCodeId: string | null;
+  presaleCode: string | null;
+  people: OrderPerson[];
+}): Promise<{ ids: string[] } | { error: string; code?: string; person?: number }> {
+  const { data, error } = await createAdminClient().rpc('create_order', {
+    p_event_id: params.eventId,
+    p_tier_id: params.tierId,
+    p_payment_method: params.paymentMethod,
+    p_hold_minutes: params.holdMinutes,
+    p_discount_code_id: params.discountCodeId,
+    p_presale_code: params.presaleCode,
+    p_people: params.people.map((p) => ({
+      name: p.buyer.name,
+      email: p.buyer.email.toLowerCase(),
+      email_norm: normalizeEmail(p.buyer.email),
+      document: normalizeDocument(p.buyer.document),
+      phone: p.buyer.phone || '',
+      qr_token: generateQrToken(),
+      amount: p.amount,
+      discount_uyu: p.discountUyu,
+      transport_option_id: p.transport?.id ?? null,
+      transport_price: p.transport?.price ?? null,
+    })),
+  });
+  if (error) {
+    const match = error.message.match(/([a-z_]+)#(\d+)/);
+    const code = match?.[1];
+    return {
+      error: (code && ERROR_MESSAGES[code]) || 'No se pudo crear la compra. Probá de nuevo.',
+      code,
+      person: match ? Number(match[2]) : undefined,
+    };
+  }
+  return { ids: data as string[] };
 }
 
 // ---------- Textos para mostrar ----------

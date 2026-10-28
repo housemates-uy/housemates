@@ -4,6 +4,7 @@ import { PageHeader } from '@/components/admin/page-header';
 import { Card } from '@/components/ui/card';
 import { formatLocal } from '@/lib/events';
 import { isMercadoPagoConfigured } from '@/lib/mercadopago';
+import { parseMaxPerOrder } from '@/lib/sale-config';
 import { GatePasswordForm } from './gate-password-form';
 import { SaleConfigForm } from './sale-config-form';
 
@@ -26,7 +27,7 @@ export default async function ConfigPage({ searchParams }: { searchParams: { ven
   const { data: saleRows } = await db
     .from('site_config')
     .select('key, value')
-    .in('key', ['gate_enabled', 'pay_mp_enabled', 'pay_transfer_enabled', 'transfer_details']);
+    .in('key', ['gate_enabled', 'pay_mp_enabled', 'pay_transfer_enabled', 'transfer_details', 'max_tickets_per_order']);
   const sale = new Map((saleRows ?? []).map((r) => [r.key, r.value]));
 
   return (
@@ -49,6 +50,7 @@ export default async function ConfigPage({ searchParams }: { searchParams: { ven
             mpEnabled: sale.get('pay_mp_enabled') !== '0',
             transferEnabled: sale.get('pay_transfer_enabled') !== '0' && !!sale.get('transfer_details'),
             transferDetails: sale.get('transfer_details') ?? '',
+            maxPerOrder: parseMaxPerOrder(sale.get('max_tickets_per_order')),
           }}
         />
         {!isOwner && <p className="text-sm text-bone/55">Solo los owners pueden cambiar la venta.</p>}

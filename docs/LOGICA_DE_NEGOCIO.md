@@ -59,7 +59,7 @@ Las entradas son **QR personales**: una por persona, a nombre y cédula, y de un
 |---|---|---|
 | `/admin` | Inicio: el próximo evento publicado (vale hasta que termina: durante la fiesta dice "Evento en curso") y sus entradas válidas | todos |
 | `/admin/events` | Lista y alta de eventos | todos |
-| `/admin/confirmar` | **Entradas a confirmar**: las transferencias con comprobante de todos los eventos, para aceptar o declinar (§5.2b). En el menú, con un contador de pendientes | owner (el staff no la ve) |
+| `/admin/confirmar` | **Entradas a confirmar**: las transferencias con comprobante de todos los eventos, para aceptar o declinar (§5.2b). Una tarjeta por compra (con todas sus entradas, §5.2e). En el menú, con un contador de compras pendientes | owner (el staff no la ve) |
 | `/admin/events/<id>` | Resumen del evento, tandas, activar ventas, archivar, preventa (link y mail a quienes vinieron antes) | archivar y mandar la preventa: owner |
 | `/admin/events/<id>/ventas` | **Ventas**: entradas válidas contra capacidad, vendidas por tanda, códigos de descuento, ventas por día y, el día del evento, la puerta en vivo (se refresca sola cada 10 s). "Recaudado" incluye transporte y cargo por servicio, con el desglose "Entradas y cargo" / "Transporte". El Resumen del evento usa las mismas "Entradas válidas" (pagas + usadas, con invitaciones) | todos; la plata (recaudado, medios de pago, montos): owner |
 | `/admin/events/<id>/lista` | Descarga la **lista de la puerta** en CSV para Excel (`;`, UTF-8 con BOM) | todos |
@@ -70,7 +70,7 @@ Las entradas son **QR personales**: una por persona, a nombre y cédula, y de un
 | `/admin/events/<id>/transporte` | **Transporte**: opciones de bus del evento y pasajeros por opción, con CSV (`/pasajeros`) e imprimible (`/imprimir`) para el chofer (§5.8) | todos; cambiar opciones: owner |
 | `/admin/scan/<id>` | **Puerta**: scanner de QR, pantalla completa, solo celular | todos; cerrar puerta: owner |
 | `/admin/barra/<id>` | **Escáner de barra**: un QR = un trago, pantalla completa; sin QR, por email | todos |
-| `/admin/config` | Venta (pedir contraseña sí/no, medios de pago, datos para transferir) y contraseña del gate | cambiar: owner |
+| `/admin/config` | Venta (pedir contraseña sí/no, medios de pago, datos para transferir, máximo de entradas por compra) y contraseña del gate | cambiar: owner |
 | `/admin/account` | Cambiar mi contraseña | todos |
 | `/admin/admins` | Usuarios | owner |
 | `/admin/logs` | **Historial**: las últimas 200 acciones, con fecha (hora de Montevideo), quién, qué y el detalle "Campo: antes → después" al editar evento, tanda y configuración de venta (incluidos los datos para transferir; nunca la contraseña) | owner |
@@ -283,6 +283,32 @@ Se cargan en el alta y en la edición de los tiers (Admin → evento → Editar)
   - Solo se puede mandar con el evento publicado, con ventas activas y sin terminar, y la tanda activa, sin agotado manual, ya a la venta y con lugar (en la tanda y en el evento). Si no, la página dice por qué y el servidor lo vuelve a chequear.
   - No hay formulario para pedir la preventa: el link se manda por mail o lo comparten los owners (regla 7.1 de `.claude/CLAUDE.md`).
 
+### 5.2e Comprar para amigos (varias entradas en una compra)
+
+Quien compra puede sumar entradas para sus amigos y pagar todo junto. Cada entrada sigue siendo **nominativa**: una por persona, con su nombre, cédula y email.
+
+- **Cuántas:** de 1 hasta el tope de `/admin/config` → "Máximo de entradas por compra" (`site_config.max_tickets_per_order`, arranca en 6).
+- **La entrada 1 es siempre la de quien compra** (con celular opcional y su cuenta, si tiene). Las demás piden nombre, cédula y email de cada amigo, obligatorios. En una misma compra no se pueden repetir emails ni cédulas, y valen las reglas de siempre: una entrada por email y una por cédula por evento (§4.3).
+- **Misma tanda para todas.** El código de descuento se aplica a cada entrada y cada una gasta un uso: si no alcanzan los usos, se avisa cuántas entradas cubre.
+- **Transporte por persona:** cada uno elige su bus o ninguno.
+- **Precio:** cada entrada guarda lo que paga ella (`amount_paid_uyu`: entrada con descuento + su bus + su parte del cargo por servicio con Mercado Pago). El total de la compra es la suma.
+- **Todo o nada** (`create_order`, `0020_group_purchase.sql`): las entradas se crean en una sola transacción. Si una falla (cédula o email que ya tienen entrada, sin lugar en la tanda o en el evento, bus lleno, código sin usos), no queda ninguna, y el error dice de qué entrada es ("Entrada 3: …").
+- **El grupo:** `tickets.order_id` apunta a la entrada de quien compró (que se apunta a sí misma). Las entradas de antes y las manuales no tienen grupo y se tratan como un grupo de una.
+- **Pago:**
+  - Mercado Pago: un solo pago para todo el grupo, con el desglose (N entradas, bus por opción, cargo). `external_reference` es la entrada de quien compró. `confirm_order_payment` confirma todas juntas, con las mismas reglas de pagos tarde, repetidos y monto de §5.2 (si a alguna persona no se le puede confirmar porque ya tiene otra entrada, devuelve `partial_duplicate` y se avisa a los owners para devolver esa parte). `extend_order_hold` y `reverse_order_payment` hacen lo mismo que en §5.2 para todo el grupo.
+  - Transferencia: un comprobante para toda la compra (queda en cada entrada del grupo). En **Entradas a confirmar** se acepta o se declina la compra entera (`src/lib/transfers.ts`).
+  - Un pago de Mercado Pago ahora paga varias entradas, así que `tickets.mp_payment_id` ya no es único.
+- **Mails:** a cada persona le llega **su** entrada a **su** mail, con "X te compró tu entrada" y sin el monto pagado. "Recibimos tu comprobante" y "No pudimos validar tu transferencia" le llegan solo a quien compró, con la lista de entradas y el total. El aviso a los owners lista las entradas de la compra.
+- **Reembolsar una entrada de una compra con Mercado Pago** devuelve solo su parte (`refundPayment(pago, monto)`), no el pago entero.
+- **Mi cuenta:** quien compró ve su entrada y "También compraste para: Nombre (email), …", sin los QR ni links: a cada uno le llega la suya. Las entradas de sus amigos no aparecen en su cuenta; un amigo con cuenta propia y email confirmado ve la suya como siempre.
+- **`/compra/resultado`:** pagada → "Listo, X. Ya tenés tu entrada." + "Las otras N entradas les llegan a cada uno a su mail."; en revisión → "Cuando lo validemos, a cada uno le llega su entrada con el QR a su mail".
+- **Admin:**
+  - **Entradas a confirmar** y la sección "Transferencias a validar" de la pestaña Entradas muestran una tarjeta por compra: quien compró, la lista de entradas (nombre, CI, email y bus de cada una), el desglose y el total a transferir (suma de `amount_paid_uyu`). Un solo comprobante; "Aceptar las N" / "Declinar" resuelven toda la compra. Al declinar, el mail le llega solo a quien compró.
+  - En la lista de Entradas, cada entrada de una compra de varias dice "Compra de N · la hizo X".
+  - **Reembolsar una entrada** pagada con Mercado Pago: si otras entradas del mismo pago siguen válidas, devuelve solo lo que pagó esa (`refund_amount` en `admin_logs`); la última devuelve lo que quede. "Ya figura devuelto en MP" vale solo si se devolvió el pago entero. Si es la entrada de un amigo, el mail de anulación aclara que la plata vuelve al medio de quien pagó la compra.
+  - "Máximo de entradas por compra" en `/admin/config`: entero de 1 a 20, solo owners, con antes/después en el Historial.
+- **Pendiente (bloque de acceso):** cuando se defina quién puede comprar, cada amigo de la compra también va a tener que estar habilitado.
+
 ### 5.3 Puerta
 
 Pantalla aparte (`/admin/scan/<id>`, botón "Puerta" del evento):
@@ -327,7 +353,7 @@ Código: `src/app/admin/scan/[id]/` · Lista: `src/app/admin/(panel)/events/[id]
 ### 5.4 Anular y reembolsar
 
 - En **Entradas**, solo las entradas válidas (`paid`) tienen "Anular" (manual/invitación/transferencia) o "Reembolsar" (compra con Mercado Pago). Las `pending` no: vencen solas.
-- **Reembolsar** devuelve el total por MP y recién después anula (`refunded`). Antes consulta el pago en MP: si ya figura devuelto (lo devolvieron desde el panel de MP), no lo devuelve de nuevo y solo deja la entrada reembolsada. Si MP rechaza la devolución, no se anula nada.
+- **Reembolsar** devuelve el total por MP y recién después anula (`refunded`). En una compra de varias entradas devuelve solo la parte de esa entrada (§5.2e). Antes consulta el pago en MP: si ya figura devuelto (lo devolvieron desde el panel de MP), no lo devuelve de nuevo y solo deja la entrada reembolsada. Si MP rechaza la devolución, no se anula nada.
 - **Anular** una manual o una compra por transferencia no devuelve plata: la transferencia se devuelve por fuera.
 - Solo si `cancel_ticket` devuelve `cancelled` se registra en `admin_logs` y sale el mail "Tu entrada fue anulada". Si se usó mientras tanto, ya estaba anulada o falla la base, la página lo dice y no se manda nada.
 - Anular devuelve el lugar al stock de la tanda. Una entrada ya usada no se puede anular.
@@ -442,8 +468,9 @@ Bus opcional que se suma al comprar la entrada (la fiesta es fuera de Montevideo
 | Preventa (código) y tandas que todavía no salieron | `create_ticket` (`0014`): `presale_required`, `tier_not_started` |
 | Ingreso temprano en puerta (aviso, `late_entry`) | `entry_deadline`, `inspect_ticket`, `check_in_ticket` (`0014`) |
 | A quién le llega el mail de preventa | `presale_audience` + `presale_sends` (`0014`) · `src/lib/mail/presale-mails.ts` |
-| Confirmar pago (idempotente, controla el monto, pagos tarde o repetidos) | `confirm_ticket_payment` — misma migración (última versión en `0017_payment_fixes.sql`) · `syncPayment` en `src/lib/mercadopago.ts` |
-| Reserva que espera un pago pendiente; devolución o contracargo desde MP | `extend_ticket_hold` / `reverse_ticket_payment` (`0017`) |
+| Comprar varias entradas (todo o nada, una por persona) | `create_order` — `0020_group_purchase.sql` · `createOrder` en `src/lib/tickets.ts` · `startCheckoutAction` |
+| Confirmar pago (idempotente, controla el monto, pagos tarde o repetidos, todo el grupo) | `confirm_order_payment` (`0020`; misma lógica que `confirm_ticket_payment` de `0017`) · `syncPayment` en `src/lib/mercadopago.ts` |
+| Reserva que espera un pago pendiente; devolución o contracargo desde MP | `extend_order_hold` / `reverse_order_payment` (`0020`) |
 | Capacidad del evento | `event_available` y `create_ticket` (`0018_event_capacity.sql`) · `src/lib/next-event.ts` |
 | No repetir recordatorio, encuesta ni preventa | `0019_comms_dedupe.sql` (`email_log.send_key` + `sending`) · `src/lib/mail/event-mails.ts`, `src/lib/mail/presale-mails.ts` |
 | Anular / devolver stock | `cancel_ticket` — misma migración |
