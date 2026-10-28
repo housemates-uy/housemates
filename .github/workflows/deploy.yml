@@ -21,7 +21,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, develop]
+    branches: [main]
 
 concurrency:
   # si se pushea dos veces seguidas, sólo importa el último
@@ -56,7 +56,7 @@ jobs:
         if: github.event_name == 'push'
         run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
 
-      # Pull request: un deploy de preview con su propia URL, para probar antes
+      # PR a main: un deploy de preview con su propia URL, para probar antes
       # de mergear. Usa las variables del entorno "Preview" de Vercel.
       - name: Traer variables de preview
         if: github.event_name == 'pull_request'
