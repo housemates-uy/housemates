@@ -9,6 +9,12 @@
 1. **Rediseño del formulario de compra.** Hoy es muy básico. Esperando referencias de otras ticketeras (las manda Tato).
 2. **Webhook de MP rechaza la firma.** Revisar que `MP_WEBHOOK_SECRET` en Vercel sea la clave secreta del webhook de **modo prueba** (y después la de producción).
 
+## Para revisar
+
+- **Cuotas en Mercado Pago.** En la cuenta de prueba solo aparece 1 cuota. Revisar en la **cuenta real** de la fiesta (Tu negocio → Costos / Cuotas) qué permite:
+  - **Preferido:** cuotas **con interés**, que paga el comprador y la fiesta no paga nada extra. El cargo por servicio actual alcanza.
+  - **Si solo se pueden cuotas sin interés** (~2,49 % + IVA extra para el vendedor): mostrar **dos cargos por servicio**, uno si paga en 1 cuota y otro, ~3 % más alto, si elige cuotas. Implica elegir "en cuotas / sin cuotas" antes de ir a Mercado Pago y limitar las cuotas en la preferencia según lo elegido.
+
 ## Mails
 
 Hechos: **compra confirmada** (MP, manual, invitación) y **entrada anulada**, más "Reenviar mail" en el admin. Se mandan desde el Gmail de Tato (`ssouber99@gmail.com`).
