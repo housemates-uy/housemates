@@ -33,7 +33,7 @@ function layout(inner: string, preheader: string) {
 <tr><td align="center" style="padding:40px 16px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;font-family:${FONT};color:${C.bone};">
 <tr><td align="center" style="padding-bottom:32px;">
-<img src="${appUrl()}/brand/logo-mail.png" width="120" height="120" alt="House Mates" style="display:block;border:0;">
+<img src="${appUrl()}/brand/logo-mail.png?v=2" width="120" height="120" alt="House Mates" style="display:block;border:0;">
 </td></tr>
 ${inner}
 <tr><td align="center" style="padding-top:36px;font-size:12px;line-height:1.6;color:${C.muted};">

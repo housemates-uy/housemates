@@ -9,6 +9,28 @@ export const dynamic = 'force-dynamic';
 
 // GET /ticket/<token>/imagen → PNG de la entrada (formato historia, 1080×1920) para
 // guardar en el celular. Solo para entradas válidas: una usada o anulada no se descarga.
+// Neue Montreal (la de la web). Satori no lee woff2: se usan los .otf de public/fonts/,
+// que no están en git (fuente paga, repo público). Si no están, cae a la fuente por defecto.
+async function loadFonts(req: Request) {
+  const weights = [
+    ['Regular', 400],
+    ['Medium', 500],
+    ['Bold', 700],
+  ] as const;
+  const fonts = await Promise.all(
+    weights.map(async ([name, weight]) => {
+      try {
+        const res = await fetch(new URL(`/fonts/NeueMontreal-${name}.otf`, req.url), { cache: 'force-cache' });
+        if (!res.ok) return null;
+        return { name: 'Neue Montreal', data: await res.arrayBuffer(), weight, style: 'normal' as const };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return fonts.filter((f): f is NonNullable<typeof f> => f !== null);
+}
+
 export async function GET(req: Request, { params }: { params: { token: string } }) {
   const db = createAdminClient();
   const { data: ticket } = await db
@@ -27,6 +49,7 @@ export async function GET(req: Request, { params }: { params: { token: string } 
       : Promise.resolve({ data: null }),
   ]);
 
+  const fonts = await loadFonts(req);
   const qr = await QRCode.toDataURL(ticketUrl(ticket.qr_token), { margin: 1, width: 720, errorCorrectionLevel: 'M' });
   const logo = new URL('/brand/logo.svg', req.url).toString();
   const doc = ticket.buyer_document.slice(-4);
@@ -44,11 +67,12 @@ export async function GET(req: Request, { params }: { params: { token: string } 
           background: '#0A0A0A',
           color: '#FAFAFA',
           padding: '120px 90px',
+          fontFamily: fonts.length ? 'Neue Montreal' : undefined,
         }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={logo} width={260} height={254} alt="" />
-        <div style={{ display: 'flex', marginTop: 60, fontSize: 150, fontWeight: 700, letterSpacing: -6 }}>
+        <div style={{ display: 'flex', marginTop: 60, fontSize: 150, fontWeight: 700, letterSpacing: -8 }}>
           {event ? formatLocal(event.date_start, 'dd.MM.yy') : ''}
         </div>
         <div style={{ display: 'flex', marginTop: 10, fontSize: 40, opacity: 0.75 }}>{event?.title ?? ''}</div>
@@ -66,7 +90,7 @@ export async function GET(req: Request, { params }: { params: { token: string } 
         >
           <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', fontSize: 34 }}>
             <span style={{ opacity: 0.7 }}>{entry}</span>
-            <span style={{ fontWeight: 700, letterSpacing: 5 }}>VÁLIDA</span>
+            <span style={{ fontWeight: 700, letterSpacing: 6 }}>VÁLIDA</span>
           </div>
           <div style={{ marginTop: 40, display: 'flex', background: '#FFFFFF', borderRadius: 30, padding: 24 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -85,6 +109,7 @@ export async function GET(req: Request, { params }: { params: { token: string } 
     {
       width: 1080,
       height: 1920,
+      fonts: fonts.length ? fonts : undefined,
       headers: {
         'Content-Disposition': `attachment; filename="entrada-house-mates.png"`,
         'Cache-Control': 'no-store',
