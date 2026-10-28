@@ -53,3 +53,11 @@
     mix-blend-mode: overlay;
   }
 }
+
+/* Entrada impresa / guardada como PDF: todo en negro sobre blanco. */
+@media print {
+  .print-ink,
+  .print-ink * {
+    color: #0a0a0a !important;
+  }
+}
