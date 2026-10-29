@@ -31,6 +31,7 @@ import {
 const REJECT_TITLES: Partial<Record<ScanOutcome['result'], string>> = {
   already_used: 'Ya usada',
   invalid: 'QR inválido',
+  is_bar: 'Es un QR de barra',
   wrong_event: 'Es de otro evento',
   not_paid: 'Entrada no válida',
   door_closed: 'Puerta cerrada',
@@ -41,6 +42,7 @@ const REJECT_TITLES: Partial<Record<ScanOutcome['result'], string>> = {
 const REJECT_HINTS: Partial<Record<ScanOutcome['result'], string>> = {
   not_paid: 'Está anulada o el pago no se confirmó.',
   invalid: 'Este QR no corresponde a ninguna entrada.',
+  is_bar: 'Es de un trago, no una entrada. Pedí el QR de la entrada.',
 };
 
 // 'not_paid' según el estado real de la entrada: no pasa, pero el portero sabe qué hacer.
@@ -170,6 +172,10 @@ function Door({
   const [pending, startTransition] = useTransition();
   const [doorPending, startDoor] = useTransition();
   const [doorFailed, setDoorFailed] = useState(false);
+  // Estado de la puerta en este celular. Si otro owner la cierra o la reabre, se entera con el
+  // próximo escaneo (la base lo chequea en cada uno), no recién al recargar.
+  const [closed, setClosed] = useState(doorClosed);
+  useEffect(() => setClosed(doorClosed), [doorClosed]);
 
   const show = useCallback((o: ScanOutcome) => {
     if (o.result === 'error') {
@@ -182,6 +188,9 @@ function Door({
     }
     busyRef.current = true;
     setOffline(false);
+    // "Puerta cerrada" la confirma la base; una entrada válida solo sale con la puerta abierta.
+    if (o.result === 'door_closed') setClosed(true);
+    else if (o.result === 'valid' || o.result === 'admitted') setClosed(false);
     setOutcome(o);
     if (o.total) setCounts({ inside: o.inside, total: o.total });
     vibrate(o.result !== 'valid' ? [120, 60, 120] : o.late ? [60, 80, 60] : 60);
@@ -350,7 +359,7 @@ function Door({
         </Link>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{title}</p>
-          <p className="text-xs text-bone/50">{doorClosed ? 'Puerta cerrada' : 'Puerta abierta'}</p>
+          <p className="text-xs text-bone/50">{closed ? 'Puerta cerrada' : 'Puerta abierta'}</p>
         </div>
         <p className="text-right">
           <span className="text-2xl font-bold tracking-tight">{counts.inside}</span>
@@ -443,13 +452,14 @@ function Door({
               onClick={() =>
                 startDoor(async () => {
                   setDoorFailed(false);
-                  const r = await callServer(() => toggleDoorAction(eventId, doorClosed));
+                  const r = await callServer(() => toggleDoorAction(eventId, closed));
                   if (!r?.ok) setDoorFailed(true);
+                  else setClosed(!closed);
                 })
               }
               className="text-xs text-bone/50 underline-offset-4 hover:underline disabled:opacity-50"
             >
-              {doorClosed ? 'Reabrir puerta' : 'Cerrar puerta'}
+              {closed ? 'Reabrir puerta' : 'Cerrar puerta'}
             </button>
             {doorFailed && <p className="text-xs text-alert">Sin conexión. Probá de nuevo.</p>}
           </div>
@@ -459,34 +469,38 @@ function Door({
       {/* Resultado: entrada válida → cotejar cédula y confirmar */}
       {outcome?.result === 'valid' && (
         <div className="fixed inset-0 z-50 flex flex-col bg-electric px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))]">
-          <div className="flex flex-1 flex-col items-center justify-center text-center">
-            {/* Tanda de ingreso temprano escaneada después de su horario: solo avisa. */}
-            {outcome.late && (
-              <div role="alert" className="mb-8 w-full rounded-card border-2 border-bone bg-ink px-5 py-4">
-                <p className="text-2xl font-bold uppercase leading-none tracking-tight">Fuera de horario</p>
-                <p className="mt-2 text-base">Era ingreso hasta {outcome.entryUntil}</p>
-                <p className="mt-1 text-sm text-bone/70">Decidí vos si pasa: podés confirmar el ingreso igual.</p>
-              </div>
-            )}
-            <p className="text-sm font-bold uppercase tracking-label opacity-80">Entrada válida</p>
-            <p className="mt-6 text-4xl font-bold leading-tight">{outcome.name}</p>
-            <p className="mt-4 text-sm opacity-80">Cédula</p>
-            <p className="text-4xl font-bold tracking-tight">{outcome.document}</p>
-            <p className="mt-4 text-base opacity-85">
-              {outcome.invitation ? 'Cortesía' : outcome.tier}
-              {outcome.entryUntil && !outcome.late && ` · Ingreso hasta ${outcome.entryUntil}`}
-            </p>
-            {offline ? (
-              <p role="alert" className="mt-10 w-full rounded-card bg-ink px-5 py-4 text-base font-bold">
-                {OFFLINE}
+          {/* En celulares chicos (nombre largo + "Fuera de horario") el centro se achica y se
+              puede deslizar: los botones de abajo siempre quedan a la vista. */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+            <div className="m-auto flex w-full flex-col items-center py-2 text-center">
+              {/* Tanda de ingreso temprano escaneada después de su horario: solo avisa. */}
+              {outcome.late && (
+                <div role="alert" className="mb-4 w-full rounded-card border-2 border-bone bg-ink px-5 py-3">
+                  <p className="text-2xl font-bold uppercase leading-none tracking-tight">Fuera de horario</p>
+                  <p className="mt-2 text-base">Era ingreso hasta {outcome.entryUntil}</p>
+                  <p className="mt-1 text-sm text-bone/70">Decidí vos si pasa: podés confirmar el ingreso igual.</p>
+                </div>
+              )}
+              <p className="text-sm font-bold uppercase tracking-label opacity-80">Entrada válida</p>
+              <p className="mt-4 text-[clamp(1.75rem,8vw,2.25rem)] font-bold leading-tight">{outcome.name}</p>
+              <p className="mt-3 text-sm opacity-80">Cédula</p>
+              <p className="text-[clamp(1.75rem,8vw,2.25rem)] font-bold tracking-tight">{outcome.document}</p>
+              <p className="mt-4 text-base opacity-85">
+                {outcome.invitation ? 'Cortesía' : outcome.tier}
+                {outcome.entryUntil && !outcome.late && ` · Ingreso hasta ${outcome.entryUntil}`}
               </p>
-            ) : (
-              <p className="mt-10 max-w-[28ch] text-base font-medium">
-                Pedí la cédula y verificá que el nombre y el número coincidan.
-              </p>
-            )}
+              {offline ? (
+                <p role="alert" className="mt-6 w-full rounded-card bg-ink px-5 py-4 text-base font-bold">
+                  {OFFLINE}
+                </p>
+              ) : (
+                <p className="mt-6 max-w-[28ch] text-base font-medium">
+                  Pedí la cédula y verificá que el nombre y el número coincidan.
+                </p>
+              )}
+            </div>
           </div>
-          <div className="grid gap-3">
+          <div className="grid shrink-0 gap-3 pt-4">
             <Button size="lg" onClick={confirm} disabled={pending} className="h-14 text-base">
               {pending ? 'Confirmando...' : offline ? 'Reintentar' : 'Coincide, confirmar ingreso'}
             </Button>

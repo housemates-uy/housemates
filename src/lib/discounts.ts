@@ -6,7 +6,8 @@
 // antes de pagar; la garantía final (sin carreras por el último uso) la da create_ticket.
 import { createAdminClient } from '@/lib/supabase/admin';
 
-export type FoundDiscount = { id: string; code: string; kind: 'percent' | 'fixed'; value: number };
+// left: usos que le quedan (null = sin tope).
+export type FoundDiscount = { id: string; code: string; kind: 'percent' | 'fixed'; value: number; left: number | null };
 
 const CODE_PATTERN =/^[A-Z0-9_-]{3,30}$/;
 
@@ -39,11 +40,13 @@ export async function findDiscount(eventId: string, rawCode: string): Promise<Fo
 
   if (!row || !row.active) return reject('Ese código no existe.');
   if (row.valid_until && new Date(row.valid_until) < new Date()) return reject('Ese código ya venció.');
+  let left: number | null = null;
   if (row.max_uses !== null) {
     const { data: uses } = await db.rpc('discount_code_uses', { p_code_id: row.id });
-    if (((uses as number | null) ?? 0) >= row.max_uses) return reject('Ese código ya no tiene usos disponibles.');
+    left = Math.max(row.max_uses - ((uses as number | null) ?? 0), 0);
+    if (left === 0) return reject('Ese código ya no tiene usos disponibles.');
   }
-  return { id: row.id, code: row.code, kind: row.kind as 'percent' | 'fixed', value: Number(row.value) };
+  return { id: row.id, code: row.code, kind: row.kind as 'percent' | 'fixed', value: Number(row.value), left };
 }
 
 export function describeDiscount(d: { kind: string; value: number }): string {

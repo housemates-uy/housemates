@@ -54,7 +54,7 @@ export async function POST(req: Request) {
     }
     const code = await findAccessCode({ code: typed });
     if (code) {
-      if (code.left === 0) return NextResponse.json({ error: 'code_exhausted' }, { status: 409 });
+      if (code.openLeft === 0) return NextResponse.json({ error: 'code_exhausted' }, { status: 409 });
       const session = await getGateSession();
       session.accessCodeId = code.id;
       await session.save();

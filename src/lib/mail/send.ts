@@ -45,7 +45,8 @@ export async function sendMail(params: {
   text: string;
   attachments?: { filename: string; content: Buffer; cid?: string }[];
   // Entrada (ticketId) o pedido de barra (barOrderId).
-  log?: { ticketId?: string; barOrderId?: string; type: EmailType };
+  // sendKey: clave única para no repetir un aviso (email_log.send_key, 0019); solo si salió.
+  log?: { ticketId?: string; barOrderId?: string; type: EmailType; sendKey?: string };
 }): Promise<boolean> {
   const t = getTransporter();
   if (!t) {
@@ -79,6 +80,7 @@ export async function sendMail(params: {
         type: params.log.type,
         provider_id: providerId,
         status: ok ? 'sent' : 'failed',
+        send_key: ok ? (params.log.sendKey ?? null) : null,
       });
   }
   return ok;

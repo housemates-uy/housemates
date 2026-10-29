@@ -28,7 +28,13 @@ export async function CommsSection({
   isOwner: boolean;
   searchParams: SearchParams;
 }) {
-  const survey = await commsAudience(eventId, 'survey');
+  const [survey, { data: event }] = await Promise.all([
+    commsAudience(eventId, 'survey'),
+    createAdminClient().from('events').select('date_end').eq('id', eventId).maybeSingle(),
+  ]);
+  // Durante la fiesta no: le llegaría "¿Cómo la pasaste?" a gente que sigue adentro, y el envío
+  // automático del día después ya no se la repetiría.
+  const ended = !!event && new Date(event.date_end) < new Date();
 
   return (
     <section id="comunicacion" aria-labelledby="comunicacion-titulo" className="scroll-mt-6 space-y-4 border-t border-bone/10 pt-8">
@@ -45,7 +51,7 @@ export async function CommsSection({
       <SendNotice eventId={eventId} searchParams={searchParams} />
 
       <div className="grid gap-4 md:grid-cols-2">
-        <CommsCard eventId={eventId} kind="survey" audience={survey} isOwner={isOwner} nonce={searchParams.t} />
+        <CommsCard eventId={eventId} kind="survey" audience={survey} isOwner={isOwner} ended={ended} nonce={searchParams.t} />
       </div>
 
       <SurveyResults eventId={eventId} attended={survey.total} />
@@ -58,12 +64,14 @@ function CommsCard({
   kind,
   audience,
   isOwner,
+  ended,
   nonce,
 }: {
   eventId: string;
   kind: CommsKind;
   audience: Audience;
   isOwner: boolean;
+  ended: boolean; // terminó el evento: recién ahí se puede mandar
   // Cambia en cada envío (ver sendCommsAction): como key de los forms, hace que el botón de
   // confirmar vuelva a su estado inicial en vez de quedar en "Sí, mandar".
   nonce?: string;
@@ -84,6 +92,8 @@ function CommsCard({
       <div className="mt-auto flex flex-wrap items-center gap-2 pt-4">
         {!isOwner ? (
           <p className="text-xs text-bone/55">Solo los owners pueden mandar.</p>
+        ) : !ended ? (
+          <p className="text-xs text-bone/55">Se puede mandar cuando termina la fiesta. El día después sale sola.</p>
         ) : pending > 0 ? (
           <form key={`pending-${nonce}`} action={send}>
             <input type="hidden" name="mode" value="pending" />
@@ -94,7 +104,7 @@ function CommsCard({
         ) : (
           <p className="text-xs text-bone/55">{audience.total === 0 ? copy.empty : 'Ya lo recibieron todos.'}</p>
         )}
-        {isOwner && audience.received > 0 && (
+        {isOwner && ended && audience.received > 0 && (
           <form key={`all-${nonce}`} action={send}>
             <input type="hidden" name="mode" value="all" />
             <ConfirmSubmitButton variant="ghost" size="sm" confirmLabel={`Sí, reenviar a ${audience.total}`}>

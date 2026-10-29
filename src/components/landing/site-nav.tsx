@@ -4,6 +4,9 @@ import { Logo } from '@/components/ui/logo';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
+// Barra y Entradas: los dos accesos principales, con el mismo diseño.
+const MAIN_LINK = 'border-bone/45 bg-ink/30 px-4 font-semibold backdrop-blur-sm hover:border-bone hover:bg-ink/50 sm:px-6';
+
 export function SiteNav({
   igHandle,
   igHref,
@@ -23,9 +26,6 @@ export function SiteNav({
           <Logo className="h-11" />
         </Link>
         <div className="flex items-center gap-1 sm:gap-2">
-          <Link href="/barra" className={cn(buttonVariants({ variant: 'ghost', size: 'md' }), 'px-3 sm:px-5')}>
-            Barra
-          </Link>
           <a
             href={igHref}
             target="_blank"
@@ -44,15 +44,14 @@ export function SiteNav({
               <span className="hidden sm:inline">Mi cuenta</span>
             </Link>
           )}
-          <Link
-            href="/entradas"
-            className={cn(
-              buttonVariants({ variant: 'outline', size: 'md' }),
-              'border-bone/45 bg-ink/30 px-4 font-semibold backdrop-blur-sm hover:border-bone hover:bg-ink/50 sm:px-5',
-            )}
-          >
-            Entradas
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href="/barra" className={cn(buttonVariants({ variant: 'outline', size: 'lg' }), MAIN_LINK)}>
+              Barra
+            </Link>
+            <Link href="/entradas" className={cn(buttonVariants({ variant: 'outline', size: 'lg' }), MAIN_LINK)}>
+              Entradas
+            </Link>
+          </div>
         </div>
       </nav>
     </header>

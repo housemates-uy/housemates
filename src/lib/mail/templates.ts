@@ -171,12 +171,14 @@ export { C as MAIL_COLORS, IG_URL, blend, solid, esc, layout, heading, rows, but
 // El QR va como imagen adjunta embebida (cid:qr) porque Gmail no muestra imágenes data:.
 export function ticketConfirmedEmail(d: TicketMailData) {
   const subject = `Tu entrada para ${d.eventTitle} · ${d.dateShort}`;
-  const { payment, total } = d.boughtBy ? { payment: [], total: undefined } : paymentRows(d, 'Total pagado');
+  // Quien compró para varios ve lo que pagó por todas (una fila por persona y el total).
+  const { payment, total } = d.boughtBy ? { payment: [], total: undefined } : groupRows(d, 'Total pagado');
 
+  // heading() ya escapa: el nombre va sin esc() acá.
   const inner = `${heading(
     d.total === 0 ? 'CORTESÍA' : d.boughtBy ? 'TE COMPRARON TU ENTRADA' : 'COMPRA CONFIRMADA',
     `${d.firstName}, ya tenés tu entrada`,
-    `${d.boughtBy ? `${esc(d.boughtBy)} te compró tu entrada. ` : ''}Te esperamos el ${d.dateShort}. Mostrá este QR en puerta junto con tu cédula.`,
+    `${d.boughtBy ? `${d.boughtBy} te compró tu entrada. ` : ''}Te esperamos el ${d.dateShort}. Mostrá este QR en puerta junto con tu cédula.`,
   )}
 <tr><td style="padding-top:28px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="${solid(C.ink)}border:1px solid ${C.line};border-radius:18px;">
@@ -212,7 +214,9 @@ ${blend(`<strong style="color:${C.bone};">Antes de ir</strong><br>La entrada es 
     d.entryUntil ? `Ingreso temprano: entrá antes de las ${d.entryUntil}.` : '',
     `Tu entrada con el QR: ${d.ticketUrl}`,
     d.location ? `Lugar: ${d.location}${d.locationUrl ? ` (${d.locationUrl})` : ''}` : '',
-    d.total > 0 && !d.boughtBy ? `Total pagado: ${formatUYU(d.total)}` : '',
+    d.total > 0 && !d.boughtBy
+      ? `Total pagado: ${formatUYU(d.group && d.group.count > 1 ? d.group.total : d.total)}`
+      : '',
     busText(d),
     'La entrada es personal: en puerta te pedimos la cédula.',
   ]

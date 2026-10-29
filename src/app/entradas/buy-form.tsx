@@ -309,7 +309,7 @@ export function BuyForm({
     if (!selected || !codeInput.trim()) return;
     setCodeError(null);
     startChecking(async () => {
-      const res = await checkDiscountAction(selected, codeInput);
+      const res = await checkDiscountAction(selected, codeInput, quantity);
       if ('error' in res) {
         setApplied(null);
         setCodeError(res.error);
@@ -498,8 +498,15 @@ export function BuyForm({
                   onBlur={(e) => checkDocument('document', e.target.value)}
                 />
               </Field>
-              <Field label="Celular (opcional)">
-                <Input name="phone" type="tel" autoComplete="tel" defaultValue={account?.phone} />
+              <Field label="Celular (opcional)" error={fieldError('phone')}>
+                <Input
+                  name="phone"
+                  type="tel"
+                  autoComplete="tel"
+                  maxLength={30}
+                  defaultValue={account?.phone}
+                  onChange={() => edited('phone')}
+                />
               </Field>
             </div>
             <Field label="Instagram (opcional)" error={fieldError('instagram')}>
@@ -704,7 +711,7 @@ export function BuyForm({
         {fieldError('method') && <p className="text-sm text-alert">{fieldError('method')}</p>}
 
         {method === 'transfer' && tanda && (
-          <div className="space-y-5 rounded-card border border-bone/10 bg-bone/[0.03] p-5">
+          <div className="space-y-5 rounded-card border border-bone/10 bg-bone/[0.03] p-4 sm:p-5">
             <div>
               <div className="flex items-center justify-between gap-3">
                 <p className="text-[11px] font-bold uppercase tracking-label text-bone/55">Cuenta para transferir</p>
@@ -728,7 +735,7 @@ export function BuyForm({
                 <span className="min-w-0 truncate">
                   {receipt
                     ? `${receipt.name} · ${receipt.size < 1024 * 1024 ? `${Math.max(1, Math.round(receipt.size / 1024))} KB` : `${(receipt.size / 1024 / 1024).toFixed(1)} MB`}`
-                    : 'Subí la foto o el PDF del comprobante'}
+                    : 'Subí el comprobante'}
                 </span>
                 <input
                   ref={fileRef}
@@ -810,7 +817,14 @@ export function BuyForm({
           como del vendedor. Si no podés asistir, comunicate por Instagram y lo solucionamos.
         </p>
       </div>
-      {state && (!state.field || state.field === 'accept') && editedField === null && (
+      {/* Errores generales, y los de un campo que no está en pantalla (el email con sesión
+          iniciada, la contraseña con Mi cuenta apagada): si no, el botón vuelve sin avisar nada. */}
+      {state &&
+        (!state.field ||
+          state.field === 'accept' ||
+          (state.field === 'email' && !!account) ||
+          (state.field === 'password' && !accountsEnabled)) &&
+        editedField === null && (
         <p role="alert" className="text-sm text-alert">
           {state.error}
         </p>

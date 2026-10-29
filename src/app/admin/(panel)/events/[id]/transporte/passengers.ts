@@ -34,7 +34,7 @@ export async function getPassengers(eventId: string) {
     fetchAll((from, to) =>
       db
         .from('ticket_transport')
-        .select('option_id, price_uyu, tickets!inner(buyer_name, buyer_document, buyer_phone, buyer_email, status, reserved_until)')
+        .select('option_id, price_uyu, tickets!inner(id, order_id, buyer_name, buyer_document, buyer_phone, buyer_email, status, reserved_until)')
         .eq('event_id', eventId)
         .order('ticket_id')
         .range(from, to),
@@ -42,9 +42,31 @@ export async function getPassengers(eventId: string) {
   ]);
   if (!event) return null;
 
+  // En una compra para amigos solo quien compra deja celular: para el chofer, a los amigos sin
+  // celular se les pone el de quien les compró, aclarado ("099 123 456 (de Sofía)").
+  type Row = { id: string; order_id: string | null; buyer_phone: string | null };
+  const leadIds = Array.from(
+    new Set(
+      rows
+        .map((r) => r.tickets as unknown as Row)
+        .filter((t) => !t.buyer_phone && t.order_id && t.order_id !== t.id)
+        .map((t) => t.order_id as string),
+    ),
+  );
+  const { data: leads } = leadIds.length
+    ? await db.from('tickets').select('id, buyer_name, buyer_phone').in('id', leadIds)
+    : { data: [] };
+  const leadPhone = new Map(
+    (leads ?? [])
+      .filter((l) => l.buyer_phone)
+      .map((l) => [l.id, `${l.buyer_phone} (de ${l.buyer_name.trim().split(/\s+/)[0]})`]),
+  );
+
   const now = Date.now();
   const all = rows.map((r) => {
     const t = r.tickets as unknown as {
+      id: string;
+      order_id: string | null;
       buyer_name: string;
       buyer_document: string;
       buyer_phone: string | null;
@@ -63,7 +85,7 @@ export async function getPassengers(eventId: string) {
       passenger: {
         name: t.buyer_name.trim(),
         document: formatDocument(t.buyer_document),
-        phone: t.buyer_phone ?? '',
+        phone: t.buyer_phone || (t.order_id ? (leadPhone.get(t.order_id) ?? '') : ''),
         email: t.buyer_email,
         status: t.status,
         statusLabel: STATUS_LABELS[t.status],

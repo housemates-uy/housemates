@@ -5,6 +5,7 @@
 import { redirect } from 'next/navigation';
 import { logAdminAction, requireOwner } from '@/lib/auth/admin';
 import { sendEventComms, type CommsKind } from '@/lib/mail/event-mails';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 // Tiempo para mandar en un clic (la página exporta maxDuration = 60). Si no alcanza, el
 // resto sale con el próximo clic, sin repetir a nadie.
@@ -15,6 +16,9 @@ const BUDGET_MS = 45_000;
 // seguir en otro clic no se le repite a quien ya le llegó en este reenvío.
 export async function sendCommsAction(eventId: string, kind: CommsKind, formData: FormData): Promise<void> {
   const admin = await requireOwner();
+  // Solo con la fiesta terminada (el botón no se muestra antes; la acción se puede llamar directo).
+  const { data: event } = await createAdminClient().from('events').select('date_end').eq('id', eventId).maybeSingle();
+  if (!event || new Date(event.date_end) >= new Date()) redirect(`/admin/events/${eventId}#comunicacion`);
   const resendAll = formData.get('mode') === 'all';
   const sinceRaw = String(formData.get('since') ?? '');
   const since = resendAll ? (Number.isNaN(Date.parse(sinceRaw)) ? new Date().toISOString() : sinceRaw) : null;

@@ -100,21 +100,25 @@ const PAYMENT_PROBLEMS = {
   reversed: 'Mercado Pago informó una devolución o un contracargo: las entradas de ese pago se anularon y se le avisó a cada persona.',
   reversed_used:
     'Mercado Pago informó una devolución o un contracargo de una compra con entradas que ya se usaron en puerta. Esas entradas no se tocaron.',
+  refunded:
+    'Mercado Pago aprobó un pago para una compra que ya estaba reembolsada. La entrada NO se confirmó: revisá el pago en Mercado Pago y devolvelo si corresponde.',
 };
 type PaymentProblem = keyof typeof PAYMENT_PROBLEMS;
 const isPaymentProblem = (r: string): r is PaymentProblem => r in PAYMENT_PROBLEMS;
 
 const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-// Aviso por mail a los owners, una sola vez por entrada (queda en email_log).
+// Aviso por mail a los owners: uno por compra, problema y pago (queda en email_log con su
+// send_key). Así un contracargo después de un pago tarde, o un segundo pago repetido, también
+// avisan; y el mismo aviso no se repite cuando MP reintenta el webhook.
 async function alertOwners(ticketId: string, problem: PaymentProblem, paymentId: string) {
   console.error('[mp] pago para revisar', { problem, ticketId, paymentId });
   const db = createAdminClient();
+  const sendKey = `payment_alert:${ticketId}:${problem}:${paymentId}`;
   const { count } = await db
     .from('email_log')
     .select('id', { count: 'exact', head: true })
-    .eq('ticket_id', ticketId)
-    .eq('type', 'payment_alert')
+    .eq('send_key', sendKey)
     .eq('status', 'sent');
   if (count) return;
   const [{ data: owners }, { data: ticket }] = await Promise.all([
@@ -134,7 +138,7 @@ async function alertOwners(ticketId: string, problem: PaymentProblem, paymentId:
     subject: 'Pago para revisar · House Mates',
     text: lines.join('\n'),
     html: lines.map((l) => `<p>${escapeHtml(l)}</p>`).join(''),
-    log: { ticketId, type: 'payment_alert' },
+    log: { ticketId, type: 'payment_alert', sendKey },
   });
 }
 
@@ -245,10 +249,57 @@ export async function createBarPreference(params: {
       expires: true,
       expiration_date_to: params.expiresAt.toISOString(),
       statement_descriptor: 'HOUSE MATES',
+      // Un trago se paga en el momento: aprobado o rechazado al instante, sin cupones de efectivo
+      // (Abitab, Redpagos) que se pagan al día siguiente, con la fiesta terminada.
+      binary_mode: true,
+      payment_methods: { excluded_payment_types: [{ id: 'ticket' }, { id: 'atm' }] },
     },
   });
   if (!pref.id || !pref.init_point) throw new Error('Mercado Pago no devolvió la preferencia');
   return { id: pref.id, initPoint: pref.init_point };
+}
+
+// Pagos de barra que cobraron pero no confirmaron el pedido (0027): avisan a los owners.
+const BAR_PAYMENT_PROBLEMS: Record<string, string> = {
+  duplicate_payment:
+    'Mercado Pago aprobó un segundo pago para un pedido de barra que ya estaba pago. Hay que devolver este pago desde Mercado Pago.',
+  event_ended:
+    'Mercado Pago aprobó el pago de un pedido de barra con la fiesta ya terminada. El pedido NO se confirmó: devolvé el pago desde Mercado Pago.',
+  amount_mismatch:
+    'Mercado Pago informó un monto menor al total de un pedido de barra. El pedido NO se confirmó: revisá el pago en Mercado Pago.',
+  refunded:
+    'Mercado Pago aprobó un pago para un pedido de barra que ya estaba devuelto. Revisá el pago y devolvelo si corresponde.',
+};
+
+async function alertOwnersBar(orderId: string, problem: string, paymentId: string | null) {
+  console.error('[mp] pago de barra para revisar', { problem, orderId, paymentId });
+  const db = createAdminClient();
+  const sendKey = `payment_alert:bar:${orderId}:${problem}:${paymentId ?? '-'}`;
+  const { count } = await db
+    .from('email_log')
+    .select('id', { count: 'exact', head: true })
+    .eq('send_key', sendKey)
+    .eq('status', 'sent');
+  if (count) return;
+  const [{ data: owners }, { data: order }] = await Promise.all([
+    db.from('admins').select('email').eq('role', 'owner').eq('active', true),
+    db.from('bar_orders').select('buyer_name, buyer_email, total_uyu').eq('id', orderId).maybeSingle(),
+  ]);
+  const to = (owners ?? []).map((o) => o.email).filter(Boolean);
+  if (to.length === 0) return;
+  const lines = [
+    BAR_PAYMENT_PROBLEMS[problem],
+    order ? `Pedido de barra de ${order.buyer_name ?? 'sin nombre'} · ${order.buyer_email} · total $${Number(order.total_uyu)}` : '',
+    paymentId ? `Pago de Mercado Pago: ${paymentId}` : '',
+    `Pedido: ${orderId}`,
+  ].filter(Boolean);
+  await sendMail({
+    to: to.join(', '),
+    subject: 'Pago de barra para revisar · House Mates',
+    text: lines.join('\n'),
+    html: lines.map((l) => `<p>${escapeHtml(l)}</p>`).join(''),
+    log: { barOrderId: orderId, type: 'payment_alert', sendKey },
+  });
 }
 
 // Confirma un pedido de barra pago. Lo usan syncPayment (pago aprobado por Mercado Pago) y
@@ -265,9 +316,7 @@ export async function confirmBarOrder(orderId: string, paymentId: string | null,
     return 'error';
   }
   if (data === 'confirmed') await sendBarOrderMail(orderId);
-  if (data === 'amount_mismatch') {
-    console.error('[mp] pago de barra con monto menor al total, pedido sin confirmar', { orderId, paymentId, amount });
-  }
+  if (typeof data === 'string' && data in BAR_PAYMENT_PROBLEMS) await alertOwnersBar(orderId, data, paymentId);
   return (data as string | null) ?? 'error';
 }
 

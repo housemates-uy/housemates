@@ -113,9 +113,10 @@ function Toc({ items }: { items: TocItem[] }) {
   const links = (className: string) =>
     items.map((item) => (
       <li key={item.id}>
-        <a href={`#${item.id}`} className={className}>
+        {/* Link y no <a>: con un <a href="#…"> el botón "Atrás" queda trabado (Next 14). */}
+        <Link href={`#${item.id}`} className={className}>
           {item.label}
-        </a>
+        </Link>
       </li>
     ));
 

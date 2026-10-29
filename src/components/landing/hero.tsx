@@ -70,7 +70,7 @@ export function Hero({ event, title, media }: { event: NextEvent; title: string;
     <section className="relative isolate flex min-h-[100dvh] flex-col justify-end overflow-hidden">
       <div aria-hidden className="absolute inset-0 -z-10 bg-ink">
         <HeroBackground media={media} />
-        <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/45 to-ink/10" />
+        <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/65 to-ink/10 sm:via-ink/45" />
         <div className="grain absolute inset-0" />
       </div>
 
@@ -101,10 +101,11 @@ export function Hero({ event, title, media }: { event: NextEvent; title: string;
               className="transition-transform duration-200 group-hover:translate-x-0.5"
             />
           </Link>
-          <a href="#la-casa" className={buttonVariants({ variant: 'ghost', size: 'lg' })}>
+          {/* Link y no <a>: con un <a href="#…"> el botón "Atrás" queda trabado (Next 14). */}
+          <Link href="#la-casa" className={buttonVariants({ variant: 'ghost', size: 'lg' })}>
             Conocé la casa
             <ArrowDown size={16} strokeWidth={1.5} aria-hidden />
-          </a>
+          </Link>
         </div>
       </div>
     </section>

@@ -80,6 +80,19 @@ BEGIN
     END IF;
   END IF;
 
+  -- Quien vuelve a intentar (el pago no salió, o sacó o cambió a un amigo): su compra anterior
+  -- sin terminar se libera ENTERA, no solo la de las personas que repite. Si no, la reserva del
+  -- amigo que sacó le sigue ocupando lugar, usos del código de acceso o de descuento y el bus.
+  -- La compra anterior es la que tiene como entrada 1 a la misma persona (email o cédula).
+  -- Una transferencia en revisión no se toca: ya mandó el comprobante.
+  UPDATE tickets SET status = 'cancelled', cancelled_at = now()
+  WHERE event_id = p_event_id AND status = 'pending'
+    AND order_id IN (
+      SELECT t.id FROM tickets t
+      WHERE t.event_id = p_event_id AND t.id = t.order_id AND t.status = 'pending'
+        AND (t.buyer_email_normalized = p_people->0->>'email_norm' OR t.buyer_document = p_people->0->>'document')
+    );
+
   FOR v_person IN SELECT value FROM jsonb_array_elements(p_people) LOOP
     v_n := v_n + 1;
     BEGIN

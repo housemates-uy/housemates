@@ -19,6 +19,7 @@ export type ScanResult =
   | 'admitted'
   | 'already_used'
   | 'invalid'
+  | 'is_bar' // un QR de un trago de barra, no una entrada
   | 'wrong_event'
   | 'not_paid'
   | 'door_closed'
@@ -106,6 +107,9 @@ async function inspect(eventId: string, token: string, adminId: string): Promise
 export async function inspectAction(eventId: string, scanned: string): Promise<ScanOutcome> {
   const admin = await requireAdmin().catch(() => null);
   if (!admin) return { result: 'session_expired', inside: 0, total: 0 };
+  // El QR de un trago (/barra/qr/<token>) no es una entrada: se avisa qué es, sin registrarlo
+  // como QR inválido.
+  if (/\/barra\/qr\//.test(scanned)) return { result: 'is_bar', inside: 0, total: 0 };
   return inspect(eventId, tokenFromScan(scanned), admin.id);
 }
 

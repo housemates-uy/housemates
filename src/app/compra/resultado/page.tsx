@@ -7,6 +7,7 @@ import { Logo } from '@/components/ui/logo';
 import { getCustomer } from '@/lib/customers';
 import { isMercadoPagoConfigured, syncPayment } from '@/lib/mercadopago';
 import { allowAttempt } from '@/lib/rate-limit';
+import { getIgHandle, igUrl } from '@/lib/site';
 import { normalizeEmail } from '@/lib/validation/email';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { PURCHASE_COOKIE, ticketUrl } from '@/lib/tickets';
@@ -70,7 +71,12 @@ export default async function CompraResultadoPage({
 
   // El link de la entrada (y el nombre) solo para quien la compró: este navegador, la vuelta
   // de esa misma preferencia de MP o la cuenta que la compró.
-  const customer = await getCustomer();
+  const [customer, igHandle] = await Promise.all([getCustomer(), getIgHandle()]);
+  const instagram = (
+    <a href={igUrl(igHandle)} target="_blank" rel="noreferrer" className="text-bone underline decoration-bone/40 underline-offset-4">
+      Instagram
+    </a>
+  );
   const isBuyer =
     !!ticket &&
     (cookies().get(PURCHASE_COOKIE)?.value === ticketId ||
@@ -93,7 +99,9 @@ export default async function CompraResultadoPage({
 
   return (
     <main id="contenido" className="mx-auto flex min-h-[100dvh] max-w-md flex-col justify-center px-5 py-12">
-      <Logo className="h-14 self-start" />
+      <Link href="/" aria-label="House Mates, inicio" className="self-start">
+        <Logo className="h-14" />
+      </Link>
       <Card className="mt-10 p-6 md:p-8">
         {paid ? (
           <>
@@ -142,7 +150,7 @@ export default async function CompraResultadoPage({
           <>
             <h1 className="text-2xl font-bold tracking-tight">No pudimos validar tu transferencia</h1>
             <p className="mt-3 text-sm text-bone/65">
-              Si ya transferiste, escribinos por Instagram con el comprobante y lo revisamos.
+              Si ya transferiste, escribinos por {instagram} con el comprobante y lo revisamos.
             </p>
           </>
         ) : paidUnconfirmed ? (
@@ -153,7 +161,7 @@ export default async function CompraResultadoPage({
               confirmemos.
             </p>
             <p className="mt-3 text-xs text-bone/55">
-              Si en una hora no tenés novedades, escribinos por Instagram.
+              Si en una hora no tenés novedades, escribinos por {instagram}.
             </p>
           </>
         ) : syncFailed ? (

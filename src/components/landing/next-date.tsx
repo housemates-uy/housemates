@@ -10,7 +10,8 @@ import { cn } from '@/lib/utils';
 // Sin evento no hay formato: la fila no va (nunca se inventa).
 export function NextDate({ event }: { event: NextEvent }) {
   const details: [string, React.ReactNode][] = [
-    ['Cuándo', event.id ? `${event.weekday} ${event.dateLong} · ${event.time} hs` : 'A confirmar'],
+    // Espacio de no corte: "23:59 hs" no se parte en dos renglones.
+    ['Cuándo', event.id ? `${event.weekday} ${event.dateLong} · ${event.time} hs` : 'A confirmar'],
     ...(event.format ? [['Formato', event.format] as [string, React.ReactNode]] : []),
     [
       'Dónde',

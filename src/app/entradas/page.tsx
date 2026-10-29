@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -7,14 +8,14 @@ import { DoodleBackdrop } from '@/components/ui/doodle-backdrop';
 import { Eyebrow } from '@/components/ui/eyebrow';
 import { Logo } from '@/components/ui/logo';
 import { TandaStatus } from '@/components/ui/tanda-status';
-import { formatAccessCode } from '@/lib/access-codes';
-import { getSessionAccessCode, hasGateAccess } from '@/lib/auth/gate';
+import { formatAccessCode, heldInOrder } from '@/lib/access-codes';
+import { getSessionAccessCode, hasGateAccess, hasPasswordAccess } from '@/lib/auth/gate';
 import { getCustomer, isAccountsEnabled } from '@/lib/customers';
 import { formatUYU } from '@/lib/events';
 import { getNextEvent } from '@/lib/next-event';
 import { getSaleConfig } from '@/lib/sale-config';
 import { getIgHandle, igUrl } from '@/lib/site';
-import { formatDocument } from '@/lib/tickets';
+import { formatDocument, PURCHASE_COOKIE } from '@/lib/tickets';
 import { getTransportOptions } from '@/lib/transport';
 import { BuyForm } from './buy-form';
 
@@ -44,8 +45,15 @@ export default async function EntradasPage({
     isAccountsEnabled(),
   ]);
   // Código de acceso (§3b): si entró con uno de este evento, la compra no puede pasar de las
-  // entradas que le quedan.
-  const accessCode = sessionCode && sessionCode.eventId === event.id && sessionCode.left > 0 ? sessionCode : null;
+  // entradas que le quedan, más las que tiene reservadas su compra sin terminar (al reintentar
+  // se liberan). Si todas están reservadas en la compra de otra persona y no entró con la
+  // contraseña, se le avisa en vez de mostrar el formulario.
+  const codeForEvent = sessionCode && sessionCode.eventId === event.id ? sessionCode : null;
+  const codeLeft = codeForEvent
+    ? codeForEvent.left + (await heldInOrder(codeForEvent.id, cookies().get(PURCHASE_COOKIE)?.value))
+    : 0;
+  const accessCode = codeForEvent && codeLeft > 0 ? { ...codeForEvent, left: codeLeft } : null;
+  const codeBusy = !!codeForEvent && codeLeft === 0 && !(await hasPasswordAccess());
   const maxPerOrder = accessCode ? Math.min(sale.maxPerOrder, accessCode.left) : sale.maxPerOrder;
   // Link de preventa: su tanda aparece ya elegida. Si el código no existe, se avisa.
   const presaleTier = event.tandas.find((t) => t.presale);
@@ -126,8 +134,17 @@ export default async function EntradasPage({
           </ul>
         )}
 
-        {canBuy ? (
-          <Card className="mt-12 p-6 md:p-8">
+        {canBuy && codeBusy ? (
+          <Card className="mt-12 p-4 sm:p-6 md:p-8">
+            <h2 className="text-xl font-bold tracking-tight">Tu código está en uso</h2>
+            <p className="mt-3 max-w-[52ch] text-sm leading-relaxed text-bone/65">
+              Las entradas del código {formatAccessCode(codeForEvent.code)} están reservadas en una compra que todavía
+              no se pagó. Si el pago no salió, esperá unos minutos y volvé a probar. Si tenés dudas, escribinos por
+              Instagram.
+            </p>
+          </Card>
+        ) : canBuy ? (
+          <Card className="mt-12 p-4 sm:p-6 md:p-8">
             <h2 className="text-xl font-bold tracking-tight">Comprá tu entrada</h2>
             {accessCode && (
               <p role="status" className="mt-5 rounded-card border border-violet/40 bg-violet/10 px-4 py-3 text-sm text-bone/85">
@@ -164,7 +181,7 @@ export default async function EntradasPage({
             </div>
           </Card>
         ) : (
-          <Card className="mt-12 p-6 md:p-8">
+          <Card className="mt-12 p-4 sm:p-6 md:p-8">
             <h2 className="text-xl font-bold tracking-tight">
               {soldOut ? 'Entradas agotadas' : 'La venta todavía no está abierta'}
             </h2>

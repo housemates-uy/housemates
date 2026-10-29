@@ -47,7 +47,11 @@ BEGIN
   INSERT INTO ticket_tiers (
     event_id, name, description, price_uyu, quantity_total, sort_order, active, entry_until, presale_code
   )
-  SELECT v_id, name, description, price_uyu, quantity_total, sort_order, active, entry_until, presale_code
+  -- La tanda de preventa sigue oculta, pero con un código nuevo: el link de la fecha anterior
+  -- (que se reenvía) no tiene que abrir la preventa de la nueva.
+  SELECT v_id, name, description, price_uyu, quantity_total, sort_order, active, entry_until,
+         CASE WHEN presale_code IS NULL THEN NULL
+              ELSE 'PRE-' || upper(substr(md5(gen_random_uuid()::text), 1, 6)) END
   FROM ticket_tiers WHERE event_id = p_source_id;
 
   -- El transporte se lista por created_at y now() es el mismo en toda la transacción: se

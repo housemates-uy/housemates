@@ -13,7 +13,7 @@ INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_typ
 VALUES (
   'landing', 'landing', true, 52428800,
   ARRAY[
-    'image/jpeg', 'image/png', 'image/webp', 'image/avif',
+    'image/jpeg', 'image/png', 'image/webp',
     'video/mp4', 'video/webm', 'video/quicktime'
   ]
 )

@@ -1,7 +1,7 @@
 import { ImageResponse } from 'next/og';
 import QRCode from 'qrcode';
 import { entryTime, formatLocal } from '@/lib/events';
-import { FALLBACK_FONT_CSS } from '@/lib/fonts';
+import { loadImageFonts } from '@/lib/image-fonts';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { formatDocument, ticketUrl } from '@/lib/tickets';
 import { getTicketTransport } from '@/lib/transport';
@@ -13,44 +13,6 @@ export const dynamic = 'force-dynamic';
 // guardar en el celular. Solo para entradas válidas: una usada o anulada no se descarga.
 // Es la misma entrada que /ticket/<token> (fondo doodle, letra, punto violeta, datos y bus),
 // pasada a 1080 de ancho: cada px de la página son ~2,77 px acá.
-
-type Font = { name: string; data: ArrayBuffer; weight: 400 | 500 | 700; style: 'normal' };
-
-// La letra de la web (src/lib/fonts.ts): Neue Montreal si NEXT_PUBLIC_FONTS_URL apunta a sus
-// archivos (acá hacen falta los .otf: Satori no lee woff2); si no, General Sans de Fontshare.
-async function loadFonts(req: Request): Promise<Font[]> {
-  const base = process.env.NEXT_PUBLIC_FONTS_URL?.replace(/\/$/, '');
-  if (base) {
-    const weights = [['Regular', 400], ['Medium', 500], ['Bold', 700]] as const;
-    const neue = await Promise.all(
-      weights.map(async ([name, weight]): Promise<Font | null> => {
-        try {
-          const res = await fetch(new URL(`${base}/NeueMontreal-${name}.otf`, req.url), { cache: 'force-cache' });
-          return res.ok ? { name: 'Neue Montreal', data: await res.arrayBuffer(), weight, style: 'normal' } : null;
-        } catch {
-          return null;
-        }
-      }),
-    );
-    const loaded = neue.filter((f): f is Font => f !== null);
-    if (loaded.length === weights.length) return loaded;
-  }
-  try {
-    const css = await (await fetch(FALLBACK_FONT_CSS, { cache: 'force-cache' })).text();
-    const faces = await Promise.all(
-      [...css.matchAll(/@font-face\s*{([^}]*)}/g)].map(async ([, face]): Promise<Font | null> => {
-        const weight = Number(/font-weight:\s*(\d+)/.exec(face)?.[1]);
-        const url = /url\('([^']+\.ttf)'\)/.exec(face)?.[1];
-        if (!url || (weight !== 400 && weight !== 500 && weight !== 700)) return null;
-        const res = await fetch(url.startsWith('//') ? `https:${url}` : url, { cache: 'force-cache' });
-        return res.ok ? { name: 'General Sans', data: await res.arrayBuffer(), weight, style: 'normal' } : null;
-      }),
-    );
-    return faces.filter((f): f is Font => f !== null);
-  } catch {
-    return [];
-  }
-}
 
 const BONE = '#FAFAFA';
 const INK = '#0A0A0A';
@@ -75,7 +37,7 @@ export async function GET(req: Request, { params }: { params: { token: string } 
       ? db.from('ticket_tiers').select('name, entry_until').eq('id', ticket.tier_id).single()
       : Promise.resolve({ data: null }),
     getTicketTransport(ticket.id),
-    loadFonts(req),
+    loadImageFonts(req),
   ]);
 
   const qr = await QRCode.toDataURL(ticketUrl(ticket.qr_token), { margin: 1, width: 720, errorCorrectionLevel: 'M' });
@@ -87,12 +49,15 @@ export async function GET(req: Request, { params }: { params: { token: string } 
   const when = event ? `${formatLocal(event.date_start, "EEEE · HH:mm 'hs'")} · ${event.format}` : '';
 
   // Con bus, el logo y el QR se achican para que entre el texto de salida completo (hasta 300
-  // caracteres): cada renglón (unos 46 caracteres) y el "Ingreso hasta" le sacan lugar al QR.
+  // caracteres): cada renglón (unos 46 caracteres), el "Ingreso hasta" y un nombre largo que va
+  // en dos renglones (unos 26 caracteres por renglón) le sacan lugar al QR.
   const busLines = bus ? bus.departure.split('\n').map((line) => line.trim()).filter(Boolean) : [];
   const wrappedLines = busLines.reduce((n, line) => n + Math.ceil(line.length / 46), 0);
+  const nameLines = Math.max(1, Math.ceil(ticket.buyer_name.trim().length / 26));
+  const extra = (nameLines - 1) * 66 + (entryUntil ? 58 : 0);
   const size = bus
-    ? { pad: 90, logo: 200, qr: Math.max(300, Math.min(440, 677 - wrappedLines * 45 - (entryUntil ? 58 : 0))) }
-    : { pad: 100, logo: 254, qr: 600 };
+    ? { pad: 90, logo: 200, qr: Math.max(300, Math.min(440, 677 - wrappedLines * 45 - extra)) }
+    : { pad: 100, logo: 254, qr: Math.max(300, Math.min(600, 679 - extra)) };
 
   return new ImageResponse(
     (
@@ -114,11 +79,11 @@ export async function GET(req: Request, { params }: { params: { token: string } 
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={background} width={1080} height={1920} alt="" style={{ position: 'absolute', top: 0, left: 0 }} />
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={logo} width={Math.round((size.logo * 260) / 254)} height={size.logo} alt="" />
-        <div style={{ display: 'flex', marginTop: 51, fontSize: 150, fontWeight: 700, lineHeight: 0.9, letterSpacing: -7 }}>
+        <img src={logo} width={Math.round((size.logo * 260) / 254)} height={size.logo} alt="" style={{ flexShrink: 0 }} />
+        <div style={{ display: 'flex', flexShrink: 0, marginTop: 51, fontSize: 150, fontWeight: 700, lineHeight: 0.9, letterSpacing: -7 }}>
           {event ? formatLocal(event.date_start, 'dd.MM.yy') : ''}
         </div>
-        <div style={{ display: 'flex', marginTop: 22, fontSize: 39, color: 'rgba(250,250,250,0.8)' }}>
+        <div style={{ display: 'flex', flexShrink: 0, marginTop: 22, fontSize: 39, color: 'rgba(250,250,250,0.8)' }}>
           {when.charAt(0).toUpperCase() + when.slice(1)}
         </div>
         <div
@@ -145,7 +110,11 @@ export async function GET(req: Request, { params }: { params: { token: string } 
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={qr} width={size.qr} height={size.qr} alt="" />
           </div>
-          <div style={{ display: 'flex', marginTop: 42, fontSize: 55, fontWeight: 700 }}>{ticket.buyer_name}</div>
+          <div
+            style={{ display: 'flex', justifyContent: 'center', textAlign: 'center', marginTop: 42, fontSize: 55, fontWeight: 700 }}
+          >
+            {ticket.buyer_name}
+          </div>
           <div style={{ display: 'flex', marginTop: 8, fontSize: 36, color: 'rgba(250,250,250,0.7)' }}>
             {`CI ${doc}`}
           </div>

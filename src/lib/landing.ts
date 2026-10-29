@@ -187,7 +187,6 @@ export const MEDIA_TYPES: Record<string, { type: LandingMedia['type']; ext: stri
   'image/jpeg': { type: 'image', ext: 'jpg' },
   'image/png': { type: 'image', ext: 'png' },
   'image/webp': { type: 'image', ext: 'webp' },
-  'image/avif': { type: 'image', ext: 'avif' },
   'video/mp4': { type: 'video', ext: 'mp4' },
   'video/webm': { type: 'video', ext: 'webm' },
   'video/quicktime': { type: 'video', ext: 'mov' },
@@ -198,7 +197,7 @@ export const MEDIA_LIMITS = { imageMb: 15, videoMb: 50, alt: 200 };
 // Lo controlan el navegador antes de subir y el servidor al dar el link y al guardar.
 export function mediaFileError(mimeType: string, bytes: number): string | null {
   const type = MEDIA_TYPES[mimeType]?.type;
-  if (!type) return 'Tiene que ser una foto (JPG, PNG, WebP o AVIF) o un video (MP4, WebM o MOV).';
+  if (!type) return 'Tiene que ser una foto (JPG, PNG o WebP) o un video (MP4, WebM o MOV).';
   if (bytes <= 0) return 'El archivo está vacío.';
   if (type === 'video' && bytes > MEDIA_LIMITS.videoMb * 1024 * 1024) {
     return `El video pesa más de ${MEDIA_LIMITS.videoMb} MB: probá con uno más corto o más liviano.`;
@@ -211,7 +210,7 @@ export function mediaFileError(mimeType: string, bytes: number): string | null {
 
 // Archivos del bucket: <lugar>/<8 hex>-<nombre>.<ext>. Se guarda la URL pública entera.
 const BUCKET_URL = `${(process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '')}/storage/v1/object/public/${LANDING_BUCKET}/`;
-const BUCKET_PATH = /^(hero-desktop|hero-mobile|house-[1-9])\/[0-9a-f]{8}-[a-z0-9-]{1,60}\.(jpg|png|webp|avif|mp4|webm|mov)$/;
+const BUCKET_PATH = /^(hero-desktop|hero-mobile|house-[1-9])\/[0-9a-f]{8}-[a-z0-9-]{1,60}\.(jpg|png|webp|mp4|webm|mov)$/;
 
 export function bucketPath(src: string | undefined): string | null {
   if (!src?.startsWith(BUCKET_URL)) return null;

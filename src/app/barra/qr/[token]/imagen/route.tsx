@@ -2,6 +2,7 @@ import { ImageResponse } from 'next/og';
 import QRCode from 'qrcode';
 import { barUnitUrl } from '@/lib/bar';
 import { formatLocal } from '@/lib/events';
+import { loadImageFonts } from '@/lib/image-fonts';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export const runtime = 'nodejs';
@@ -9,26 +10,7 @@ export const dynamic = 'force-dynamic';
 
 // GET /barra/qr/<token>/imagen → PNG de un trago (formato historia, 1080×1920) para guardar
 // en el celular. Solo si el pedido está pago y el trago no se entregó todavía.
-// Misma fuente que la imagen de la entrada (src/app/ticket/[token]/imagen/route.tsx): los .otf
-// de public/fonts/ no están en git; si faltan, cae a la fuente por defecto.
-async function loadFonts(req: Request) {
-  const weights = [
-    ['Regular', 400],
-    ['Bold', 700],
-  ] as const;
-  const fonts = await Promise.all(
-    weights.map(async ([name, weight]) => {
-      try {
-        const res = await fetch(new URL(`/fonts/NeueMontreal-${name}.otf`, req.url), { cache: 'force-cache' });
-        if (!res.ok) return null;
-        return { name: 'Neue Montreal', data: await res.arrayBuffer(), weight, style: 'normal' as const };
-      } catch {
-        return null;
-      }
-    }),
-  );
-  return fonts.filter((f): f is NonNullable<typeof f> => f !== null);
-}
+// Misma letra que la imagen de la entrada (src/lib/image-fonts.ts).
 
 export async function GET(req: Request, { params }: { params: { token: string } }) {
   const db = createAdminClient();
@@ -45,7 +27,7 @@ export async function GET(req: Request, { params }: { params: { token: string } 
   ]);
   if (order?.status !== 'paid') return new Response('Trago no disponible', { status: 404 });
 
-  const fonts = await loadFonts(req);
+  const fonts = await loadImageFonts(req);
   const qr = await QRCode.toDataURL(barUnitUrl(unit.qr_token), { margin: 1, width: 720, errorCorrectionLevel: 'M' });
   const logo = new URL('/brand/logo.svg', req.url).toString();
 
@@ -61,7 +43,7 @@ export async function GET(req: Request, { params }: { params: { token: string } 
           background: '#0A0A0A',
           color: '#FAFAFA',
           padding: '120px 90px',
-          fontFamily: fonts.length ? 'Neue Montreal' : undefined,
+          fontFamily: fonts[0]?.name,
         }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}

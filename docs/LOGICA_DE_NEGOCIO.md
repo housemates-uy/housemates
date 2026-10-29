@@ -148,9 +148,12 @@ La venta es selectiva: quien quiere ir les escribe por Instagram y los owners de
 
 - **Se crean** en Admin → evento → **Accesos** (solo owners): para quién (texto libre, "Sofi @sofi.mates y amigas"), cuántas entradas (1 a 1000) y vencimiento opcional. El código son 8 letras y números al azar sin caracteres que se confunden (`K7P2-QX9M`, `src/lib/access-codes.ts`). Se copia el código o el link `/acceso/<código>`, o se manda por WhatsApp.
 - **Se usa:** abriendo el link (`src/app/acceso/[codigo]/route.ts`) o escribiéndolo en `/access`, en la misma caja que la contraseña ("Contraseña o código"). Queda guardado en la cookie de acceso (`hm_access`, 24 h). Con la contraseña de compra prendida, el código da acceso a `/entradas` mientras le queden entradas.
+- **Solo del evento a la venta:** un código sirve únicamente para el próximo evento publicado (el de `/entradas`). Uno de una fecha nueva en borrador, o de la siguiente, no abre la compra de la actual (`findAccessCode`).
+- **Para dejar entrar no cuentan las reservas sin terminar** (`openLeft`): si el pago con Mercado Pago no salió, quien vuelve puede entrar y reintentar aunque su reserva siga viva. En `/entradas` puede comprar lo que le queda al código más lo que tiene reservado la compra sin terminar de ese navegador (cookie `hm_compra`), porque al reintentar se libera.
+- **Quien entró solo con el código compra siempre con él:** `create_order` controla los usos, así no se compra de más sin la contraseña. Si todas sus entradas están reservadas en la compra de otra persona, `/entradas` dice "Tu código está en uso" en vez de mostrar el formulario.
 - **En `/entradas`** aparece "Entraste con el código K7P2-QX9M. Te quedan N entradas", y el selector de cantidad no pasa de esas N (ni del máximo por compra).
 - **Cada entrada comprada con el código gasta un uso** y queda marcada con él (`tickets.access_code_id`). Cuentan las vivas y las reservas vigentes (`access_code_uses`): una compra abandonada devuelve el uso cuando vence la reserva. La compra usa el código de la cookie, nunca uno que mande el formulario.
-- **Todo o nada** (`create_order`, `0021_access_codes.sql`): bloquea la fila del código, así dos compras no se llevan el último uso. Si no alcanza: "Tu código de acceso alcanza para N entradas: bajá la cantidad". Si la misma persona reintenta, su reserva anterior se anula y no gasta otro uso.
+- **Todo o nada** (`create_order`, `0021_access_codes.sql`): bloquea la fila del código, así dos compras no se llevan el último uso. Si no alcanza: "Tu código de acceso alcanza para N entradas: bajá la cantidad". Si la misma persona reintenta, toda su compra anterior sin terminar se anula (también la de un amigo que sacó o cambió) y no gasta otro uso.
 - **Deja de servir** si se pausa en el admin, si vence, si se usaron todas sus entradas o si terminó su evento. En `/access` se dice por qué (no existe o venció, ya se usó).
 - **Para una historia de Instagram:** el mismo código con más usos (por ejemplo 20) y un vencimiento corto.
 - **Estados en el admin:** Activo, Pausado (lo pausó un owner), Vencido o Agotado. El vencimiento se pone en hora de Montevideo y no puede estar en el pasado.
@@ -220,7 +223,7 @@ Todo esto lo hace la función `create_ticket` en Postgres (`supabase/migrations/
 
 - Cada entrada tiene un `qr_token`: 22 caracteres aleatorios. No contiene datos ni firma; solo vale si existe en la base. Adivinarlo es imposible en la práctica.
 - El QR codifica la URL `https://<sitio>/ticket/<token>`. Si alguien lo escanea con la cámara del celular, abre su entrada. El scanner de puerta extrae el token de esa URL.
-- La página `/ticket/<token>` muestra la cédula **parcial**, porque cualquiera con el link la ve. La completa la ve solo el portero.
+- La entrada muestra la cédula **completa** (4.097.298-0): la página `/ticket/<token>`, la imagen que se guarda y los mails de la entrada, del comprobante recibido, de anulación y de rechazo. Decisión de los owners: en puerta se coteja con el documento. Cualquiera con el link de la entrada la ve.
 - Mientras la entrada está válida (o pendiente de pago), la página se refresca sola cada 5 segundos. Cuando el portero confirma el ingreso, el celular de la persona pasa a "Usada" sin recargar.
 
 ---
@@ -230,7 +233,7 @@ Todo esto lo hace la función `create_ticket` en Postgres (`supabase/migrations/
 ### 5.1 Entrada manual (venta por transferencia) o invitación
 
 1. Admin → evento → **Entradas** → "Nueva entrada".
-2. Completa los datos; elige la tanda y el monto cobrado, o "Invitación".
+2. Completa los datos; elige la tanda y el monto cobrado, o "Cortesía (gratis)".
 3. Se crea la entrada ya válida (`paid`).
 4. Aparece el link con el botón **Mandar por WhatsApp**: abre WhatsApp con el mensaje armado al celular cargado.
 
@@ -261,6 +264,7 @@ Puntos importantes:
 - **Nunca se confía** en lo que viene en la URL de vuelta ni en el cuerpo del webhook: siempre se le pregunta el estado del pago a Mercado Pago con nuestra clave.
 - **Webhook y página de resultado hacen lo mismo** a propósito. Si el webhook se atrasa o falla, la entrada se confirma igual cuando la persona vuelve. Confirmar dos veces no hace nada.
 - **Reserva de 20 minutos.** Si no paga, el lugar se libera solo: no hace falta ningún proceso. Si la persona vuelve a intentar, su reserva anterior se anula y se crea otra.
+- **Reintentar libera la compra anterior:** al empezar una compra se anula entera la compra anterior sin terminar (`pending`) de la misma persona en ese evento: la que tiene como entrada 1 el mismo email o la misma cédula (`create_order`, `0021`). Así el amigo que sacó o cambió no le sigue ocupando lugar, usos de códigos o de descuentos ni el bus. Una transferencia en revisión no se toca.
 - **Pago pendiente (efectivo o tarjeta en revisión).** El cupón de Abitab/RedPagos vence a las 24 h (`date_of_expiration` de la preferencia). Cuando MP avisa que el pago quedó pendiente, la reserva se estira hasta que vence el cupón (tarjeta en revisión: hasta 48 h; nunca más de 72 h) con `extend_ticket_hold` (`0017`). Así el lugar no se vende dos veces. Solo se estira una reserva que sigue viva.
 - **Pago que llega tarde** (`confirm_ticket_payment`, última versión en `0017`). Se honra siempre que se pueda: la persona pagó.
   - Si la reserva se había anulado porque la persona volvió a intentar y la otra entrada está sin pagar, se anula esa y vale la pagada. Si revive una entrada anulada devuelve `confirmed_late`: la entrada vale, sale el mail y se avisa a los owners (puede pasarse del cupo).
@@ -363,7 +367,7 @@ Quien compra puede sumar entradas para sus amigos y pagar todo junto. Cada entra
   - **Entradas a confirmar** y la sección "Transferencias a validar" de la pestaña Entradas muestran una tarjeta por compra: quien compró, la lista de entradas (nombre, CI, email y bus de cada una), el desglose y el total a transferir (suma de `amount_paid_uyu`). Un solo comprobante; "Aceptar las N" / "Declinar" resuelven toda la compra. Al declinar, el mail le llega solo a quien compró.
   - En la lista de Entradas, cada entrada de una compra de varias dice "Compra de N · la hizo X".
   - **Reembolsar una entrada** pagada con Mercado Pago: si otras entradas del mismo pago siguen válidas, devuelve solo lo que pagó esa (`refund_amount` en `admin_logs`); la última devuelve lo que quede. "Ya figura devuelto en MP" vale solo si se devolvió el pago entero. Si es la entrada de un amigo, el mail de anulación aclara que la plata vuelve al medio de quien pagó la compra.
-  - "Máximo de entradas por compra" en `/admin/config`: entero de 1 a 20, solo owners, con antes/después en el Historial.
+  - "Máximo de entradas por compra" en `/admin/config`: entero de 1 a 10, solo owners, con antes/después en el Historial.
 - **Pendiente (bloque de acceso):** cuando se defina quién puede comprar, cada amigo de la compra también va a tener que estar habilitado.
 
 ### 5.3 Puerta
@@ -375,7 +379,9 @@ Pantalla aparte (`/admin/scan/<id>`, botón "Puerta" del evento):
 **Cada persona pasa en dos pasos.** El QR prueba que la entrada existe; la cédula prueba que es de esa persona.
 
 1. **Escanear** el QR, o escribir la cédula en "Sin QR". El escaneo **solo consulta: no cambia nada**.
-   - **Azul "Entrada válida"** con nombre, cédula y tanda (o "Invitación"). Queda fijo hasta que el portero decide.
+   - **Azul "Entrada válida"** con nombre, cédula y tanda (o "Cortesía"). Queda fijo hasta que el portero decide. En celulares chicos el centro se puede deslizar y los botones de confirmar y cancelar siempre quedan a la vista.
+   - **Un QR de barra** escaneado en la puerta dice "Es un QR de barra" (no "QR inválido") y no queda registrado como inválido.
+   - **Puerta cerrada desde otro celular:** cada escaneo actualiza el estado ("Puerta cerrada" / "Puerta abierta") en el celular que escanea, sin recargar.
    - **Rojo** con el motivo y botón **Cerrar**: ya usada (y a qué hora entró), QR inválido, de otro evento, puerta cerrada, o una entrada que no está paga, con su estado real para que el portero sepa qué hacer. También queda fijo.
 
      | Estado | Pantalla roja |
@@ -403,7 +409,7 @@ Detalles:
   - los rechazos, al escanear (`inspect_ticket`);
   - los ingresos, al confirmar (`check_in_ticket`);
   - las cancelaciones del portero (`reject_check_in`).
-- **Plan B si falla el escáner o internet:** en **Ventas**, "Descargar lista (CSV)" o "Imprimir lista". Trae las entradas válidas y ya usadas, por orden alfabético del nombre (como lo escribió la persona), con cédula completa, tanda o "Invitación" y hora de ingreso. Conviene bajarla o imprimirla antes de abrir: lo que se tilde a mano no queda registrado en la base.
+- **Plan B si falla el escáner o internet:** en **Ventas**, "Descargar lista (CSV)" o "Imprimir lista". Trae las entradas válidas y ya usadas, por orden alfabético del nombre (como lo escribió la persona), con cédula completa, tanda o "Cortesía" y hora de ingreso. Conviene bajarla o imprimirla antes de abrir: lo que se tilde a mano no queda registrado en la base.
 
 Código: `src/app/admin/scan/[id]/` · Lista: `src/app/admin/(panel)/events/[id]/lista/` · SQL: migraciones `0006`, `0007` y `0014` (última versión de `inspect_ticket` y `check_in_ticket`).
 
@@ -456,7 +462,8 @@ Tragos que se compran por la web y se retiran en la barra con un QR por trago. C
 - **El precio de la carta es el final:** la barra no tiene cargo por servicio. El total lo calcula la base con los precios vigentes al comprar (`create_bar_order`): la app nunca manda un precio. Cada trago comprado guarda nombre y precio del momento, así que editar la carta no cambia los pedidos hechos.
 - **Cuándo se vende:** para el próximo evento (el mismo de la landing, `getNextEvent()`), mientras esté publicado y no haya terminado, antes o durante la fiesta. No depende de "ventas activas" de las entradas ni de la contraseña del gate.
 - **Pausar venta** (owners, Admin → Barra): nadie puede comprar; los QRs ya pagos se siguen entregando. Arranca prendida (`events.bar_paused = false`).
-- **Solo Mercado Pago.** Hasta 20 de cada trago y 30 tragos por pedido.
+- **Solo Mercado Pago, con tarjeta y al instante** (`binary_mode`, sin Abitab ni Redpagos): un cupón de efectivo se pagaría al día siguiente, con la fiesta terminada. Hasta 20 de cada trago y 30 tragos por pedido.
+- **Pagos que no sirven** (`confirm_bar_order_payment`, `0027_bar_payment_checks.sql`): si el pedido ya estaba pago con otro pago (dos pestañas), o si el pago llega con la fiesta terminada, el pedido no cambia y les llega a los owners "Pago de barra para revisar" para devolverlo. Lo mismo con un monto menor al total.
 - **No hace falta cuenta:** alcanza con el email (nombre opcional). La página recomienda ingresar con la cuenta; con sesión iniciada se precarga el email y el pedido guarda `user_id`, y una vez pago aparece en **Mi cuenta → Pedidos de barra** (§5.6).
 - **Un QR por unidad:** 2 Fernet + 1 Jäger = 3 QRs, cada uno con su token opaco (como el de las entradas). Cada QR vale un trago y se entrega una sola vez.
   - El QR codifica `https://<sitio>/barra/qr/<token>`. Con la cámara del celular abre ese trago solo, sin datos del comprador: sirve para pasarle un trago a otra persona.
@@ -518,7 +525,7 @@ Bus opcional que se suma al comprar la entrada (la fiesta es fuera de Montevideo
   - Justo después de `create_ticket`, `reserve_transport` bloquea la opción (como la tanda) y reserva el lugar. Si no hay, borra en la misma transacción la entrada recién creada (todavía sin pago ni comprobante): la persona ve "No quedan lugares en el bus…" y no se crea ni se cobra nada.
   - Igual que con la tanda, un pago de Mercado Pago aprobado después de vencida la reserva se honra, y puede pasar el cupo por 1.
 - **Dónde se ve:** la entrada (`/ticket/<token>`), los mails "Recibimos tu comprobante", "Entrada confirmada" y el aviso a los owners (línea "Transporte" en el desglose, más el punto y horario), Mis entradas y Admin → Entradas ("Bus: …"). Siempre es el mismo texto que se ve al elegir el bus, completo y sacado de la opción, así que si se edita en el admin cambia en todos lados (en los mails, desde el próximo que se mande).
-- **Lista para el chofer:** Admin → Transporte muestra los pasajeros de cada opción (nombre, cédula, celular, estado). "Descargar CSV" (`;`, UTF-8 con BOM) e "Imprimir" (una hoja por opción, con casilla para tildar) llevan solo entradas válidas (pagas o usadas): una transferencia sin validar no figura.
+- **Lista para el chofer:** Admin → Transporte muestra los pasajeros de cada opción (nombre, cédula, celular, estado). "Descargar CSV" (`;`, UTF-8 con BOM) e "Imprimir" (una hoja por opción, con casilla para tildar) llevan solo entradas válidas (pagas o usadas): una transferencia sin validar no figura. En una compra para amigos solo quien compra deja celular: a los amigos se les pone el suyo, aclarado ("099 123 456 (de Sofía)").
 - **Fuera de alcance:** las entradas manuales e invitaciones no llevan bus; si hace falta, se arregla por fuera.
 
 ---
@@ -541,7 +548,7 @@ Bus opcional que se suma al comprar la entrada (la fiesta es fuera de Montevideo
 | Capacidad del evento | `event_available` y `create_ticket` (`0018_event_capacity.sql`) · `src/lib/next-event.ts` |
 | No repetir encuesta ni preventa | `0019_comms_dedupe.sql` (`email_log.send_key` + `sending`) · `src/lib/mail/event-mails.ts`, `src/lib/mail/presale-mails.ts` |
 | Anular / devolver stock | `cancel_ticket` — misma migración |
-| Puerta: consultar sin cambiar / confirmar / cancelar | `inspect_ticket`, `reject_check_in` (`0007_door_two_step.sql`) y `check_in_ticket` (`0006`) |
+| Puerta: consultar sin cambiar / confirmar / cancelar | `inspect_ticket`, `reject_check_in` (`0007_door_two_step.sql`) y `check_in_ticket` (última versión en `0014`) |
 | Normalizar email/CI/IG, token, URL del QR | `src/lib/tickets.ts` |
 | Precio: descuento + cargo por servicio según medio de pago | `src/lib/pricing.ts` |
 | Códigos de descuento (validez, usos) | `src/lib/discounts.ts` · `discount_code_uses` y `create_ticket` (`0010`) |
@@ -623,7 +630,7 @@ Las consultas a Supabase se hacen con `cache: 'no-store'` (`src/lib/supabase/adm
 
 | Qué | Límite | Se cuenta |
 |---|---|---|
-| Compra (`startCheckoutAction`) | 30 cada 10 min | Después de validar el formulario (un error de tipeo no gasta intentos), antes de consultar cuentas, códigos o crear la entrada |
+| Compra (`startCheckoutAction`) | 60 **entradas** cada 10 min (una compra de 4 suma 4) | Después de validar el formulario (un error de tipeo no gasta intentos), antes de consultar cuentas, códigos o crear la entrada |
 | "Aplicar" código (`checkDiscountAction`) | 30 cada 10 min | Antes de buscar el código |
 | Pedido de barra | 120 cada 10 min (en la fiesta todos comparten el wifi; un pedido sin pagar no reserva nada) | Con el carrito ya validado, antes de crear el pedido |
 | Contraseña del gate (`/api/gate`) | 5 cada 15 min (fijado en CLAUDE.md §7.2) | Todos los intentos, antes de comparar la contraseña |
@@ -637,7 +644,15 @@ Las consultas a Supabase se hacen con `cache: 'no-store'` (`src/lib/supabase/adm
 - Varias personas detrás de la misma IP (por ejemplo, el mismo wifi) comparten el límite.
 - **Recuperar contraseña tarda siempre 1,5 s** y responde igual exista o no la cuenta: no se puede averiguar quién tiene cuenta.
 
-**Redirecciones** (`safeNextPath` en `src/lib/auth/gate.ts`): `?next=` solo acepta rutas del propio sitio. Se resuelve como lo haría el navegador (que borra tabs y saltos de línea, así que `/	/sitio.com` terminaría en `//sitio.com`): cualquier cosa que apunte afuera vuelve a la ruta por defecto.
+**Redirecciones** (`safeNextPath` en `src/lib/auth/gate.ts`): `?next=` solo acepta rutas del propio sitio. Se resuelve como lo haría el navegador (que borra tabs y saltos de línea, así que `/	/sitio.com` terminaría en `//sitio.com`): cualquier cosa que apunte afuera vuelve a la ruta por defecto. También resuelve los puntos: `/.//sitio.com` termina en `//sitio.com` y se rechaza igual.
+
+**Contraseña de compra: 24 h desde que se escribió** (`grantedAt`), aunque la cookie se vuelva a guardar después (por ejemplo, al entrar un código).
+
+**Sesión de Supabase solo en el servidor:** las cookies `sb-*` (admins y compradores) van `httpOnly` (`SESSION_COOKIE_OPTIONS` en `src/lib/supabase/server.ts` y el middleware): el navegador no las lee nunca, así que un XSS no podría robar la sesión de un admin.
+
+**Modo local solo desde esta compu:** con `isLocalNoAuth()` el middleware responde 403 si el `Host` no es `127.0.0.1` o `localhost` (una página que apunta un dominio a 127.0.0.1, o el server abierto a la red).
+
+**Otros controles:** el link del mapa del evento solo acepta `http(s)://` (va tal cual a la landing y a los mails); "Reenviar mail" solo manda si la entrada es válida y del evento; en Fotos y videos no se aceptan AVIF (aviso de seguridad del optimizador de imágenes de Next 14); al duplicar un evento, la tanda de preventa recibe un código nuevo (`PRE-XXXXXX`), así el link de la fecha anterior no abre la nueva; los avisos de pagos a los owners salen uno por problema y por pago (`email_log.send_key`), también para un pago aprobado sobre una compra reembolsada.
 
 **Links del mail** (`/auth/confirm`): al abrir un link válido (confirmar email, recupero, invitación de admin) se le pone una contraseña al azar a la cuenta y se cierran las otras sesiones. Así, si alguien había creado la cuenta con ese email, su contraseña y su sesión dejan de valer; la persona elige la suya en la pantalla siguiente.
 
@@ -647,7 +662,7 @@ Las consultas a Supabase se hacen con `cache: 'no-store'` (`src/lib/supabase/adm
 
 ## 9. Límites conocidos (decisiones conscientes)
 
-- **Una entrada por compra.** No hay selector de cantidad: cada persona compra la suya, con su cédula.
+- **Hasta 10 entradas por compra** (el máximo se elige en `/admin/config`), cada una nominativa (§5.2e).
 - **La contraseña es compartida.** Alguien puede pasársela a un amigo, que compraría con su propia cédula. Se mitiga rotándola y revisando la lista por Instagram.
 - **Sin modo offline en puerta.** El scanner necesita internet.
 - **Invitaciones sin control de capacidad total.** No descuentan de ninguna tanda.
@@ -655,7 +670,7 @@ Las consultas a Supabase se hacen con `cache: 'no-store'` (`src/lib/supabase/adm
 
 ## 10. Encuesta del día después
 
-En Admin → evento → **Resumen**, sección "Encuesta". Mandar: solo owners. Lo de "antes de ir" (fecha, lugar, qué llevar) se comunica por **Instagram**: no hay mail de recordatorio.
+En Admin → evento → **Resumen**, sección "Encuesta". Mandar: solo owners, y recién cuando terminó la fiesta (antes el botón no aparece y la acción no manda). Lo de "antes de ir" (fecha, lugar, qué llevar) se comunica por **Instagram**: no hay mail de recordatorio.
 
 - **A quién:** a quienes entraron (`used`). Link a `/encuesta/<token>` (el mismo token del QR, que ya no sirve para entrar). Tocar un número del mail abre la encuesta con ese puntaje elegido.
 - **No se repite:** cada envío queda en `email_log` (`survey`). "Mandar" va solo a quien no tiene un envío exitoso; los que fallaron quedan pendientes. **"Reenviar a todos"** manda de nuevo a todos.

@@ -14,7 +14,7 @@ export async function GET(req: NextRequest, { params }: { params: { codigo: stri
 
   const code = await findAccessCode({ code: params.codigo });
   if (!code) return to('/access?next=/entradas&codigo=invalido');
-  if (code.left === 0) return to('/access?next=/entradas&codigo=agotado');
+  if (code.openLeft === 0) return to('/access?next=/entradas&codigo=agotado');
 
   const session = await getGateSession();
   session.accessCodeId = code.id;

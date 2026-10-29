@@ -204,6 +204,15 @@ export async function cancelTicketAction(
 
 export async function resendTicketMailAction(eventId: string, ticketId: string): Promise<void> {
   const admin = await requireAdmin();
+  // Solo una entrada válida de este evento: el botón se ve solo en esas, pero la acción se
+  // puede llamar directo y el mail dice "ya tenés tu entrada" con el QR.
+  const { data: ticket } = await createAdminClient()
+    .from('tickets')
+    .select('status')
+    .eq('id', ticketId)
+    .eq('event_id', eventId)
+    .maybeSingle();
+  if (ticket?.status !== 'paid') return;
   await sendTicketConfirmedMail(ticketId);
   await logAdminAction(admin.id, 'resend_ticket_mail', 'ticket', ticketId);
   revalidatePath(`/admin/events/${eventId}/tickets`);

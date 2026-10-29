@@ -44,8 +44,9 @@ function faq(event: NextEvent, ig: { handle: string; href: string }, accounts: b
           q: '¿Cómo compro?',
           a: (
             <p>
-              En <Link href="/entradas">Entradas</Link>: elegís la tanda, completás tus datos (nombre, cédula y email;
-              el celular es opcional) y pagás. Si te pide una contraseña, la pasamos por {instagram}.
+              En <Link href="/entradas">Entradas</Link>: elegís la tanda y cuántas entradas querés, completás los datos
+              de cada una (nombre, cédula y email; tu celular es opcional) y pagás. Si te pide una contraseña o un
+              código, lo pasamos por {instagram}.
             </p>
           ),
         },
@@ -53,7 +54,8 @@ function faq(event: NextEvent, ig: { handle: string; href: string }, accounts: b
           q: '¿Puedo comprar para otra persona?',
           a: (
             <p>
-              No. La entrada es personal: una por persona, a tu nombre y con tu cédula. Cada uno compra la suya.
+              Sí: en la misma compra podés sumar entradas para tus amigos. Cada entrada es personal, con el nombre,
+              la cédula y el email de quien la usa, y a cada uno le llega la suya a su mail. Pagás todas juntas.
             </p>
           ),
         },
@@ -295,9 +297,8 @@ function faq(event: NextEvent, ig: { handle: string; href: string }, accounts: b
             <>
               {/* A CONFIRMAR: quién opera el bus. */}
               <p>
-                Sí. Al comprar tu entrada, antes de pagar, podés sumar tu lugar en el bus: ida, vuelta o ida y vuelta,
-                según lo que haya para esa fecha. Cada opción muestra el horario, el punto de salida, el precio y los
-                lugares que quedan.
+                Sí. Al comprar tu entrada, antes de pagar, podés sumar tu lugar en el bus de ida y vuelta. Ahí ves el
+                horario, el punto de salida, el precio y los lugares que quedan.
               </p>
               <p>El bus se suma al total de tu compra y lo ves en tu entrada y en el mail. Los lugares son limitados.</p>
             </>

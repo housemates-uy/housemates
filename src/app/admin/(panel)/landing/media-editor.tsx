@@ -402,7 +402,7 @@ export function MediaEditor({
       </section>
 
       <p className="text-xs leading-relaxed text-bone/50">
-        Fotos JPG, PNG, WebP o AVIF de hasta {MEDIA_LIMITS.imageMb} MB. Videos MP4, WebM o MOV de hasta{' '}
+        Fotos JPG, PNG o WebP de hasta {MEDIA_LIMITS.imageMb} MB. Videos MP4, WebM o MOV de hasta{' '}
         {MEDIA_LIMITS.videoMb} MB: en la landing se ven sin sonido y en loop. El punto violeta marca lo que
         ya cambiaste.
       </p>
@@ -495,7 +495,7 @@ function MediaDialog({
         error:
           file.type === 'video'
             ? 'No se pudo leer el video en este navegador. Probá con un MP4.'
-            : 'No se pudo leer la foto. Probá con otra (JPG, PNG, WebP o AVIF).',
+            : 'No se pudo leer la foto. Probá con otra (JPG, PNG o WebP).',
       };
     }
 

@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import Link from 'next/link';
 import { FALLBACK_FONT_CSS, fontFaceCss, fontPreloads } from '@/lib/fonts';
 import { appUrl } from '@/lib/tickets';
 import './globals.css';
@@ -40,12 +41,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </noscript>
       </head>
       <body className="min-h-[100dvh] bg-ink font-sans text-bone antialiased">
-        <a
+        {/* Link y no <a>: con un <a href="#…"> el botón "Atrás" queda trabado (Next 14). */}
+        <Link
           href="#contenido"
           className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-control focus:bg-bone focus:px-4 focus:py-2 focus:text-sm focus:text-ink"
         >
           Saltar al contenido
-        </a>
+        </Link>
         {children}
       </body>
     </html>

@@ -24,6 +24,9 @@ async function refreshSession(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      // Igual que src/lib/supabase/server.ts (SESSION_COOKIE_OPTIONS): el middleware corre en
+      // edge y no importa ese archivo (usa next/headers).
+      cookieOptions: { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/' },
       cookies: {
         getAll() {
           return request.cookies.getAll();
@@ -66,8 +69,12 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (isAdminPath(pathname)) {
-    // Modo local sin claves (src/lib/auth/local-mode.ts): el admin no pide login.
+    // Modo local sin claves (src/lib/auth/local-mode.ts): el admin no pide login, pero solo
+    // desde esta compu. Otro Host (una página que apunta un dominio a 127.0.0.1, o el server
+    // abierto a la red) no entra.
     if (isLocalNoAuth()) {
+      const host = (request.headers.get('host') ?? '').replace(/:\d+$/, '');
+      if (host !== '127.0.0.1' && host !== 'localhost') return new NextResponse('Solo desde esta compu.', { status: 403 });
       if (pathname === '/admin/login') return NextResponse.redirect(new URL('/admin', request.url));
       return NextResponse.next();
     }

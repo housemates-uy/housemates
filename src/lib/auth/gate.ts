@@ -75,16 +75,24 @@ export async function getSessionAccessCode(): Promise<AccessCodeState | null> {
   return session.accessCodeId ? findAccessCode({ id: session.accessCodeId }) : null;
 }
 
+// Puede comprar: con la contraseña (o sin que haga falta) o con un código de acceso al que le
+// quedan entradas (las reservas sin terminar no cuentan: quien vuelve tiene que poder reintentar).
 export async function hasGateAccess(): Promise<boolean> {
+  if (await hasPasswordAccess()) return true;
+  const code = await getSessionAccessCode();
+  return !!code && code.openLeft > 0;
+}
+
+// Entró con la contraseña, o no hace falta (apagada o modo local). Sin esto, la compra tiene
+// que ir con el código de acceso.
+export async function hasPasswordAccess(): Promise<boolean> {
   if (isLocalNoAuth()) return true;
   if (!(await isGateEnabled())) return true;
   const session = await getGateSession();
-  // Entró con un código de acceso que todavía tiene entradas.
-  if (session.accessCodeId) {
-    const code = await findAccessCode({ id: session.accessCodeId });
-    if (code && code.left > 0) return true;
-  }
   if (!session.granted || !session.version) return false;
+  // La contraseña vale 24 h desde que se escribió (CLAUDE.md §7.2), aunque la cookie se haya
+  // vuelto a guardar después (por ejemplo, al entrar un código de acceso).
+  if (!session.grantedAt || Date.now() - session.grantedAt > GATE_TTL_SECONDS * 1000) return false;
   const password = await getGatePassword();
   return !!password && session.version === gateVersion(password);
 }
@@ -96,7 +104,8 @@ export function safeNextPath(next: string | undefined | null, fallback = '/entra
   if (!next || !next.startsWith('/') || /[\u0000-\u001f\u007f\\]/.test(next)) return fallback;
   try {
     const url = new URL(next, SAME_ORIGIN);
-    if (url.origin !== SAME_ORIGIN) return fallback;
+    // Los puntos también se resuelven: "/.//sitio.com" queda en "//sitio.com", otro sitio.
+    if (url.origin !== SAME_ORIGIN || url.pathname.startsWith('//')) return fallback;
     return url.pathname + url.search + url.hash;
   } catch {
     return fallback;

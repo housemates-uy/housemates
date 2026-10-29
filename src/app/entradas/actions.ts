@@ -13,7 +13,8 @@
 //      la cuenta de la persona; si eligió contraseña, la cuenta se crea recién ahí.
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { getSessionAccessCode, hasGateAccess } from '@/lib/auth/gate';
+import { heldInOrder } from '@/lib/access-codes';
+import { getSessionAccessCode, hasGateAccess, hasPasswordAccess } from '@/lib/auth/gate';
 import {
   accountExists,
   ensureProfile,
@@ -68,8 +69,9 @@ export type DiscountCheck =
   | { ok: true; code: string; kind: 'percent' | 'fixed'; value: number; label: string }
   | { error: string };
 
-// "Aplicar" el código en el formulario: muestra el precio con descuento antes de pagar.
-export async function checkDiscountAction(tierId: string, rawCode: string): Promise<DiscountCheck> {
+// "Aplicar" el código en el formulario: muestra el precio con descuento antes de pagar. Cada
+// entrada gasta un uso: si no alcanza para todas, se avisa acá y no recién al pagar.
+export async function checkDiscountAction(tierId: string, rawCode: string, quantity = 1): Promise<DiscountCheck> {
   if (!(await hasGateAccess())) return { error: 'Tu acceso venció. Recargá la página.' };
   const tier = await loadSaleTier(tierId);
   if (!tier) return { error: 'Elegí una tanda disponible.' };
@@ -77,6 +79,9 @@ export async function checkDiscountAction(tierId: string, rawCode: string): Prom
   const found = await findDiscount(tier.eventId, rawCode);
   if ('error' in found) return found;
   if (discountAmount(tier.price, found) >= tier.price) return { error: 'Ese código no se puede usar en la compra web.' };
+  if (found.left !== null && found.left < quantity) {
+    return { error: `Ese código alcanza para ${found.left} ${found.left === 1 ? 'entrada' : 'entradas'}: bajá la cantidad.` };
+  }
   return { ok: true, code: found.code, kind: found.kind, value: found.value, label: describeDiscount(found) };
 }
 
@@ -104,11 +109,11 @@ function orderError(
       return [`${who}${err.error}`, personField('document', n)];
     case 'sold_out':
       return n > 1
-        ? [`Quedan ${n - 1} lugares para esta fecha: bajá la cantidad de entradas.`, 'quantity']
+        ? [`${n - 1 === 1 ? 'Queda 1 lugar' : `Quedan ${n - 1} lugares`} para esta fecha: bajá la cantidad de entradas.`, 'quantity']
         : [err.error, 'tier'];
     case 'discount_exhausted':
       return n > 1
-        ? [`El código de descuento alcanza para ${n - 1} entradas: bajá la cantidad o sacá el código.`, 'code']
+        ? [`El código de descuento alcanza para ${n - 1} ${n - 1 === 1 ? 'entrada' : 'entradas'}: bajá la cantidad o sacá el código.`, 'code']
         : [err.error, 'code'];
     case 'discount_invalid':
       return [err.error, 'code'];
@@ -223,7 +228,7 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
 
   // Después de las validaciones del formulario (un error de tipeo no gasta intentos) y
   // antes de todo lo que consulta la base: cuentas, códigos y la creación de las entradas.
-  if (!(await allowAttempt('checkout'))) return fail(TOO_MANY_ATTEMPTS);
+  if (!(await allowAttempt('checkout', quantity))) return fail(TOO_MANY_ATTEMPTS);
 
   if (password && (await accountExists(buyer.email))) {
     return { error: 'Ya tenés cuenta con este email.', field: 'password', accountExists: true };
@@ -269,10 +274,16 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
     receipt = checked.file;
   }
 
-  // Código de acceso (§3b): el de la cookie, nunca uno que mande el formulario. Si es de
-  // este evento y le quedan entradas, la compra las descuenta.
+  // Código de acceso (§3b): el de la cookie, nunca uno que mande el formulario. Si es de este
+  // evento, la compra lo descuenta mientras le queden entradas (contando las que libera el
+  // reintento). Quien entró SOLO con el código compra siempre con él: create_order controla los
+  // usos, así no se compra de más sin la contraseña.
   const sessionCode = await getSessionAccessCode();
-  const accessCodeId = sessionCode && sessionCode.eventId === tier.eventId && sessionCode.left > 0 ? sessionCode.id : null;
+  const codeForEvent = sessionCode && sessionCode.eventId === tier.eventId ? sessionCode : null;
+  const codeLeft = codeForEvent
+    ? codeForEvent.left + (await heldInOrder(codeForEvent.id, cookies().get(PURCHASE_COOKIE)?.value))
+    : 0;
+  const accessCodeId = codeForEvent && (codeLeft > 0 || !(await hasPasswordAccess())) ? codeForEvent.id : null;
 
   // Todas nacen `pending` con reserva. La transferencia pasa a `review` recién con el
   // comprobante subido: si algo se corta en el medio, la reserva vence sola y no quedan

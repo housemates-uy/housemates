@@ -52,6 +52,12 @@ export default async function TicketPage({ params }: { params: { token: string }
   const entryLabel = ticket.source === 'invitation' ? 'Cortesía' : (tier?.name ?? 'Entrada');
   // Tanda de ingreso temprano: hay que entrar antes de esa hora (en puerta se avisa si no).
   const entryUntil = ticket.status !== 'used' ? entryTime(tier?.entry_until) : null;
+  // El QR se achica por cada renglón que suman el bus (unos 46 caracteres por renglón) y el
+  // "Ingreso hasta", para que la entrada siga entrando en una pantalla de celular.
+  const busLines = bus
+    ? bus.departure.split('\n').reduce((n, line) => n + (line.trim() ? Math.ceil(line.trim().length / 46) : 0), 0)
+    : 0;
+  const qrOffset = (bus ? 22 + busLines * 17 : 0) + (entryUntil ? 22 : 0);
 
   return (
     <main
@@ -62,8 +68,8 @@ export default async function TicketPage({ params }: { params: { token: string }
       <DoodleBackdrop className="-z-10 print:hidden" />
 
       {/* Entra en una pantalla; si el texto del bus es largo, la página baja un poco. */}
-      <div className="mx-auto flex min-h-[100dvh] max-w-md print:min-h-0 flex-col items-center gap-[2.2dvh] px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.75rem,env(safe-area-inset-top))]">
-        <Logo className="h-[clamp(64px,13dvh,112px)] shrink-0 print:text-ink" />
+      <div className="mx-auto flex min-h-[100dvh] max-w-md flex-col items-center gap-[1.6dvh] px-6 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] print:min-h-0">
+        <Logo className="h-[clamp(48px,10dvh,112px)] shrink-0 print:text-ink" />
 
         {event && (
           <div className="shrink-0 text-center">
@@ -93,11 +99,8 @@ export default async function TicketPage({ params }: { params: { token: string }
               <div
                 role="img"
                 aria-label="Código QR de la entrada"
-                className={cn(
-                  'aspect-square [&>svg]:h-full [&>svg]:w-full',
-                  // Con bus hay una línea más: el QR se achica un poco para que todo entre sin scroll.
-                  bus ? 'w-[min(208px,calc(27dvh_-_24px))]' : 'w-[min(208px,27dvh)]',
-                )}
+                className="aspect-square [&>svg]:h-full [&>svg]:w-full"
+                style={{ width: `max(150px, min(208px, calc(27dvh - ${qrOffset}px)))` }}
                 dangerouslySetInnerHTML={{ __html: svg }}
               />
             </div>
@@ -149,7 +152,6 @@ export default async function TicketPage({ params }: { params: { token: string }
           </div>
         </section>
 
-        {valid && <div className="mt-auto" />}
         {valid && <SaveButtons token={ticket.qr_token} />}
         <p className={cn('shrink-0 text-center text-xs text-bone/60 print:text-ink/70', !valid && 'mt-auto')}>
           {ticket.status === 'used'

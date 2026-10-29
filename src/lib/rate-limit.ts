@@ -9,11 +9,12 @@ import { createAdminClient } from '@/lib/supabase/admin';
 // Mucha gente comparte IP (celulares detrás de la misma IP de la compañía, el wifi de la
 // fiesta), así que los topes son por "conexión", no por persona: tienen que dejar pasar un
 // lanzamiento de entradas y frenar solo a un script.
-// - checkout: cada intento puede reservar un lugar con un comprobante falso.
+// - checkout: cuenta ENTRADAS, no compras (una compra de 4 suma 4): cada intento puede
+//   reservar lugares con un comprobante falso. 60 por IP cada 10 minutos.
 // - bar_checkout: un pedido sin pagar no reserva nada ni manda mails, y en la fiesta todos
 //   comparten el wifi: tope alto.
 const LIMITS = {
-  checkout: { windowSeconds: 10 * 60, max: 30 },
+  checkout: { windowSeconds: 10 * 60, max: 60 },
   discount: { windowSeconds: 10 * 60, max: 30 },
   bar_checkout: { windowSeconds: 10 * 60, max: 120 },
   gate: { windowSeconds: 15 * 60, max: 5 }, // fijado en .claude/CLAUDE.md §7.2
@@ -40,22 +41,26 @@ function clientIp(): string {
 
 const LOOPBACK = new Set(['::1', '127.0.0.1', '::ffff:127.0.0.1']);
 
-// true = puede seguir.
-export async function allowAttempt(action: RateLimitAction): Promise<boolean> {
+// true = puede seguir. weight: cuántos intentos suma (en la compra, una por entrada).
+export async function allowAttempt(action: RateLimitAction, weight = 1): Promise<boolean> {
   const { windowSeconds, max } = LIMITS[action];
   try {
     const ip = clientIp();
     // `npm run dev` en la propia máquina: los scripts de prueba compran muchas veces seguidas.
     // Para probar el límite en local, mandar otro x-forwarded-for.
     if (process.env.NODE_ENV !== 'production' && LOOPBACK.has(ip)) return true;
-    const { data, error } = await createAdminClient().rpc('rate_limit_hit', {
-      p_key: ip,
-      p_action: action,
-      p_window_seconds: windowSeconds,
-      p_max: max,
-    });
-    if (error) throw new Error(error.message);
-    return data !== true;
+    const db = createAdminClient();
+    for (let i = 0; i < weight; i++) {
+      const { data, error } = await db.rpc('rate_limit_hit', {
+        p_key: ip,
+        p_action: action,
+        p_window_seconds: windowSeconds,
+        p_max: max,
+      });
+      if (error) throw new Error(error.message);
+      if (data === true) return false;
+    }
+    return true;
   } catch (err) {
     console.error('[rate-limit] no se pudo contar el intento', action, (err as Error)?.message);
     return true;
