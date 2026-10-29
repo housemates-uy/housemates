@@ -1,6 +1,6 @@
 'use server';
 
-// Transporte de un evento: opciones de bus (cargar, editar, activar/desactivar, borrar).
+// Transporte de un evento: opciones de bus (cargar, editar, activar/desactivar, eliminar).
 // Todo esto es solo para owners. Reglas: ver docs/LOGICA_DE_NEGOCIO.md → "Transporte".
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -88,14 +88,23 @@ export async function toggleTransportOptionAction(eventId: string, optionId: str
   revalidatePath(transportPath(eventId));
 }
 
-// Solo se borra una opción que nunca se reservó; si alguien la eligió, se desactiva.
-export async function deleteTransportOptionAction(eventId: string, optionId: string): Promise<void> {
-  const admin = await requireOwner();
-  const { error } = await createAdminClient()
+// Solo se borra una opción que nunca se reservó (la FK de ticket_transport es RESTRICT); si
+// alguien la eligió, se desactiva.
+export async function deleteTransportOptionAction(eventId: string, optionId: string): Promise<{ error: string } | void> {
+  const admin = await requireOwner().catch(() => null);
+  if (!admin) return { error: 'Solo los owners pueden cambiar el transporte.' };
+  const { data, error } = await createAdminClient()
     .from('transport_options')
     .delete()
     .eq('id', optionId)
-    .eq('event_id', eventId);
-  if (!error) await logAdminAction(admin.id, 'delete_transport_option', 'transport_option', optionId);
+    .eq('event_id', eventId)
+    .select('name');
+  if (error) {
+    if (error.code === '23503') return { error: 'Alguien eligió esta opción: no se puede eliminar. Desactivala.' };
+    return { error: 'No se pudo eliminar. Probá de nuevo.' };
+  }
+  if (data[0]) {
+    await logAdminAction(admin.id, 'delete_transport_option', 'transport_option', optionId, { deleted: data[0].name });
+  }
   revalidatePath(transportPath(eventId));
 }

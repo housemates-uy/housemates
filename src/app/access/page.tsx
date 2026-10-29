@@ -9,7 +9,14 @@ import { AccessForm } from './access-form';
 export const metadata: Metadata = { title: 'Acceso' };
 export const dynamic = 'force-dynamic';
 
-export default async function AccessPage({ searchParams }: { searchParams: { next?: string } }) {
+// Si vino de un link de código (/acceso/<código>) que no sirvió, se dice por qué.
+const CODE_NOTICES: Record<string, string> = {
+  invalido: 'Ese código no existe, venció o está pausado. Pedinos uno nuevo por Instagram.',
+  agotado: 'Ese código ya se usó para todas sus entradas. Escribinos por Instagram.',
+  intentos: 'Hiciste muchos intentos seguidos. Esperá unos minutos y probá de nuevo.',
+};
+
+export default async function AccessPage({ searchParams }: { searchParams: { next?: string; codigo?: string } }) {
   const next = safeNextPath(searchParams.next);
   if (await hasGateAccess()) redirect(next);
 
@@ -21,7 +28,7 @@ export default async function AccessPage({ searchParams }: { searchParams: { nex
 
       <div className="flex flex-1 items-center justify-center px-5 py-16">
         <div className="w-full max-w-sm">
-          <AccessForm next={next} />
+          <AccessForm next={next} notice={CODE_NOTICES[searchParams.codigo ?? ''] ?? null} />
         </div>
       </div>
 

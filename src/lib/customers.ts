@@ -242,7 +242,7 @@ export async function loadAccountTickets(customer: CustomerSession): Promise<Acc
     eventTitle: t.events!.title,
     dateShort: formatLocal(t.events!.date_start, 'dd.MM.yy'),
     dateLabel: formatLocal(t.events!.date_start, "EEEE d 'de' MMMM · HH:mm 'hs'").replace(/^./, (c) => c.toUpperCase()),
-    entryLabel: t.source === 'invitation' ? 'Invitación' : (t.ticket_tiers?.name ?? 'Entrada'),
+    entryLabel: t.source === 'invitation' ? 'Cortesía' : (t.ticket_tiers?.name ?? 'Entrada'),
     status: t.status,
     statusLabel: STATUS_LABEL[t.status],
     href: t.qr_token ? `/ticket/${t.qr_token}` : null,

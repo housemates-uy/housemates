@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { getAdminUser } from '@/lib/auth/admin';
 import { PageHeader } from '@/components/admin/page-header';
 import { EmptyState } from '@/components/ui/card';
+import { formatAccessCode } from '@/lib/access-codes';
 import { formatLocal } from '@/lib/events';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Json } from '@/types/database';
@@ -15,12 +16,16 @@ const ACTIONS: Record<string, string> = {
   create: 'Creó',
   update: 'Editó',
   archive: 'Archivó',
+  unarchive: 'Desarchivó',
+  delete_event: 'Eliminó el evento',
+  duplicate_event: 'Copió un evento a otra fecha',
   enable_sales: 'Activó las ventas',
   disable_sales: 'Pausó las ventas',
   activate_tier: 'Activó la tanda',
   deactivate_tier: 'Desactivó la tanda',
   soldout_tier: 'Agotó a mano la tanda',
   restore_tier: 'Restauró la tanda',
+  delete_tier: 'Eliminó la tanda',
   send_presale: 'Mandó la preventa',
   send_reminder: 'Mandó el recordatorio',
   send_survey: 'Mandó la encuesta',
@@ -35,18 +40,24 @@ const ACTIONS: Record<string, string> = {
   create_discount_code: 'Creó el código de descuento',
   enable_discount_code: 'Activó el código de descuento',
   disable_discount_code: 'Pausó el código de descuento',
+  delete_discount_code: 'Eliminó el código de descuento',
+  create_access_code: 'Creó el código de acceso',
+  enable_access_code: 'Activó el código de acceso',
+  disable_access_code: 'Pausó el código de acceso',
+  delete_access_code: 'Eliminó el código de acceso',
   create_bar_product: 'Agregó el trago',
   update_bar_product: 'Editó el trago',
   enable_bar_product: 'Activó el trago',
   disable_bar_product: 'Desactivó el trago',
   reorder_bar_product: 'Reordenó la carta',
+  delete_bar_product: 'Eliminó el trago',
   pause_bar: 'Pausó la barra',
   resume_bar: 'Reabrió la barra',
   create_transport_option: 'Agregó la opción de transporte',
   update_transport_option: 'Editó la opción de transporte',
   enable_transport_option: 'Activó la opción de transporte',
   disable_transport_option: 'Desactivó la opción de transporte',
-  delete_transport_option: 'Borró la opción de transporte',
+  delete_transport_option: 'Eliminó la opción de transporte',
   close_door: 'Cerró la puerta',
   open_door: 'Abrió la puerta',
 };
@@ -57,6 +68,7 @@ const ENTITIES: Record<string, string> = {
   ticket: 'entrada',
   site_config: 'configuración',
   discount_code: 'código',
+  access_code: 'código de acceso',
   bar_product: 'trago',
   transport_option: 'transporte',
 };
@@ -68,6 +80,7 @@ const FIELDS: Record<string, string> = {
   date_end: 'Fin',
   location_name: 'Lugar',
   location_url: 'URL del lugar',
+  format: 'Formato',
   capacity: 'Capacidad',
   status: 'Estado',
   description_md: 'Descripción',
@@ -85,8 +98,22 @@ const FIELDS: Record<string, string> = {
   pay_transfer_enabled: 'Transferencia',
   transfer_details: 'Datos para transferir',
   max_tickets_per_order: 'Máximo de entradas por compra',
+  landing_hero_title: 'Título de la portada',
+  landing_house_title: 'La casa: título',
+  landing_house_text: 'La casa: texto',
+  landing_house_credits: 'La casa: créditos',
+  landing_rules_title: 'Reglas: título',
+  landing_rules: 'Reglas',
+  ig_handle: 'Instagram',
+  slot: 'Lugar',
+  file: 'Archivo',
+  alt: 'Texto alternativo',
   new_tiers: 'Tandas nuevas',
   tiers: 'Tandas',
+  transport_options: 'Transporte',
+  bar_products: 'Carta',
+  discount_codes: 'Códigos de descuento',
+  access_codes: 'Códigos de acceso',
   sent: 'Enviados',
   failed: 'Fallaron',
   skipped: 'Ya los mandaba otro envío',
@@ -96,6 +123,11 @@ const FIELDS: Record<string, string> = {
   result: 'Resultado',
   refund_amount: 'Devuelto (solo esta entrada)',
   entradas: 'Entradas',
+  label: 'Para',
+  max_uses: 'Entradas',
+  valid_until: 'Vence',
+  copied_from: 'Copiado de',
+  copied_from_id: 'Id del original',
 };
 
 const STATUS_VALUES: Record<string, string> = {
@@ -131,7 +163,8 @@ function DiffDetail({ diff }: { diff: Json | null }) {
     changes && typeof changes === 'object' && !Array.isArray(changes)
       ? Object.entries(changes as Record<string, { from?: Json; to?: Json }>)
       : [];
-  const restList = Object.entries(rest).filter(([, v]) => v !== null && v !== undefined);
+  // `deleted` (qué se eliminó) ya va en el título de la fila.
+  const restList = Object.entries(rest).filter(([k, v]) => k !== 'deleted' && v !== null && v !== undefined);
   if (changeList.length === 0 && restList.length === 0) return null;
 
   return (
@@ -155,11 +188,12 @@ async function entityNames(rows: { entity_type: string; entity_id: string | null
   const db = createAdminClient();
   const ids = (type: string) =>
     Array.from(new Set(rows.filter((r) => r.entity_type === type && r.entity_id).map((r) => r.entity_id!)));
-  const [events, tiers, tickets, codes, products, options] = await Promise.all([
+  const [events, tiers, tickets, codes, accessCodes, products, options] = await Promise.all([
     ids('event').length ? db.from('events').select('id, title').in('id', ids('event')) : null,
     ids('tier').length ? db.from('ticket_tiers').select('id, name, events(title)').in('id', ids('tier')) : null,
     ids('ticket').length ? db.from('tickets').select('id, buyer_name, events(title)').in('id', ids('ticket')) : null,
     ids('discount_code').length ? db.from('discount_codes').select('id, code').in('id', ids('discount_code')) : null,
+    ids('access_code').length ? db.from('access_codes').select('id, code, label').in('id', ids('access_code')) : null,
     ids('bar_product').length ? db.from('bar_products').select('id, name').in('id', ids('bar_product')) : null,
     ids('transport_option').length
       ? db.from('transport_options').select('id, name').in('id', ids('transport_option'))
@@ -171,19 +205,31 @@ async function entityNames(rows: { entity_type: string; entity_id: string | null
   for (const t of tiers?.data ?? []) names.set(t.id, [t.name, eventTitle(t.events)].filter(Boolean).join(' · '));
   for (const t of tickets?.data ?? []) names.set(t.id, [t.buyer_name, eventTitle(t.events)].filter(Boolean).join(' · '));
   for (const c of codes?.data ?? []) names.set(c.id, c.code);
+  for (const c of accessCodes?.data ?? []) names.set(c.id, `${formatAccessCode(c.code)} · para ${c.label}`);
   for (const p of products?.data ?? []) names.set(p.id, p.name);
   for (const o of options?.data ?? []) names.set(o.id, o.name);
   return names;
 }
 
-function describe(row: { action: string; entity_type: string; entity_id: string | null }, names: Names): string {
+// Lo eliminado ya no está en la base: el nombre queda guardado en el detalle (`deleted`).
+function deletedName(diff: Json | null): string | undefined {
+  if (!diff || typeof diff !== 'object' || Array.isArray(diff)) return undefined;
+  return typeof diff.deleted === 'string' ? diff.deleted : undefined;
+}
+
+function describe(
+  row: { action: string; entity_type: string; entity_id: string | null; diff: Json | null },
+  names: Names,
+): string {
   if (row.entity_type === 'site_config') {
     if (row.action === 'update_gate_password') return 'Cambió la contraseña de compra';
+    if (row.action === 'update_landing') return 'Editó la landing';
+    if (row.action === 'update_landing_media') return 'Cambió una foto o un video de la landing';
     return row.action === 'update_sale_config' ? 'Editó la configuración de la venta' : 'Editó la configuración';
   }
   const verb = ACTIONS[row.action] ?? row.action;
   const entity = ENTITIES[row.entity_type] ?? row.entity_type;
-  const name = row.entity_id ? names.get(row.entity_id) : undefined;
+  const name = (row.entity_id ? names.get(row.entity_id) : undefined) ?? deletedName(row.diff);
   // "Creó" y "Editó" no dicen qué: se les suma el tipo ("Editó el evento").
   const needsEntity = row.action === 'create' || row.action === 'update';
   const article = row.entity_type === 'tier' || row.entity_type === 'ticket' || row.entity_type === 'site_config' ? 'la' : 'el';

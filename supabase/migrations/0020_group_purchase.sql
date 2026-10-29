@@ -24,7 +24,7 @@ INSERT INTO site_config (key, value) VALUES ('max_tickets_per_order', '6') ON CO
 -- 1. Crear la compra
 -- ------------------------------------------------------------
 -- p_people: una entrada por persona, la de quien compra primero. Cada una:
---   { name, email, email_norm, document, phone, qr_token, amount, discount_uyu,
+--   { name, email, email_norm, document, phone, instagram, qr_token, amount, discount_uyu,
 --     transport_option_id, transport_price }
 -- Todo o nada: si una persona falla (cédula repetida, sin lugar, bus lleno…), no queda
 -- ninguna entrada creada. El error dice cuál: '<motivo>#<n>' (n = 1 para quien compra).
@@ -62,7 +62,7 @@ BEGIN
         p_email_norm       => v_person->>'email_norm',
         p_document         => v_person->>'document',
         p_phone            => nullif(v_person->>'phone', ''),
-        p_instagram        => NULL,
+        p_instagram        => nullif(v_person->>'instagram', ''),
         p_amount           => (v_person->>'amount')::numeric,
         p_qr_token         => v_person->>'qr_token',
         p_hold_minutes     => p_hold_minutes,

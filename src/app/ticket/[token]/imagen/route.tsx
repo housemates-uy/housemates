@@ -53,7 +53,7 @@ export async function GET(req: Request, { params }: { params: { token: string } 
   const qr = await QRCode.toDataURL(ticketUrl(ticket.qr_token), { margin: 1, width: 720, errorCorrectionLevel: 'M' });
   const logo = new URL('/brand/logo.svg', req.url).toString();
   const doc = ticket.buyer_document.slice(-4);
-  const entry = ticket.source === 'invitation' ? 'Invitación' : (tier?.name ?? 'Entrada');
+  const entry = ticket.source === 'invitation' ? 'Cortesía' : (tier?.name ?? 'Entrada');
 
   return new ImageResponse(
     (

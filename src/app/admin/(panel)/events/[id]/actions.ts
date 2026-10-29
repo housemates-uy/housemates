@@ -3,7 +3,8 @@
 import { requireAdmin, requireOwner, logAdminAction, fieldChanges } from '@/lib/auth/admin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { eventSchema, tiersSchema, tierEditSchema, type EventInput, type TierInput, type TierEditInput } from '@/lib/validation/schemas'
-import { tierExtrasToDb, toUTC } from '@/lib/events'
+import { EVENT_DELETE_BLOCKERS, formatLocal, tierExtrasToDb, toUTC } from '@/lib/events'
+import { formatAccessCode } from '@/lib/access-codes'
 import { presaleBlocker, sendPresaleMails } from '@/lib/mail/presale-mails'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
@@ -19,7 +20,7 @@ export async function updateEventAction(
   eventData: EventInput,
   newTiers: TierInput[]
 ): Promise<{ error: string } | void> {
-  const admin = await requireAdmin()
+  const admin = await requireOwner()
 
   const eventParsed = eventSchema.safeParse(eventData)
   if (!eventParsed.success) return { error: eventParsed.error.issues[0].message }
@@ -28,7 +29,7 @@ export async function updateEventAction(
 
   const { data: before } = await db
     .from('events')
-    .select('title, slug, date_start, date_end, location_name, location_url, capacity, status, description_md, sales_active')
+    .select('title, slug, date_start, date_end, location_name, location_url, format, capacity, status, description_md, sales_active')
     .eq('id', id)
     .single()
   if (!before) return { error: 'No se encontró el evento.' }
@@ -108,6 +109,7 @@ export async function updateEventAction(
   })
   revalidatePath(`/admin/events/${id}`)
   revalidatePath(`/admin/events/${id}/edit`)
+  revalidatePath('/')
   redirect(`/admin/events/${id}`)
 }
 
@@ -116,7 +118,7 @@ export async function updateTierAction(
   eventId: string,
   data: TierEditInput
 ): Promise<{ error: string } | void> {
-  const admin = await requireAdmin()
+  const admin = await requireOwner()
 
   const parsed = tierEditSchema.safeParse(data)
   if (!parsed.success) return { error: parsed.error.issues[0].message }
@@ -178,7 +180,7 @@ export async function toggleTierActiveAction(
   eventId: string,
   current: boolean
 ): Promise<void> {
-  const admin = await requireAdmin()
+  const admin = await requireOwner()
   const db = createAdminClient()
   await db.from('ticket_tiers').update({ active: !current }).eq('id', tierId)
   await logAdminAction(admin.id, !current ? 'activate_tier' : 'deactivate_tier', 'tier', tierId)
@@ -191,7 +193,7 @@ export async function toggleTierSoldOutAction(
   eventId: string,
   current: boolean
 ): Promise<void> {
-  const admin = await requireAdmin()
+  const admin = await requireOwner()
   const db = createAdminClient()
   await db.from('ticket_tiers').update({ sold_out_override: !current }).eq('id', tierId)
   await logAdminAction(admin.id, !current ? 'soldout_tier' : 'restore_tier', 'tier', tierId)
@@ -199,7 +201,7 @@ export async function toggleTierSoldOutAction(
 }
 
 export async function toggleSalesAction(id: string, current: boolean): Promise<void> {
-  const admin = await requireAdmin()
+  const admin = await requireOwner()
   const db = createAdminClient()
   await db.from('events').update({ sales_active: !current }).eq('id', id)
   await logAdminAction(admin.id, !current ? 'enable_sales' : 'disable_sales', 'event', id)
@@ -212,6 +214,87 @@ export async function archiveEventAction(id: string): Promise<void> {
   await db.from('events').update({ status: 'archived', sales_active: false }).eq('id', id)
   await logAdminAction(admin.id, 'archive', 'event', id)
   redirect('/admin/events')
+}
+
+export async function unarchiveEventAction(id: string): Promise<void> {
+  const admin = await requireOwner()
+  const db = createAdminClient()
+  // Vuelve como borrador: publicarlo es otra decisión, desde Editar.
+  await db.from('events').update({ status: 'draft' }).eq('id', id).eq('status', 'archived')
+  await logAdminAction(admin.id, 'unarchive', 'event', id, { changes: { status: { from: 'archived', to: 'draft' } } })
+  revalidatePath('/admin/events')
+  revalidatePath(`/admin/events/${id}`)
+}
+
+type DeletedEvent = {
+  title: string
+  date_start: string
+  tiers: string[]
+  transport_options: string[]
+  bar_products: string[]
+  discount_codes: string[]
+  access_codes: { code: string; label: string }[]
+}
+
+// Solo un evento sin entradas (de ningún estado), pedidos de barra ni escaneos; se va con sus
+// tandas, transporte, carta y códigos (admin_delete_event, migración 0025). Si no, se archiva.
+export async function deleteEventAction(id: string): Promise<{ error: string } | void> {
+  const admin = await requireOwner().catch(() => null)
+  if (!admin) return { error: 'Solo los owners pueden eliminar eventos.' }
+
+  const { data, error } = await createAdminClient().rpc('admin_delete_event', { p_event_id: id })
+  const r = data as { result: string; deleted?: DeletedEvent } | null
+  if (error || !r) return { error: 'No se pudo eliminar el evento. Probá de nuevo.' }
+  if (r.result !== 'deleted' && r.result !== 'not_found') {
+    return { error: `${EVENT_DELETE_BLOCKERS[r.result] ?? 'Tiene datos'}: no se puede eliminar. Archivalo.` }
+  }
+
+  if (r.deleted) {
+    const d = r.deleted
+    const lists = {
+      tiers: d.tiers,
+      transport_options: d.transport_options,
+      bar_products: d.bar_products,
+      discount_codes: d.discount_codes,
+      access_codes: d.access_codes.map((c) => `${formatAccessCode(c.code)} · para ${c.label}`),
+    }
+    await logAdminAction(admin.id, 'delete_event', 'event', id, {
+      deleted: `${d.title} · ${formatLocal(d.date_start, 'd/MM/yyyy')}`,
+      ...Object.fromEntries(Object.entries(lists).filter(([, v]) => v.length > 0)),
+    })
+  }
+  revalidatePath('/admin/events')
+  revalidatePath('/')
+}
+
+// La FK de las entradas (RESTRICT) no deja borrar una tanda que tenga alguna, de cualquier estado.
+export async function deleteTierAction(tierId: string, eventId: string): Promise<{ error: string } | void> {
+  const admin = await requireOwner().catch(() => null)
+  if (!admin) return { error: 'Solo los owners pueden eliminar tandas.' }
+  const db = createAdminClient()
+
+  const { data: event } = await db.from('events').select('title').eq('id', eventId).single()
+  const { data, error } = await db
+    .from('ticket_tiers')
+    .delete()
+    .eq('id', tierId)
+    .eq('event_id', eventId)
+    .select('name, price_uyu, quantity_total')
+  if (error) {
+    if (error.code === '23503') return { error: 'La tanda tiene entradas: no se puede eliminar. Desactivala.' }
+    return { error: 'No se pudo eliminar la tanda. Probá de nuevo.' }
+  }
+
+  const [tier] = data
+  if (tier) {
+    await logAdminAction(admin.id, 'delete_tier', 'tier', tierId, {
+      deleted: [tier.name, event?.title].filter(Boolean).join(' · '),
+      price_uyu: tier.price_uyu,
+      quantity_total: tier.quantity_total,
+    })
+  }
+  revalidatePath(`/admin/events/${eventId}`)
+  revalidatePath(`/admin/events/${eventId}/edit`)
 }
 
 // "Mandar preventa a quienes vinieron antes" (solo owners). Manda hasta 45 s por clic (la

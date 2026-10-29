@@ -11,6 +11,7 @@ export async function createEventAction(
 ): Promise<{ error: string } | { id: string }> {
   const admin = await requireAdmin().catch(() => null)
   if (!admin) return { error: 'No autorizado. Volvé a iniciar sesión.' }
+  if (admin.role !== 'owner') return { error: 'Solo los owners pueden crear eventos.' }
 
   const eventParsed = eventSchema.safeParse(eventData)
   if (!eventParsed.success) {

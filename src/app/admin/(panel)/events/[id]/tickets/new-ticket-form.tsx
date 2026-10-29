@@ -17,8 +17,10 @@ export function NewTicketForm({ eventId, tiers }: { eventId: string; tiers: Tier
   const formRef = useRef<HTMLFormElement>(null);
   const [pending, startTransition] = useTransition();
   const [result, setResult] = useState<ManualTicketResult | null>(null);
-  const [tier, setTier] = useState(tiers[0]?.id ?? 'invitation');
-  const [amount, setAmount] = useState(String(tiers[0]?.price ?? 0));
+  // Arranca en la primera tanda con lugar (una agotada se puede elegir igual, como excepción).
+  const firstOpen = tiers.find((t) => t.available > 0);
+  const [tier, setTier] = useState(firstOpen?.id ?? 'invitation');
+  const [amount, setAmount] = useState(String(firstOpen?.price ?? 0));
   const [copied, setCopied] = useState(false);
 
   const error = result && 'error' in result ? result : null;
@@ -93,17 +95,29 @@ export function NewTicketForm({ eventId, tiers }: { eventId: string; tiers: Tier
         <Field label="Celular (opcional)" hint="Para mandarle la entrada por WhatsApp" error={fieldError('phone')}>
           <Input name="phone" type="tel" autoComplete="off" maxLength={30} />
         </Field>
-        <Field label="Tipo" error={fieldError('tier')}>
+        <Field
+          label="Tipo"
+          hint={
+            tiers.find((t) => t.id === tier && t.available <= 0)
+              ? 'Tanda agotada: se carga igual, como excepción.'
+              : undefined
+          }
+          error={fieldError('tier')}
+        >
           <select name="tier" className={inputClass} value={tier} onChange={(e) => onTierChange(e.target.value)}>
             {tiers.map((t) => (
-              <option key={t.id} value={t.id} disabled={t.available <= 0}>
+              <option key={t.id} value={t.id}>
                 {t.name} · {formatUYU(t.price)} {t.available <= 0 ? '· agotada' : `· quedan ${t.available}`}
               </option>
             ))}
-            <option value="invitation">Invitación (gratis, sin tanda)</option>
+            <option value="invitation">Cortesía (gratis)</option>
           </select>
         </Field>
-        {tier !== 'invitation' && (
+        {tier === 'invitation' ? (
+          <Field label="Monto cobrado (UYU)" hint="Cortesía: entrada gratis, no ocupa lugar de ninguna tanda">
+            <Input type="number" value={0} disabled readOnly />
+          </Field>
+        ) : (
           <Field label="Monto cobrado (UYU)" hint="Lo que pagó por transferencia">
             <Input
               name="amount"
@@ -128,7 +142,7 @@ export function NewTicketForm({ eventId, tiers }: { eventId: string; tiers: Tier
         </p>
       )}
       <Button type="submit" disabled={pending}>
-        {pending ? 'Creando...' : tier === 'invitation' ? 'Crear invitación' : 'Crear entrada'}
+        {pending ? 'Creando...' : tier === 'invitation' ? 'Crear cortesía' : 'Crear entrada'}
       </Button>
     </form>
   );

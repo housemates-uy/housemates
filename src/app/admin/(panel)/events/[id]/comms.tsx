@@ -1,22 +1,14 @@
 import { ConfirmSubmitButton, SubmitButton } from '@/components/admin/submit-button';
 import { Card } from '@/components/ui/card';
-import { Field } from '@/components/ui/field';
-import { Textarea } from '@/components/ui/input';
 import { formatLocal } from '@/lib/events';
 import { commsAudience, type CommsKind } from '@/lib/mail/event-mails';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { saveArrivalInfoAction, sendCommsAction } from './comms-actions';
+import { sendCommsAction } from './comms-actions';
 
 type Audience = Awaited<ReturnType<typeof commsAudience>>;
 type SearchParams = Record<string, string | undefined>;
 
 const KIND_COPY: Record<CommsKind, { title: string; description: string; action: string; empty: string }> = {
-  reminder: {
-    title: 'Recordatorio "Antes de ir"',
-    description: 'Fecha, lugar, cómo llegar, qué llevar, las reglas y su QR. A las entradas válidas.',
-    action: 'Mandar recordatorio',
-    empty: 'No hay entradas válidas.',
-  },
   survey: {
     title: 'Encuesta del día después',
     description: 'Puntaje del 1 al 5, qué mejorarían y si volverían. A quienes entraron.',
@@ -25,63 +17,36 @@ const KIND_COPY: Record<CommsKind, { title: string; description: string; action:
   },
 };
 
-// Sección "Comunicación" del resumen del evento. Mandar: solo owners.
+// Sección "Encuesta" del resumen del evento. Mandar: solo owners. Lo de "antes de ir" se
+// comunica por Instagram: no hay mail de recordatorio.
 export async function CommsSection({
   eventId,
-  arrivalInfo,
   isOwner,
   searchParams,
 }: {
   eventId: string;
-  arrivalInfo: string | null;
   isOwner: boolean;
   searchParams: SearchParams;
 }) {
-  const [reminder, survey] = await Promise.all([
-    commsAudience(eventId, 'reminder'),
-    commsAudience(eventId, 'survey'),
-  ]);
+  const survey = await commsAudience(eventId, 'survey');
 
   return (
     <section id="comunicacion" aria-labelledby="comunicacion-titulo" className="scroll-mt-6 space-y-4 border-t border-bone/10 pt-8">
       <div>
         <h2 id="comunicacion-titulo" className="text-lg font-bold tracking-tight">
-          Comunicación
+          Encuesta
         </h2>
         <p className="mt-1 text-sm text-bone/55">
-          Mails a quienes tienen entrada. También salen solos a quien todavía no los recibió: el
-          recordatorio el día antes del evento y la encuesta el día después. Gmail permite unos 500
-          mails por día, contando las entradas que se venden.
+          Mail a quienes entraron. También sale solo el día después del evento a quien todavía no
+          lo recibió. Gmail permite unos 500 mails por día, contando las entradas que se venden.
         </p>
       </div>
 
       <SendNotice eventId={eventId} searchParams={searchParams} />
 
       <div className="grid gap-4 md:grid-cols-2">
-        <CommsCard eventId={eventId} kind="reminder" audience={reminder} isOwner={isOwner} nonce={searchParams.t} />
         <CommsCard eventId={eventId} kind="survey" audience={survey} isOwner={isOwner} nonce={searchParams.t} />
       </div>
-
-      <Card>
-        <form action={saveArrivalInfoAction.bind(null, eventId)} className="space-y-4">
-          <Field
-            label="Cómo llegar (opcional)"
-            hint="Va en el recordatorio, abajo del link a Google Maps. Ej: por dónde se entra, dónde estacionar, qué ómnibus te deja cerca."
-          >
-            <Textarea name="arrival_info" rows={4} maxLength={2000} defaultValue={arrivalInfo ?? ''} />
-          </Field>
-          <div className="flex items-center gap-4">
-            <SubmitButton variant="outline" size="sm">
-              Guardar
-            </SubmitButton>
-            {searchParams.llegada === 'ok' && (
-              <p role="status" className="text-sm text-bone/75">
-                Guardado.
-              </p>
-            )}
-          </div>
-        </form>
-      </Card>
 
       <SurveyResults eventId={eventId} attended={survey.total} />
     </section>
@@ -145,13 +110,13 @@ function CommsCard({
 // Resultado del último envío (llega por la URL desde sendCommsAction).
 function SendNotice({ eventId, searchParams }: { eventId: string; searchParams: SearchParams }) {
   const kind = searchParams.envio;
-  if (kind !== 'reminder' && kind !== 'survey') return null;
+  if (kind !== 'survey') return null;
   const sent = Number(searchParams.ok ?? 0);
   const failed = Number(searchParams.fallaron ?? 0);
   const left = Number(searchParams.quedan ?? 0);
   const skipped = Number(searchParams.salteados ?? 0);
   const since = searchParams.desde;
-  const what = kind === 'reminder' ? 'Recordatorio' : 'Encuesta';
+  const what = 'Encuesta';
 
   let message = `${what}: ${sent === 1 ? 'se mandó 1 mail' : `se mandaron ${sent} mails`}.`;
   if (sent === 0 && failed > 0) {

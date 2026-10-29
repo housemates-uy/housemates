@@ -26,6 +26,22 @@
     color: #fafafa;
   }
 
+  /* La lista que abre un <select> la dibuja el navegador: en Windows sale blanca con el texto
+     claro de la web y no se lee. Se fuerza oscura en todos los selects del sitio. */
+  select {
+    color-scheme: dark;
+  }
+
+  select option,
+  select optgroup {
+    background-color: #0a0a0a;
+    color: #fafafa;
+  }
+
+  select option:disabled {
+    color: #8c8c8c;
+  }
+
   :focus-visible {
     outline: 2px solid #fafafa;
     outline-offset: 3px;

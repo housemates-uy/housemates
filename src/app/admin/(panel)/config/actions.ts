@@ -1,6 +1,7 @@
 'use server'
 
 import { requireOwner, logAdminAction, fieldChanges } from '@/lib/auth/admin'
+import { MAX_PER_ORDER_LIMIT } from '@/lib/sale-config'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
@@ -58,8 +59,8 @@ export async function saveSaleConfigAction(
     return { error: 'Para activar la transferencia cargá los datos de la cuenta.' }
   }
   const maxPerOrder = Number(formData.get('max_tickets_per_order'))
-  if (!Number.isInteger(maxPerOrder) || maxPerOrder < 1 || maxPerOrder > 20) {
-    return { error: 'El máximo de entradas por compra tiene que ser un número entero de 1 a 20.' }
+  if (!Number.isInteger(maxPerOrder) || maxPerOrder < 1 || maxPerOrder > MAX_PER_ORDER_LIMIT) {
+    return { error: `El máximo de entradas por compra tiene que ser un número entero de 1 a ${MAX_PER_ORDER_LIMIT}.` }
   }
 
   const db = createAdminClient()

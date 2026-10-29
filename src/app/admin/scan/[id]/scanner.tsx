@@ -473,7 +473,7 @@ function Door({
             <p className="mt-4 text-sm opacity-80">Cédula</p>
             <p className="text-4xl font-bold tracking-tight">{outcome.document}</p>
             <p className="mt-4 text-base opacity-85">
-              {outcome.invitation ? 'Invitación' : outcome.tier}
+              {outcome.invitation ? 'Cortesía' : outcome.tier}
               {outcome.entryUntil && !outcome.late && ` · Ingreso hasta ${outcome.entryUntil}`}
             </p>
             {offline ? (

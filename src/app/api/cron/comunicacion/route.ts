@@ -17,10 +17,8 @@ function dayDiff(eventIso: string, now: Date) {
   return Math.round((day(eventIso) - day(now.toISOString())) / DAY_MS);
 }
 
-// Vercel la llama una vez por día (ver vercel.json). Manda, a quien todavía no lo recibió:
-//   - el recordatorio "Antes de ir" el día anterior al evento (y el mismo día, antes de que
-//     empiece, para los que compraron después o quedaron pendientes);
-//   - la encuesta el día siguiente (y el otro, por si quedaron pendientes), ya terminado.
+// Vercel la llama una vez por día (ver vercel.json). Manda la encuesta, a quien todavía no
+// la recibió, el día siguiente al evento (y el otro, por si quedaron pendientes), ya terminado.
 // Es idempotente: quién ya recibió cada mail sale de email_log.
 export async function GET(req: Request) {
   // A diferencia del keepalive, sin CRON_SECRET solo responde en desarrollo: esta ruta manda mails.
@@ -36,7 +34,7 @@ export async function GET(req: Request) {
     .select('id, status, date_start, date_end')
     .neq('status', 'draft')
     .gte('date_start', new Date(now.getTime() - 4 * DAY_MS).toISOString())
-    .lte('date_start', new Date(now.getTime() + 3 * DAY_MS).toISOString())
+    .lte('date_start', now.toISOString())
     .order('date_start', { ascending: true });
   if (error) return NextResponse.json({ ok: false }, { status: 503 });
 
@@ -45,13 +43,8 @@ export async function GET(req: Request) {
 
   for (const event of events ?? []) {
     const diff = dayDiff(event.date_start, now);
-    let kind: CommsKind | null = null;
-    if (event.status === 'published' && (diff === 1 || (diff === 0 && now < new Date(event.date_start)))) {
-      kind = 'reminder';
-    } else if ((diff === -1 || diff === -2) && now > new Date(event.date_end)) {
-      kind = 'survey';
-    }
-    if (!kind) continue;
+    if (!((diff === -1 || diff === -2) && now > new Date(event.date_end))) continue;
+    const kind: CommsKind = 'survey';
 
     const budgetMs = deadline - Date.now();
     if (budgetMs <= 0) break;

@@ -17,6 +17,9 @@ const LIMITS = {
   discount: { windowSeconds: 10 * 60, max: 30 },
   bar_checkout: { windowSeconds: 10 * 60, max: 120 },
   gate: { windowSeconds: 15 * 60, max: 5 }, // fijado en .claude/CLAUDE.md §7.2
+  // Códigos de acceso (8 caracteres al azar: no se adivinan). Más alto que la contraseña
+  // porque un grupo de amigas en el mismo wifi entra con el mismo código.
+  access_code: { windowSeconds: 15 * 60, max: 20 },
   // Login de compradores y de admins: Supabase ve la IP de Vercel, no la de quien prueba.
   login: { windowSeconds: 15 * 60, max: 10 },
   // Recupero y reenvío de confirmación: cada uno manda un mail (Gmail corta en ~500 por día).

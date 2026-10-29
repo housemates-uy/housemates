@@ -37,7 +37,7 @@ type Bus = { id: string; name: string; departure: string; price: number; left: n
 const RECEIPT_ACCEPT = 'image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf';
 const RECEIPT_MAX = 4 * 1024 * 1024;
 const CI_INVALID = 'Cédula inválida: revisá los números y el dígito verificador.';
-const NO_BUS: Bus = { id: '', name: 'No, gracias', departure: '', price: 0, left: null };
+const NO_BUS: Bus = { id: '', name: 'No', departure: '', price: 0, left: null };
 
 // La entrada 1 (quien compra) usa los nombres de siempre; las demás llevan _2, _3…
 const fieldName = (base: string, n: number) => (n === 1 ? base : `${base}_${n}`);
@@ -184,7 +184,7 @@ export function BuyForm({
   }, [state]);
 
   // Si el servidor dice que un bus se llenó (o se desactivó) mientras completaba, se marca
-  // sin lugares, quienes lo tenían vuelven a "No, gracias" y se muestra el aviso. Sin
+  // sin lugares, quienes lo tenían vuelven a "No" y se muestra el aviso. Sin
   // router.refresh(): en esta app vuelve a montar el formulario y se pierde lo completado.
   const submittedBuses = useRef<string[]>([]);
   const [goneBus, setGoneBus] = useState<string[]>([]);
@@ -335,7 +335,6 @@ export function BuyForm({
   }
 
   const bothMethods = methods.mercadopago && methods.transfer;
-  const busQuestion = 'La fiesta es fuera de Montevideo. Podés sumar tu lugar en el bus.';
 
   return (
     <form ref={formRef} action={action} onSubmit={onSubmit} className="space-y-9">
@@ -439,13 +438,13 @@ export function BuyForm({
             <p role="alert" className="text-sm text-alert">
               {fieldError('quantity')}
             </p>
-          ) : group ? (
-            <p className="text-sm leading-snug text-bone/65">
-              Cada entrada es personal: va con el nombre y la cédula de quien la usa, y a cada uno le llega
-              la suya a su mail. Pagás todas juntas.
-            </p>
           ) : (
-            <p className="text-sm text-bone/55">Hasta {maxPerOrder} por compra: la tuya y las de tus amigos.</p>
+            group && (
+              <p className="text-sm leading-snug text-bone/65">
+                Cada entrada es personal: va con el nombre y la cédula de quien la usa, y a cada uno le llega
+                la suya a su mail. Pagás todas juntas.
+              </p>
+            )
           )}
         </div>
       )}
@@ -455,9 +454,8 @@ export function BuyForm({
         <div className={cn(group && 'rounded-card border border-bone/10 bg-bone/[0.02] p-4 sm:p-6')}>
           <fieldset className="min-w-0 space-y-5">
             <legend className={cn('mb-1', group ? 'text-base font-bold' : 'text-sm font-medium text-bone/70')}>
-              Tus datos
+              {group ? 'Entrada 1' : 'Tus datos'}
             </legend>
-            {group && <p className="!mt-1 text-sm text-bone/55">Entrada 1 · la tuya, como quien compra.</p>}
             {account && (
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-card border border-bone/10 bg-bone/[0.03] px-4 py-3 text-sm">
                 <input type="hidden" name="as_account" value="1" />
@@ -500,6 +498,17 @@ export function BuyForm({
                 <Input name="phone" type="tel" autoComplete="tel" defaultValue={account?.phone} />
               </Field>
             </div>
+            <Field label="Instagram (opcional)" error={fieldError('instagram')}>
+              <Input
+                name="instagram"
+                autoComplete="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                maxLength={60}
+                placeholder="@usuario"
+                onChange={() => edited('instagram')}
+              />
+            </Field>
             {!account && (
               <>
                 <Field label="Email" hint="Te mandamos la entrada acá" error={fieldError('email')}>
@@ -533,7 +542,7 @@ export function BuyForm({
                 </Field>
               </>
             )}
-            {group && transport.length > 0 && busPicker(1, '¿Necesitás transporte?', busQuestion)}
+            {group && transport.length > 0 && busPicker(1, '¿Necesitás transporte?')}
           </fieldset>
         </div>
 
@@ -570,6 +579,17 @@ export function BuyForm({
                     />
                   </Field>
                 </div>
+                <Field label="Instagram (opcional)" error={fieldError(`instagram_${n}`)}>
+                  <Input
+                    name={`instagram_${n}`}
+                    autoComplete="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    maxLength={60}
+                    placeholder="@usuario"
+                    onChange={() => edited(`instagram_${n}`)}
+                  />
+                </Field>
                 {transport.length > 0 && busPicker(n, '¿Necesita transporte?')}
               </fieldset>
             </div>
@@ -648,7 +668,7 @@ export function BuyForm({
 
       {/* Transporte (opcional): va antes del pago para que el total a transferir ya lo incluya.
           Con más de una entrada, cada uno lo elige en su ficha. */}
-      {!group && transport.length > 0 && busPicker(1, '¿Necesitás transporte?', busQuestion)}
+      {!group && transport.length > 0 && busPicker(1, '¿Necesitás transporte?')}
 
       {/* 4 · Cómo pagar */}
       <fieldset className="min-w-0 space-y-3">
@@ -661,7 +681,7 @@ export function BuyForm({
               active={method === 'mercadopago'}
               onSelect={() => setMethod('mercadopago')}
               title="Mercado Pago"
-              body={`Tarjeta, débito, saldo o efectivo. ${group ? 'Las entradas llegan' : 'Tu entrada llega'} al instante.`}
+              body={`Tarjeta de débito o crédito. ${group ? 'Las entradas llegan' : 'Tu entrada llega'} al instante.`}
               note={`+ ${SERVICE_FEE_LABEL} de cargo por servicio`}
             />
           )}

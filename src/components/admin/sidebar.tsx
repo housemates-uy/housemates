@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
+  LayoutTemplate,
   CalendarDays,
   TicketCheck,
   Users,
@@ -25,14 +26,17 @@ const NAV = [
     short: 'Confirmar',
     icon: TicketCheck,
     ownerOnly: true,
+    showsPending: true,
   },
   { href: '/admin/whitelist', label: 'Whitelist', icon: Users },
   { href: '/admin/admins', label: 'Administradores', short: 'Admins', icon: UserCog },
+  { href: '/admin/landing', label: 'Landing', icon: LayoutTemplate, ownerOnly: true },
   { href: '/admin/config', label: 'Configuración', short: 'Config', icon: Settings },
   { href: '/admin/logs', label: 'Historial', icon: ScrollText },
 ];
 
-// toConfirm: compras por transferencia esperando validación. null = staff, que no ve "A confirmar".
+// toConfirm: compras por transferencia esperando validación. null = staff, que no ve "A confirmar"
+// ni "Landing".
 type NavProps = { toConfirm: number | null };
 
 function navItems(toConfirm: number | null) {
@@ -70,7 +74,7 @@ export function Sidebar({ toConfirm }: NavProps) {
       </Link>
 
       <nav aria-label="Admin" className="flex-1 space-y-1 px-3 py-2">
-        {navItems(toConfirm).map(({ href, label, icon: Icon, exact, ownerOnly }) => {
+        {navItems(toConfirm).map(({ href, label, icon: Icon, exact, showsPending }) => {
           const active = isActive(href, exact);
           return (
             <Link
@@ -84,7 +88,7 @@ export function Sidebar({ toConfirm }: NavProps) {
             >
               <Icon size={16} strokeWidth={1.5} aria-hidden />
               {label}
-              {ownerOnly && !!toConfirm && <PendingCount count={toConfirm} className="ml-auto" />}
+              {showsPending && !!toConfirm && <PendingCount count={toConfirm} className="ml-auto" />}
             </Link>
           );
         })}
@@ -112,10 +116,10 @@ export function MobileNav({ toConfirm }: NavProps) {
       aria-label="Admin"
       className={cn(
         'fixed inset-x-0 bottom-0 z-30 grid border-t border-bone/10 bg-ink/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden',
-        items.length > 6 ? 'grid-cols-7' : 'grid-cols-6',
+        items.length > 7 ? 'grid-cols-8' : items.length > 6 ? 'grid-cols-7' : 'grid-cols-6',
       )}
     >
-      {items.map(({ href, label, short, icon: Icon, exact, ownerOnly }) => {
+      {items.map(({ href, label, short, icon: Icon, exact, showsPending }) => {
         const active = isActive(href, exact);
         return (
           <Link
@@ -129,7 +133,7 @@ export function MobileNav({ toConfirm }: NavProps) {
           >
             <span className="relative">
               <Icon size={18} strokeWidth={1.5} aria-hidden />
-              {ownerOnly && !!toConfirm && (
+              {showsPending && !!toConfirm && (
                 <PendingCount count={toConfirm} className="absolute -right-3 -top-2" />
               )}
             </span>

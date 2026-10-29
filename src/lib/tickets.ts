@@ -57,7 +57,7 @@ export const buyerSchema = z.object({
   email: z.string().trim().refine(isValidEmail, 'Email inválido'),
   document: z.string().trim().refine(validateCI, 'Cédula uruguaya inválida'),
   phone: z.string().trim().max(30, 'El celular es demasiado largo (hasta 30 caracteres)').optional().or(z.literal('')),
-  // Opcional: la compra web ya no lo pide; el admin puede anotarlo en las entradas manuales.
+  // Opcional, en la compra web (de cada persona) y en las entradas manuales.
   instagram: z
     .string()
     .nullish()
@@ -78,6 +78,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   discount_exhausted: 'Ese código de descuento ya no tiene usos disponibles.',
   presale_required: 'Esa tanda es de preventa: entrá con el link que te mandamos.',
   tier_not_started: 'Esa tanda todavía no salió a la venta.',
+  access_invalid: 'Tu código de acceso ya no es válido.',
+  access_exhausted: 'Tu código de acceso ya no tiene entradas disponibles.',
 };
 
 export async function createTicket(params: {
@@ -148,6 +150,8 @@ export async function createOrder(params: {
   holdMinutes: number;
   discountCodeId: string | null;
   presaleCode: string | null;
+  // Código de acceso (§3b): cada entrada gasta un uso.
+  accessCodeId?: string | null;
   people: OrderPerson[];
 }): Promise<{ ids: string[] } | { error: string; code?: string; person?: number }> {
   const { data, error } = await createAdminClient().rpc('create_order', {
@@ -157,12 +161,14 @@ export async function createOrder(params: {
     p_hold_minutes: params.holdMinutes,
     p_discount_code_id: params.discountCodeId,
     p_presale_code: params.presaleCode,
+    p_access_code_id: params.accessCodeId ?? null,
     p_people: params.people.map((p) => ({
       name: p.buyer.name,
       email: p.buyer.email.toLowerCase(),
       email_norm: normalizeEmail(p.buyer.email),
       document: normalizeDocument(p.buyer.document),
       phone: p.buyer.phone || '',
+      instagram: p.buyer.instagram || '',
       qr_token: generateQrToken(),
       amount: p.amount,
       discount_uyu: p.discountUyu,
@@ -195,7 +201,7 @@ export const STATUS_LABELS: Record<TicketStatus, string> = {
 export const SOURCE_LABELS: Record<TicketSource, string> = {
   purchase: 'Compra web',
   manual: 'Venta manual',
-  invitation: 'Invitación',
+  invitation: 'Cortesía',
 };
 
 export function formatDocument(doc: string): string {

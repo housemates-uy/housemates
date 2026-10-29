@@ -1,6 +1,6 @@
 'use server';
 
-// Barra de un evento: carta (cargar, editar, activar/desactivar, ordenar) y pausar la venta.
+// Barra de un evento: carta (cargar, editar, activar/desactivar, ordenar, eliminar) y pausar la venta.
 // Todo esto es solo para owners. Reglas: ver docs/LOGICA_DE_NEGOCIO.md → "Barra".
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -88,6 +88,25 @@ export async function toggleBarProductAction(eventId: string, productId: string,
   const admin = await requireOwner();
   await createAdminClient().from('bar_products').update({ active }).eq('id', productId).eq('event_id', eventId);
   await logAdminAction(admin.id, active ? 'enable_bar_product' : 'disable_bar_product', 'bar_product', productId);
+  revalidatePath(barPath(eventId));
+}
+
+// Solo un trago que no está en ningún pedido (de cualquier estado): si no, se desactiva
+// (admin_delete_bar_product, migración 0025).
+export async function deleteBarProductAction(eventId: string, productId: string): Promise<{ error: string } | void> {
+  const admin = await requireOwner().catch(() => null);
+  if (!admin) return { error: 'Solo los owners pueden cambiar la carta.' };
+  const db = createAdminClient();
+  const { data: product } = await db.from('bar_products').select('name').eq('id', productId).maybeSingle();
+  const { data: result, error } = await db.rpc('admin_delete_bar_product', {
+    p_product_id: productId,
+    p_event_id: eventId,
+  });
+  if (error) return { error: 'No se pudo eliminar el trago. Probá de nuevo.' };
+  if (result === 'in_use') return { error: 'El trago está en pedidos: no se puede eliminar. Desactivalo.' };
+  if (result === 'deleted') {
+    await logAdminAction(admin.id, 'delete_bar_product', 'bar_product', productId, { deleted: product?.name ?? null });
+  }
   revalidatePath(barPath(eventId));
 }
 

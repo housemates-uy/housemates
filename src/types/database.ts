@@ -39,6 +39,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      access_codes: {
+        Row: {
+          active: boolean
+          code: string
+          created_at: string
+          created_by_admin_id: string | null
+          event_id: string
+          id: string
+          label: string
+          max_uses: number
+          valid_until: string | null
+        }
+        Insert: {
+          active?: boolean
+          code: string
+          created_at?: string
+          created_by_admin_id?: string | null
+          event_id: string
+          id?: string
+          label: string
+          max_uses: number
+          valid_until?: string | null
+        }
+        Update: {
+          active?: boolean
+          code?: string
+          created_at?: string
+          created_by_admin_id?: string | null
+          event_id?: string
+          id?: string
+          label?: string
+          max_uses?: number
+          valid_until?: string | null
+        }
+        Relationships: []
+      }
       admin_logs: {
         Row: {
           action: string
@@ -574,6 +610,7 @@ export type Database = {
           description_md: string | null
           bar_paused: boolean
           door_closed: boolean
+          format: string
           gallery_urls: string[]
           hero_image_url: string | null
           id: string
@@ -595,6 +632,7 @@ export type Database = {
           description_md?: string | null
           bar_paused?: boolean
           door_closed?: boolean
+          format?: string
           gallery_urls?: string[]
           hero_image_url?: string | null
           id?: string
@@ -616,6 +654,7 @@ export type Database = {
           description_md?: string | null
           bar_paused?: boolean
           door_closed?: boolean
+          format?: string
           gallery_urls?: string[]
           hero_image_url?: string | null
           id?: string
@@ -847,6 +886,7 @@ export type Database = {
           id: string
           mp_payment_id: string | null
           order_id: string | null
+          access_code_id: string | null
           mp_preference_id: string | null
           notes: string | null
           paid_at: string | null
@@ -880,6 +920,7 @@ export type Database = {
           id?: string
           mp_payment_id?: string | null
           order_id?: string | null
+          access_code_id?: string | null
           mp_preference_id?: string | null
           notes?: string | null
           paid_at?: string | null
@@ -913,6 +954,7 @@ export type Database = {
           id?: string
           mp_payment_id?: string | null
           order_id?: string | null
+          access_code_id?: string | null
           mp_preference_id?: string | null
           notes?: string | null
           paid_at?: string | null
@@ -1208,12 +1250,22 @@ export type Database = {
           p_discount_code_id: string | null
           p_presale_code: string | null
           p_people: Json
+          p_access_code_id?: string | null
         }
         Returns: string[]
       }
+      access_code_uses: { Args: { p_code_id: string }; Returns: number }
       confirm_order_payment: { Args: { p_order_id: string; p_payment_id: string; p_amount: number }; Returns: Json }
       extend_order_hold: { Args: { p_order_id: string; p_until: string }; Returns: number }
       reverse_order_payment: { Args: { p_order_id: string; p_payment_id: string }; Returns: Json }
+      duplicate_event: {
+        Args: { p_source_id: string; p_title: string; p_slug: string; p_date_start: string; p_date_end: string }
+        Returns: string
+      }
+      event_delete_blocker: { Args: { p_event_id: string }; Returns: string | null }
+      admin_delete_event: { Args: { p_event_id: string }; Returns: Json }
+      admin_delete_bar_product: { Args: { p_product_id: string; p_event_id: string }; Returns: string }
+      admin_delete_discount_code: { Args: { p_code_id: string; p_event_id: string }; Returns: string }
       event_available: { Args: { p_event_id: string }; Returns: number }
       extend_ticket_hold: { Args: { p_ticket_id: string; p_until: string }; Returns: string }
       entry_deadline: { Args: { p_entry_until: string; p_event_start: string }; Returns: string }

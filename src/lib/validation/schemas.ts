@@ -47,9 +47,10 @@ export const eventSchema = z.object({
   date_end: z.string().min(1, 'Fecha de fin requerida'),
   location_name: z.string().min(2, 'Lugar requerido'),
   location_url: z.string().url('URL inválida').optional().or(z.literal('')),
+  format: z.string().trim().min(1, 'Formato requerido (ej. Open air)').max(30, 'Formato: máximo 30 caracteres'),
   capacity: z.coerce.number().int().positive('Capacidad debe ser mayor a 0'),
   status: z.enum(['draft', 'published', 'archived']),
-  description_md: z.string().optional(),
+  description_md: z.string().max(1000, 'Descripción: máximo 1000 caracteres').optional(),
 }).refine((e) => !e.date_start || !e.date_end || e.date_end > e.date_start, {
   message: 'La fecha de fin tiene que ser posterior al inicio',
   path: ['date_end'],

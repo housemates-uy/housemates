@@ -25,6 +25,8 @@ export type NextEvent = {
   time: string; // "23:00", hora de Montevideo
   locationName: string | null;
   locationUrl: string | null;
+  format: string | null; // "Open air", "Indoor": se carga en el evento
+  description: string | null; // texto simple, con saltos de línea (no Markdown)
   salesActive: boolean;
   // purchasable: se puede comprar ahora (activa, sin "agotado manual" y con lugares
   // libres descontando reservas en curso). price en UYU; fee y total incluyen el cargo
@@ -70,6 +72,8 @@ export async function getNextEvent(opts: { presaleCode?: string | null } = {}): 
     time: '',
     locationName: null,
     locationUrl: null,
+    format: null,
+    description: null,
     salesActive: false,
     tandas: [],
   };
@@ -78,7 +82,7 @@ export async function getNextEvent(opts: { presaleCode?: string | null } = {}): 
     const db = createAdminClient({ timeoutMs: 2500 });
     const { data: event } = await db
       .from('events')
-      .select('id, title, date_start, date_end, location_name, location_url, sales_active')
+      .select('id, title, date_start, date_end, location_name, location_url, format, description_md, sales_active')
       .eq('status', 'published')
       .gte('date_end', new Date().toISOString())
       .order('date_start', { ascending: true })
@@ -114,6 +118,8 @@ export async function getNextEvent(opts: { presaleCode?: string | null } = {}): 
       ...describeDate(event.date_start),
       locationName: event.location_name,
       locationUrl: event.location_url,
+      format: event.format,
+      description: event.description_md?.trim() || null,
       salesActive: event.sales_active,
       tandas: tiers.map((t, i) => {
         const upcoming = !t.sold_out_override && !!t.sales_start && new Date(t.sales_start) > new Date();

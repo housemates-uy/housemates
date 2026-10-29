@@ -1,11 +1,12 @@
 import { requireAdmin } from '@/lib/auth/admin';
+import { ContextMenu, ContextMenuButton } from '@/components/admin/context-menu';
 import { SubmitButton } from '@/components/admin/submit-button';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/card';
 import { describeDiscount } from '@/lib/discounts';
 import { formatLocal } from '@/lib/events';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { toggleDiscountCodeAction } from './actions';
+import { deleteDiscountCodeAction, toggleDiscountCodeAction } from './actions';
 import { NewCodeForm } from './new-code-form';
 
 export const metadata = { title: 'Descuentos' };
@@ -29,10 +30,15 @@ export default async function DiscountCodesPage({
     .eq('event_id', params.id)
     .order('created_at', { ascending: false });
 
+  // `uses`: entradas válidas o en curso (lo que cuenta para el tope). `everUsed`: alguna entrada,
+  // de cualquier estado, lo tiene; entonces no se elimina, se pausa.
   const withUses = await Promise.all(
     (codes ?? []).map(async (c) => {
-      const { data } = await db.rpc('discount_code_uses', { p_code_id: c.id });
-      return { ...c, uses: (data as number | null) ?? 0 };
+      const [{ data }, { count }] = await Promise.all([
+        db.rpc('discount_code_uses', { p_code_id: c.id }),
+        db.from('tickets').select('id', { count: 'exact', head: true }).eq('discount_code_id', c.id),
+      ]);
+      return { ...c, uses: (data as number | null) ?? 0, everUsed: !!count };
     }),
   );
   const now = Date.now();
@@ -66,7 +72,34 @@ export default async function DiscountCodesPage({
               const status = !c.active ? 'Pausado' : expired ? 'Vencido' : exhausted ? 'Agotado' : 'Activo';
               const toggle = toggleDiscountCodeAction.bind(null, params.id, c.id, !c.active);
               return (
-                <li key={c.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4">
+                <ContextMenu
+                  key={c.id}
+                  as="li"
+                  label={`Acciones del código ${c.code}`}
+                  items={[
+                    { label: 'Copiar código', copy: c.code, done: `${c.code} copiado` },
+                    ...(isOwner
+                      ? [
+                          {
+                            label: c.active ? 'Pausar' : 'Activar',
+                            hint: c.everUsed ? `Ya se usó: ${c.active ? 'se puede pausar' : 'no se puede eliminar'}` : undefined,
+                            action: toggle,
+                          },
+                          ...(c.everUsed
+                            ? []
+                            : [
+                                {
+                                  label: 'Eliminar',
+                                  danger: true,
+                                  action: deleteDiscountCodeAction.bind(null, params.id, c.id),
+                                  confirm: { title: `¿Eliminar el código ${c.code}?`, body: 'No se puede deshacer.', label: 'Sí, eliminar' },
+                                },
+                              ]),
+                        ]
+                      : []),
+                  ]}
+                  className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4"
+                >
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-bold tracking-wide">{c.code}</p>
@@ -79,14 +112,17 @@ export default async function DiscountCodesPage({
                       {c.valid_until && ` · vence ${formatLocal(c.valid_until, "d/MM 'a las' HH:mm")}`}
                     </p>
                   </div>
-                  {isOwner && (
-                    <form action={toggle}>
-                      <SubmitButton variant="ghost" size="sm">
-                        {c.active ? 'Pausar' : 'Activar'}
-                      </SubmitButton>
-                    </form>
-                  )}
-                </li>
+                  <div className="flex items-center gap-1">
+                    {isOwner && (
+                      <form action={toggle}>
+                        <SubmitButton variant="ghost" size="sm">
+                          {c.active ? 'Pausar' : 'Activar'}
+                        </SubmitButton>
+                      </form>
+                    )}
+                    <ContextMenuButton />
+                  </div>
+                </ContextMenu>
               );
             })}
           </ul>

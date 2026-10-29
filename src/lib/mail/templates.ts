@@ -101,7 +101,7 @@ export type TicketMailData = {
   eventTitle: string;
   dateLong: string; // "Viernes 11 de diciembre · 23:00 hs"
   dateShort: string; // "11.12.26"
-  entryLabel: string; // "Tanda 3" o "Invitación"
+  entryLabel: string; // "Tanda 3" o "Cortesía"
   location: string | null; // "Viña Varela Zarranz"
   locationUrl: string | null; // pin de Google Maps
   ticketUrl: string;
@@ -174,7 +174,7 @@ export function ticketConfirmedEmail(d: TicketMailData) {
   const { payment, total } = d.boughtBy ? { payment: [], total: undefined } : paymentRows(d, 'Total pagado');
 
   const inner = `${heading(
-    d.total === 0 ? 'INVITACIÓN' : d.boughtBy ? 'TE COMPRARON TU ENTRADA' : 'COMPRA CONFIRMADA',
+    d.total === 0 ? 'CORTESÍA' : d.boughtBy ? 'TE COMPRARON TU ENTRADA' : 'COMPRA CONFIRMADA',
     `${d.firstName}, ya tenés tu entrada`,
     `${d.boughtBy ? `${esc(d.boughtBy)} te compró tu entrada. ` : ''}Te esperamos el ${d.dateShort}. Mostrá este QR en puerta junto con tu cédula.`,
   )}

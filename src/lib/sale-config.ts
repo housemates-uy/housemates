@@ -3,6 +3,9 @@
 // ============================================================
 import { createAdminClient } from '@/lib/supabase/admin';
 import { isMercadoPagoConfigured } from '@/lib/mercadopago';
+import { parseMaxPerOrder } from '@/lib/order-limits';
+
+export { DEFAULT_MAX_PER_ORDER, MAX_PER_ORDER_LIMIT, parseMaxPerOrder } from '@/lib/order-limits';
 
 export type SaleConfig = {
   gateEnabled: boolean; // pedir la contraseña para comprar
@@ -13,7 +16,6 @@ export type SaleConfig = {
   maxPerOrder: number; // tope de entradas por compra (la de quien compra + las de sus amigos)
 };
 
-export const DEFAULT_MAX_PER_ORDER = 6;
 
 const KEYS = ['gate_enabled', 'pay_mp_enabled', 'pay_transfer_enabled', 'transfer_details', 'max_tickets_per_order'] as const;
 
@@ -35,9 +37,4 @@ export async function getSaleConfig(): Promise<SaleConfig> {
     transferDetails,
     maxPerOrder: parseMaxPerOrder(map.get('max_tickets_per_order')),
   };
-}
-
-export function parseMaxPerOrder(raw: string | undefined): number {
-  const n = Number(raw);
-  return Number.isInteger(n) && n >= 1 && n <= 20 ? n : DEFAULT_MAX_PER_ORDER;
 }

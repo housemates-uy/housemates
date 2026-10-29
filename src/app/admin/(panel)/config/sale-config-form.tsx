@@ -5,6 +5,7 @@ import { SubmitButton } from '@/components/admin/submit-button';
 import { Field } from '@/components/ui/field';
 import { Input, Textarea } from '@/components/ui/input';
 import { SERVICE_FEE_LABEL } from '@/lib/pricing';
+import { MAX_PER_ORDER_LIMIT } from '@/lib/order-limits';
 import { saveSaleConfigAction, type SaleConfigState } from './actions';
 
 type Values = {
@@ -66,7 +67,7 @@ export function SaleConfigForm({
           label="Mercado Pago"
           hint={
             mpConfigured
-              ? `Tarjeta, débito, saldo o efectivo, con ${SERVICE_FEE_LABEL} de cargo por servicio. La entrada llega al instante.`
+              ? `Tarjeta de débito o crédito, con ${SERVICE_FEE_LABEL} de cargo por servicio. La entrada llega al instante.`
               : 'Todavía no está conectado (falta MP_ACCESS_TOKEN): se muestra en la compra, pero avisa que se habilita pronto y no cobra.'
           }
           defaultChecked={values.mpEnabled}
@@ -82,14 +83,14 @@ export function SaleConfigForm({
         </Field>
         <Field
           label="Máximo de entradas por compra"
-          hint="La de quien compra más las de sus amigos, cada una a nombre de una persona. De 1 a 20: con 1 se compra solo la propia."
+          hint="La de quien compra más las de sus amigos, cada una a nombre de una persona. De 1 a 10: con 1 se compra solo la propia."
         >
           <Input
             type="number"
             name="max_tickets_per_order"
             inputMode="numeric"
             min={1}
-            max={20}
+            max={MAX_PER_ORDER_LIMIT}
             step={1}
             required
             defaultValue={values.maxPerOrder}

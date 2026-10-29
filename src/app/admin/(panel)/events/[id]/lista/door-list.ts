@@ -47,7 +47,7 @@ export async function getDoorList(eventId: string) {
       email: t.buyer_email,
       phone: t.buyer_phone ?? '',
       tier:
-        t.source === 'invitation' ? 'Invitación' : ((t.tier_id && tierName.get(t.tier_id)) ?? ''),
+        t.source === 'invitation' ? 'Cortesía' : ((t.tier_id && tierName.get(t.tier_id)) ?? ''),
       origin:
         SOURCE_LABELS[t.source] +
         (t.source === 'purchase'

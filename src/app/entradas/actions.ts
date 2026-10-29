@@ -13,7 +13,7 @@
 //      la cuenta de la persona; si eligió contraseña, la cuenta se crea recién ahí.
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { hasGateAccess } from '@/lib/auth/gate';
+import { getSessionAccessCode, hasGateAccess } from '@/lib/auth/gate';
 import {
   accountExists,
   ensureProfile,
@@ -111,6 +111,12 @@ function orderError(
         : [err.error, 'code'];
     case 'discount_invalid':
       return [err.error, 'code'];
+    case 'access_exhausted':
+      return n > 1
+        ? [`Tu código de acceso alcanza para ${n - 1} ${n - 1 === 1 ? 'entrada' : 'entradas'}: bajá la cantidad.`, 'quantity']
+        : ['Tu código de acceso ya no tiene entradas disponibles. Escribinos por Instagram.'];
+    case 'access_invalid':
+      return ['Tu código de acceso ya no es válido. Pedinos uno nuevo por Instagram.'];
     case 'transport_full':
       return [
         `${who}No quedan lugares en el bus "${buses[n - 1]?.name ?? ''}". Elegí otra opción o seguí sin transporte.`,
@@ -185,6 +191,7 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
       email: n === 1 && customer ? customer.email : formText(formData, personField('email', n)),
       document: formText(formData, personField('document', n)),
       phone: n === 1 ? formText(formData, 'phone') : '',
+      instagram: formText(formData, personField('instagram', n)),
     });
     if (!parsed.success) {
       const issue = parsed.error.issues[0];
@@ -260,6 +267,11 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
     receipt = checked.file;
   }
 
+  // Código de acceso (§3b): el de la cookie, nunca uno que mande el formulario. Si es de
+  // este evento y le quedan entradas, la compra las descuenta.
+  const sessionCode = await getSessionAccessCode();
+  const accessCodeId = sessionCode && sessionCode.eventId === tier.eventId && sessionCode.left > 0 ? sessionCode.id : null;
+
   // Todas nacen `pending` con reserva. La transferencia pasa a `review` recién con el
   // comprobante subido: si algo se corta en el medio, la reserva vence sola y no quedan
   // entradas en revisión sin comprobante bloqueando cédulas, emails y lugares.
@@ -270,6 +282,7 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
     holdMinutes: method === 'transfer' ? TRANSFER_HOLD_MINUTES : HOLD_MINUTES,
     discountCodeId: code?.id ?? null,
     presaleCode: formText(formData, 'presale') || null,
+    accessCodeId,
     people: people.map((person, i) => ({
       buyer: person,
       amount: prices[i].total,

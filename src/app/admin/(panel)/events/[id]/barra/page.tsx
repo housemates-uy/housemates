@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowDown, ArrowUp } from 'lucide-react';
+import { ContextMenu, ContextMenuButton } from '@/components/admin/context-menu';
 import { SubmitButton } from '@/components/admin/submit-button';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
@@ -9,7 +10,7 @@ import { requireAdmin } from '@/lib/auth/admin';
 import { BAR_STATUS_LABELS, groupUnits } from '@/lib/bar';
 import { formatLocal, formatUYU } from '@/lib/events';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { moveBarProductAction, setBarPausedAction, toggleBarProductAction } from './actions';
+import { deleteBarProductAction, moveBarProductAction, setBarPausedAction, toggleBarProductAction } from './actions';
 import { ProductForm } from './product-form';
 
 export const metadata = { title: 'Barra' };
@@ -62,6 +63,23 @@ export default async function EventBarPage({
   const revenue = rows.reduce((s, r) => s + Number(r.revenue), 0);
   const ended = new Date(event.date_end) < new Date();
   const list = products ?? [];
+
+  // Un trago que está en algún pedido (de cualquier estado) no se elimina: se desactiva.
+  const inOrders = new Set(
+    isOwner
+      ? (
+          await Promise.all(
+            list.map(async (p) => {
+              const { count } = await db
+                .from('bar_order_units')
+                .select('id', { count: 'exact', head: true })
+                .eq('product_id', p.id);
+              return count ? p.id : null;
+            }),
+          )
+        ).filter(Boolean)
+      : [],
+  );
 
   return (
     <div className="max-w-4xl space-y-10">
@@ -137,7 +155,7 @@ export default async function EventBarPage({
           <h2 className="text-lg font-bold tracking-tight">Carta ({list.length})</h2>
           <p className="mt-1 text-sm text-bone/55">
             {isOwner
-              ? 'El orden de esta lista es el de /barra. Cambiar un precio no toca los pedidos ya hechos.'
+              ? 'El orden de esta lista es el de /barra. Cambiar un precio no toca los pedidos ya hechos. Un trago que ya está en pedidos no se elimina: se desactiva.'
               : 'Solo los owners pueden cambiar la carta y pausar la venta.'}
           </p>
         </div>
@@ -149,7 +167,36 @@ export default async function EventBarPage({
         ) : (
           <ul aria-label="Carta" className="divide-y divide-bone/10 rounded-card border border-bone/10">
             {list.map((p, i) => (
-              <li key={p.id} className="px-5 py-4">
+              <ContextMenu
+                key={p.id}
+                as="li"
+                label={`Acciones de ${p.name}`}
+                items={
+                  isOwner
+                    ? [
+                        { label: 'Editar', reveal: `editar-${p.id}` },
+                        {
+                          label: p.active ? 'Desactivar' : 'Activar',
+                          hint: inOrders.has(p.id)
+                            ? `Está en pedidos: ${p.active ? 'se puede desactivar' : 'no se puede eliminar'}`
+                            : undefined,
+                          action: toggleBarProductAction.bind(null, params.id, p.id, !p.active),
+                        },
+                        ...(inOrders.has(p.id)
+                          ? []
+                          : [
+                              {
+                                label: 'Eliminar',
+                                danger: true,
+                                action: deleteBarProductAction.bind(null, params.id, p.id),
+                                confirm: { title: `¿Eliminar ${p.name}?`, body: 'No se puede deshacer.', label: 'Sí, eliminar' },
+                              },
+                            ]),
+                      ]
+                    : []
+                }
+                className="px-5 py-4"
+              >
                 <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -188,11 +235,12 @@ export default async function EventBarPage({
                           {p.active ? 'Desactivar' : 'Activar'}
                         </SubmitButton>
                       </form>
+                      <ContextMenuButton />
                     </div>
                   )}
                 </div>
                 {isOwner && (
-                  <details className="group mt-2">
+                  <details id={`editar-${p.id}`} className="group mt-2">
                     <summary className="cursor-pointer list-none text-xs text-bone/55 underline-offset-4 hover:text-bone hover:underline">
                       <span className="group-open:hidden">Editar</span>
                       <span className="hidden group-open:inline">Cerrar edición</span>
@@ -205,7 +253,7 @@ export default async function EventBarPage({
                     </div>
                   </details>
                 )}
-              </li>
+              </ContextMenu>
             ))}
           </ul>
         )}

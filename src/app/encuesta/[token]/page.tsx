@@ -54,7 +54,7 @@ export default async function SurveyPage({
             {event.title}, {formatLocal(event.date_start, "EEEE d 'de' MMMM")}
           </p>
           <h1 className="mt-3 text-[2.75rem] font-bold leading-[0.95] tracking-[-0.045em]">
-            {ticket.status === 'used' ? `¿Qué tal estuvo, ${firstName}?` : 'Encuesta'}
+            {ticket.status === 'used' ? `¿Cómo la pasaste, ${firstName}?` : 'Encuesta'}
           </h1>
           <span aria-hidden className="mt-6 block h-px w-16 bg-violet" />
         </header>

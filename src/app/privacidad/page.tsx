@@ -135,11 +135,6 @@ export default async function PrivacyPage() {
           </p>
           <ul>
             <li>
-              <strong>Antes de ir.</strong> En general el día anterior a la fiesta, si tenés una entrada válida: la
-              fecha y la hora, el lugar y cómo llegar, qué llevar, las reglas de la casa y tu QR. Usamos tu nombre, tu
-              email y tu entrada.
-            </li>
-            <li>
               <strong>Encuesta.</strong> El día después, si entraste a la fiesta: un link para contarnos cómo estuvo.
               Usamos tu nombre, tu email y el registro de que entraste.
             </li>

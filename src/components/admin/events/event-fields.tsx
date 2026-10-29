@@ -67,6 +67,15 @@ export function EventFields({
         />
       </Field>
 
+      <Field label="Formato" hint="Va al lado de la fecha en la landing, en /entradas y en la entrada. Ej: Open air, Indoor.">
+        <Input
+          value={event.format}
+          maxLength={30}
+          onChange={(e) => onChange('format', e.target.value)}
+          placeholder="Open air"
+        />
+      </Field>
+
       <div className="grid gap-5 sm:grid-cols-2">
         <Field label="Capacidad">
           <Input
@@ -101,9 +110,13 @@ export function EventFields({
         </Field>
       </div>
 
-      <Field label="Descripción (opcional)" hint="Texto libre, soporta Markdown.">
+      <Field
+        label="Descripción (opcional)"
+        hint="Se muestra en la landing, debajo de la próxima fecha, tal cual la escribís (con los saltos de línea)."
+      >
         <Textarea
-          rows={3}
+          rows={4}
+          maxLength={1000}
           value={event.description_md ?? ''}
           onChange={(e) => onChange('description_md', e.target.value)}
         />

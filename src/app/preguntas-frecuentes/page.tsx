@@ -30,6 +30,8 @@ function faq(event: NextEvent, ig: { handle: string; href: string }): Group[] {
       <span className="sr-only"> (abre Google Maps)</span>
     </a>
   ) : null;
+  // El formato es del evento (Open air, Indoor): "al aire libre" va solo si lo es.
+  const openAir = /open air|aire libre/i.test(event.format ?? '');
 
   return [
     {
@@ -232,8 +234,8 @@ function faq(event: NextEvent, ig: { handle: string; href: string }): Group[] {
               {event.id ? (
                 <p>
                   La próxima es el {event.weekday} {event.dateLong}
-                  {where ? <>, en {where}</> : null}. Es open air y arranca a las {event.time}. Sigue hasta la
-                  madrugada.
+                  {where ? <>, en {where}</> : null}. Es {event.format?.toLowerCase()} y arranca a las{' '}
+                  {event.time}. Sigue hasta la madrugada.
                 </p>
               ) : (
                 <p>La próxima fecha está a confirmar: la anunciamos por {instagram}, con el lugar y el horario.</p>
@@ -246,8 +248,8 @@ function faq(event: NextEvent, ig: { handle: string; href: string }): Group[] {
           q: '¿Qué tengo que llevar?',
           a: (
             <p>
-              Tu cédula física (no sirve una foto) y tu entrada en el celu: el link, la imagen o el PDF. Es al aire
-              libre: calzado cómodo y algo de abrigo por si refresca.
+              Tu cédula física (no sirve una foto) y tu entrada en el celu: el link, la imagen o el PDF.
+              {openAir && ' Es al aire libre: calzado cómodo y algo de abrigo por si refresca.'}
             </p>
           ),
         },

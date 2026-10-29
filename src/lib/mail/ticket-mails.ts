@@ -71,7 +71,7 @@ async function loadTicket(ticketId: string) {
     eventTitle: event.title,
     dateLong: formatLocal(event.date_start, "EEEE d 'de' MMMM · HH:mm 'hs'").replace(/^./, (c) => c.toUpperCase()),
     dateShort: formatLocal(event.date_start, 'dd.MM.yy'),
-    entryLabel: t.source === 'invitation' ? 'Invitación' : (tier?.name ?? 'Entrada'),
+    entryLabel: t.source === 'invitation' ? 'Cortesía' : (tier?.name ?? 'Entrada'),
     location: event.location_name || null,
     locationUrl: event.location_name ? mapsUrl(event.location_name, event.location_url) : null,
     ticketUrl: ticketUrl(t.qr_token),

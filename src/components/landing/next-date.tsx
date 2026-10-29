@@ -7,10 +7,11 @@ import { mapsUrl, type NextEvent } from '@/lib/next-event';
 import { cn } from '@/lib/utils';
 
 // Las tandas y los precios se ven recién en /entradas: acá solo la fecha y el botón para ir.
+// Sin evento no hay formato: la fila no va (nunca se inventa).
 export function NextDate({ event }: { event: NextEvent }) {
   const details: [string, React.ReactNode][] = [
     ['Cuándo', event.id ? `${event.weekday} ${event.dateLong} · ${event.time} hs` : 'A confirmar'],
-    ['Formato', 'Open air'],
+    ...(event.format ? [['Formato', event.format] as [string, React.ReactNode]] : []),
     [
       'Dónde',
       event.id && event.locationName ? (
@@ -44,6 +45,11 @@ export function NextDate({ event }: { event: NextEvent }) {
             <p className="mt-5 text-[clamp(3rem,13vw,8rem)] font-bold leading-[0.9] tracking-[-0.04em]">A confirmar</p>
           )}
           <span aria-hidden className="mt-8 block h-px w-24 bg-electric shadow-[0_0_18px_2px_rgba(36,71,245,0.7)]" />
+          {event.description && (
+            <p className="mt-8 max-w-[46ch] whitespace-pre-line text-base leading-relaxed text-bone/65">
+              {event.description}
+            </p>
+          )}
         </Reveal>
 
         <Reveal delay={0.1} className="flex flex-col justify-end">

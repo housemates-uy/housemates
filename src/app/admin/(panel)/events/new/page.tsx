@@ -25,6 +25,7 @@ export default function NewEventPage() {
     date_end: '',
     location_name: '',
     location_url: '',
+    format: 'Open air',
     capacity: 200,
     status: 'draft',
     description_md: '',
@@ -45,7 +46,7 @@ export default function NewEventPage() {
   }
 
   function goToTiers() {
-    if (!event.title || !event.slug || !event.date_start || !event.date_end || !event.location_name) {
+    if (!event.title || !event.slug || !event.date_start || !event.date_end || !event.location_name || !event.format.trim()) {
       setError('Completá todos los campos obligatorios.');
       return;
     }

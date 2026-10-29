@@ -1,38 +1,25 @@
 // ============================================================
-// Comunicación con quienes tienen entrada de un evento.
-// Ver docs/LOGICA_DE_NEGOCIO.md → "Comunicación".
+// Comunicación con quienes fueron a un evento. Ver docs/LOGICA_DE_NEGOCIO.md → "Comunicación".
 // ============================================================
-// - Recordatorio "Antes de ir": a las entradas válidas (`paid`), con el QR embebido.
 // - Encuesta del día después: a quienes entraron (`used`), con link a /encuesta/<token>.
+// (Lo de "antes de ir" se comunica por Instagram: no hay mail de recordatorio.)
 // Cada envío queda en email_log; quien ya tiene un envío `sent` de ese tipo no se repite
 // (salvo "reenviar a todos", que usa `since` para no contar los envíos anteriores).
 // Antes de mandar, cada entrada se reserva en email_log (send_key único, 0019): si dos
 // envíos corren a la vez (dos owners, un doble clic o el cron), cada mail sale una sola vez.
 // Lo usan el admin (resumen del evento) y el cron diario (/api/cron/comunicacion).
-import QRCode from 'qrcode';
-import { entryTime, formatLocal } from '@/lib/events';
-import { mapsUrl } from '@/lib/next-event';
 import { getIgHandle } from '@/lib/site';
 import { createAdminClient, fetchAll } from '@/lib/supabase/admin';
-import { appUrl, ticketUrl } from '@/lib/tickets';
+import { appUrl } from '@/lib/tickets';
 import type { EmailType, TicketStatus } from '@/types/database';
 import { sendMail } from './send';
-import { MAIL_COLORS as C, blend, button, ciMasked, esc, heading, layout, rows, solid } from './templates';
+import { MAIL_COLORS as C, blend, button, heading, layout, solid } from './templates';
 
-export type CommsKind = 'reminder' | 'survey';
+export type CommsKind = 'survey';
 
 const KINDS: Record<CommsKind, { status: TicketStatus; mailType: EmailType }> = {
-  reminder: { status: 'paid', mailType: 'reminder' },
   survey: { status: 'used', mailType: 'survey' },
 };
-
-// Las mismas reglas que muestra la landing (src/components/landing/rules.tsx).
-const RULES = [
-  'El ingreso es por lista.',
-  'Al llegar presentá tu CI y se te coloca un precinto.',
-  'No se venden entradas en puerta.',
-  'Hay ropería: el ticket se compra en barra.',
-];
 
 // Gmail corta si se le abren muchas conexiones a la vez; 4 en paralelo alcanza para que
 // unos cientos de mails entren en un solo envío.
@@ -47,87 +34,12 @@ export function surveyUrl(token: string): string {
   return `${appUrl()}/encuesta/${token}`;
 }
 
-const panel = (html: string) =>
-  `<tr><td style="padding-top:20px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="${solid(C.panel)}border-radius:14px;"><tr><td style="padding:18px 20px;font-size:13px;line-height:1.6;color:${C.soft};">${blend(html)}</td></tr></table></td></tr>`;
-
-const panelTitle = (s: string) => `<strong style="color:${C.bone};font-size:14px;">${esc(s)}</strong>`;
-
 // ---------- Plantillas ----------
-
-export type ReminderMailData = {
-  firstName: string;
-  fullName: string;
-  docTail: string;
-  eventTitle: string;
-  dateLong: string; // "Viernes 11 de diciembre · 23:00 hs"
-  dateShort: string; // "11.12.26"
-  entryLabel: string;
-  location: string;
-  locationUrl: string;
-  arrivalInfo: string | null;
-  ticketUrl: string;
-  igHandle?: string;
-};
-
-export function reminderEmail(d: ReminderMailData) {
-  const subject = `Antes de ir: ${d.eventTitle} · ${d.dateShort}`;
-  const arrival = d.arrivalInfo ? esc(d.arrivalInfo).replace(/\r?\n/g, '<br>') : null;
-  const rules = RULES.map(
-    (r, i) =>
-      `<tr><td valign="top" style="width:28px;padding:4px 0;font-size:12px;font-weight:700;color:${C.muted};">${blend(String(i + 1).padStart(2, '0'))}</td><td style="padding:4px 0;font-size:14px;line-height:1.5;color:${C.bone};">${blend(esc(r))}</td></tr>`,
-  ).join('');
-
-  const inner = `${heading(
-    'ANTES DE IR',
-    `${d.firstName}, te esperamos`,
-    'Acá tenés todo para llegar sin vueltas: dónde es, qué llevar y tu QR.',
-  )}
-<tr><td style="padding-top:28px;">${rows([
-    ['Fecha', d.dateLong],
-    ['Lugar', d.location],
-    ['Entrada', d.entryLabel],
-  ])}</td></tr>
-${button(d.locationUrl, 'Abrir en Google Maps')}
-${arrival ? panel(`${panelTitle('Cómo llegar')}<br>${arrival}`) : ''}
-${panel(
-  `${panelTitle('Qué llevar')}<br>Tu cédula física: sin cédula no se entra, aunque tengas el QR.<br>Tu QR, en el celular o impreso. Lo tenés acá abajo.`,
-)}
-<tr><td style="padding-top:28px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="${solid(C.ink)}border:1px solid ${C.line};border-radius:18px;">
-<tr><td style="padding:20px 24px 0;font-size:13px;color:${C.soft};">${blend(`${esc(d.eventTitle)} · ${esc(d.entryLabel)}`)}</td>
-<td align="right" style="padding:20px 24px 0;font-size:11px;font-weight:700;letter-spacing:2px;">${blend('VÁLIDA')}</td></tr>
-<tr><td colspan="2" align="center" style="padding:18px 24px;">
-<table role="presentation" cellpadding="0" cellspacing="0" style="background:#FFFFFF;border-radius:12px;"><tr><td style="padding:10px;">
-<img src="cid:qr" width="200" height="200" alt="Código QR de la entrada" style="display:block;border:0;">
-</td></tr></table>
-</td></tr>
-<tr><td colspan="2" align="center" style="padding:0 24px 22px;font-size:20px;font-weight:700;">${blend(`${esc(d.fullName)}<br>
-<span style="font-size:13px;font-weight:400;color:${C.soft};">${esc(ciMasked(d.docTail))}</span>`)}</td></tr>
-</table>
-</td></tr>
-${button(d.ticketUrl, 'Ver mi entrada')}
-<tr><td style="padding-top:32px;font-size:16px;font-weight:700;color:${C.bone};">${blend('Cuidemos la casa')}</td></tr>
-<tr><td style="padding-top:10px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rules}</table></td></tr>`;
-
-  const text = [
-    `${d.firstName}, te esperamos en ${d.eventTitle}.`,
-    `Fecha: ${d.dateLong}`,
-    `Lugar: ${d.location} (${d.locationUrl})`,
-    d.arrivalInfo ? `Cómo llegar: ${d.arrivalInfo}` : '',
-    'Qué llevar: tu cédula física (sin cédula no se entra) y tu QR, en el celular o impreso.',
-    `Tu entrada con el QR: ${d.ticketUrl}`,
-    `Cuidemos la casa: ${RULES.join(' ')}`,
-  ]
-    .filter(Boolean)
-    .join('\n');
-
-  return { subject, html: layout(inner, 'Fecha, lugar, qué llevar y tu QR.', d.igHandle), text };
-}
 
 export type SurveyMailData = { firstName: string; eventTitle: string; surveyUrl: string; igHandle?: string };
 
 export function surveyEmail(d: SurveyMailData) {
-  const subject = `¿Qué tal estuvo ${d.eventTitle}?`;
+  const subject = `¿Cómo la pasaste en ${d.eventTitle}?`;
   // Cada número abre la encuesta con ese puntaje ya elegido (no guarda nada: falta enviar).
   const scale = [1, 2, 3, 4, 5]
     .map(
@@ -138,7 +50,7 @@ export function surveyEmail(d: SurveyMailData) {
 
   const inner = `${heading(
     'GRACIAS POR VENIR',
-    `${d.firstName}, ¿qué tal estuvo?`,
+    `${d.firstName}, ¿cómo la pasaste?`,
     'Son tres preguntas y te lleva un minuto. Lo leemos todo para que la próxima sea mejor.',
   )}
 <tr><td align="center" style="padding-top:28px;font-size:14px;color:${C.bone};">${blend('Del 1 al 5, ¿cómo la pasaste?')}</td></tr>
@@ -248,55 +160,21 @@ export async function sendEventComms(
   const startedAt = Date.now();
   const db = createAdminClient();
   const since = opts.since ?? null;
-  const [{ data: event, error }, { data: tiers }, audience, igHandle] = await Promise.all([
-    db
-      .from('events')
-      .select('id, title, date_start, location_name, location_url, arrival_info')
-      .eq('id', eventId)
-      .single(),
-    db.from('ticket_tiers').select('id, name, entry_until').eq('event_id', eventId),
+  const [{ data: event, error }, audience, igHandle] = await Promise.all([
+    db.from('events').select('id, title').eq('id', eventId).single(),
     commsAudience(eventId, kind, since),
     getIgHandle(),
   ]);
   if (error || !event) throw error ?? new Error('Evento no encontrado');
 
-  // Las tandas de ingreso temprano llevan el horario: es lo que más importa recordar el día antes.
-  const tierName = new Map(
-    (tiers ?? []).map((t) => [t.id, t.entry_until ? `${t.name} · ingreso hasta ${entryTime(t.entry_until)}` : t.name]),
-  );
-  const dateLong = formatLocal(event.date_start, "EEEE d 'de' MMMM · HH:mm 'hs'").replace(/^./, (c) => c.toUpperCase());
-  const dateShort = formatLocal(event.date_start, 'dd.MM.yy');
   const { mailType } = KINDS[kind];
   const queue = audience.pending;
 
   async function deliver(t: Recipient): Promise<boolean> {
     const token = t.qr_token!;
     const firstName = t.buyer_name.split(' ')[0];
-    if (kind === 'survey') {
-      const mail = surveyEmail({ firstName, eventTitle: event!.title, surveyUrl: surveyUrl(token), igHandle });
-      return sendMail({ to: t.buyer_email, ...mail });
-    }
-    const url = ticketUrl(token);
-    const mail = reminderEmail({
-      firstName,
-      fullName: t.buyer_name,
-      docTail: t.buyer_document.slice(-4),
-      eventTitle: event!.title,
-      dateLong,
-      dateShort,
-      entryLabel: t.source === 'invitation' ? 'Invitación' : ((t.tier_id && tierName.get(t.tier_id)) || 'Entrada'),
-      location: event!.location_name,
-      locationUrl: mapsUrl(event!.location_name, event!.location_url),
-      arrivalInfo: event!.arrival_info,
-      ticketUrl: url,
-      igHandle,
-    });
-    const qr = await QRCode.toBuffer(url, { width: 400, margin: 1, errorCorrectionLevel: 'M' });
-    return sendMail({
-      to: t.buyer_email,
-      ...mail,
-      attachments: [{ filename: 'entrada-qr.png', content: qr, cid: 'qr' }],
-    });
+    const mail = surveyEmail({ firstName, eventTitle: event!.title, surveyUrl: surveyUrl(token), igHandle });
+    return sendMail({ to: t.buyer_email, ...mail });
   }
 
   // La vuelta del send_key: "Mandar" y el cron comparten la misma; cada "Reenviar a todos"

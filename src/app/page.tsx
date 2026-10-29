@@ -5,22 +5,22 @@ import { Rules } from '@/components/landing/rules';
 import { SiteFooter } from '@/components/landing/site-footer';
 import { SiteNav } from '@/components/landing/site-nav';
 import { getNextEvent } from '@/lib/next-event';
-import { getIgHandle, igUrl } from '@/lib/site';
+import { getIgHandle, getLandingContent, igUrl } from '@/lib/site';
 
 export const revalidate = 60;
 
 export default async function HomePage() {
-  const [event, igHandle] = await Promise.all([getNextEvent(), getIgHandle()]);
+  const [event, igHandle, content] = await Promise.all([getNextEvent(), getIgHandle(), getLandingContent()]);
   const igHref = igUrl(igHandle);
 
   return (
     <>
       <SiteNav igHandle={igHandle} igHref={igHref} />
       <main id="contenido">
-        <Hero event={event} />
+        <Hero event={event} title={content.heroTitle} media={content.media} />
         <NextDate event={event} />
-        <House />
-        <Rules />
+        <House content={content} />
+        <Rules content={content} />
       </main>
       <SiteFooter igHandle={igHandle} igHref={igHref} />
     </>

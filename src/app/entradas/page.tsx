@@ -7,7 +7,8 @@ import { DoodleBackdrop } from '@/components/ui/doodle-backdrop';
 import { Eyebrow } from '@/components/ui/eyebrow';
 import { Logo } from '@/components/ui/logo';
 import { TandaStatus } from '@/components/ui/tanda-status';
-import { hasGateAccess } from '@/lib/auth/gate';
+import { formatAccessCode } from '@/lib/access-codes';
+import { getSessionAccessCode, hasGateAccess } from '@/lib/auth/gate';
 import { getCustomer } from '@/lib/customers';
 import { formatUYU } from '@/lib/events';
 import { getNextEvent } from '@/lib/next-event';
@@ -34,12 +35,17 @@ export default async function EntradasPage({
     redirect(`/access?next=${encodeURIComponent(here)}`);
   }
 
-  const [event, igHandle, sale, customer] = await Promise.all([
+  const [event, igHandle, sale, customer, sessionCode] = await Promise.all([
     getNextEvent({ presaleCode: searchParams.preventa }),
     getIgHandle(),
     getSaleConfig(),
     getCustomer(),
+    getSessionAccessCode(),
   ]);
+  // Código de acceso (§3b): si entró con uno de este evento, la compra no puede pasar de las
+  // entradas que le quedan.
+  const accessCode = sessionCode && sessionCode.eventId === event.id && sessionCode.left > 0 ? sessionCode : null;
+  const maxPerOrder = accessCode ? Math.min(sale.maxPerOrder, accessCode.left) : sale.maxPerOrder;
   // Link de preventa: su tanda aparece ya elegida. Si el código no existe, se avisa.
   const presaleTier = event.tandas.find((t) => t.presale);
   const presaleInvalid = !!searchParams.preventa && !presaleTier;
@@ -86,7 +92,7 @@ export default async function EntradasPage({
               </h1>
               <p className="mt-5 text-base text-bone/65">
                 <span className="capitalize">{event.weekday}</span> {event.dateLong} · {event.time} hs ·
-                Open air
+                {' '}{event.format}
                 {event.locationName && <> · {event.locationName}</>}
               </p>
             </>
@@ -120,7 +126,12 @@ export default async function EntradasPage({
         {canBuy ? (
           <Card className="mt-12 p-6 md:p-8">
             <h2 className="text-xl font-bold tracking-tight">Comprá tu entrada</h2>
-            <p className="mt-2 text-sm text-bone/60">Una entrada por persona, a nombre de quien va.</p>
+            {accessCode && (
+              <p role="status" className="mt-5 rounded-card border border-violet/40 bg-violet/10 px-4 py-3 text-sm text-bone/85">
+                Entraste con el código <strong className="font-semibold">{formatAccessCode(accessCode.code)}</strong>.{' '}
+                {accessCode.left === 1 ? 'Te queda 1 entrada.' : `Te quedan ${accessCode.left} entradas.`}
+              </p>
+            )}
             <div className="mt-7">
               <BuyForm
                 tandas={event.tandas}
@@ -128,7 +139,7 @@ export default async function EntradasPage({
                 presaleCode={presaleTier ? searchParams.preventa : undefined}
                 methods={{ mercadopago: sale.mpEnabled, transfer: sale.transferEnabled }}
                 transferDetails={sale.transferDetails}
-                maxPerOrder={sale.maxPerOrder}
+                maxPerOrder={maxPerOrder}
                 transport={transport.map((o) => ({
                   id: o.id,
                   name: o.name,

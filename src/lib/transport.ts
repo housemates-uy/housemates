@@ -63,7 +63,7 @@ export async function getTransportOptions(eventId: string, { onlyActive = false 
   return withSeats(data ?? []);
 }
 
-// La opción elegida en /entradas (vacío = "No, gracias"). Se revisa antes de crear la
+// La opción elegida en /entradas (vacío = "No"). Se revisa antes de crear la
 // entrada para avisar rápido; el cupo en serio lo garantiza reserve_transport dentro de
 // create_order.
 export async function findTransportChoice(

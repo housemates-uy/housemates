@@ -2,7 +2,7 @@
 
 > Cómo funciona la app, explicado para alguien que no escribió el código.
 > Si cambiás una regla de negocio, actualizá este documento en el mismo PR.
-> Última actualización: 2026-10-28.
+> Última actualización: 2026-10-29.
 
 ---
 
@@ -27,7 +27,7 @@ Las entradas son **QR personales**: una por persona, a nombre y cédula, y de un
 
 | Ruta | Qué hace | Archivo |
 |---|---|---|
-| `/` | Landing: próxima fecha, la casa, reglas y botón Entradas (sin tandas ni precios). Sin evento publicado, o si la base no responde en 2,5 s, dice "Próxima fecha a confirmar": nunca una fecha ni un lugar inventados (`getNextEvent` devuelve `id: null`) | `src/app/page.tsx` |
+| `/` | Landing: próxima fecha (con el formato del evento, p. ej. "Open air", y su descripción si se cargó), la casa, reglas y botón Entradas (sin tandas ni precios). Los textos se cambian en `/admin/landing`. Sin evento publicado, o si la base no responde en 2,5 s, dice "Próxima fecha a confirmar": nunca una fecha ni un lugar inventados (`getNextEvent` devuelve `id: null`) | `src/app/page.tsx` |
 | `/access?next=…` | Pide la contraseña del gate y te manda a `next` | `src/app/access/` |
 | `/ticket/<token>` | La entrada de una persona, con el QR | `src/app/ticket/[token]/page.tsx` |
 | `/compra/resultado` | Adonde vuelve la persona después de pagar en Mercado Pago o de mandar el comprobante. El link a la entrada (y su nombre) se muestra solo a quien la compró: cookie `hm_compra` de este navegador, el `preference_id` de esa compra o la cuenta que la compró. A cualquier otro le dice que la entrada le llega por mail | `src/app/compra/resultado/page.tsx` |
@@ -58,28 +58,64 @@ Las entradas son **QR personales**: una por persona, a nombre y cédula, y de un
 | Ruta | Qué hace | Quién |
 |---|---|---|
 | `/admin` | Inicio: el próximo evento publicado (vale hasta que termina: durante la fiesta dice "Evento en curso") y sus entradas válidas | todos |
-| `/admin/events` | Lista y alta de eventos | todos |
+| `/admin/events` | Lista y alta de eventos. Cada evento tiene Editar y Duplicar a la vista, y un menú (⋯ o clic derecho) con Editar, Duplicar, Archivar/Desarchivar y Eliminar | ver: todos; alta, editar, duplicar, archivar y eliminar: owner |
 | `/admin/confirmar` | **Entradas a confirmar**: las transferencias con comprobante de todos los eventos, para aceptar o declinar (§5.2b). Una tarjeta por compra (con todas sus entradas, §5.2e). En el menú, con un contador de compras pendientes | owner (el staff no la ve) |
-| `/admin/events/<id>` | Resumen del evento, tandas, activar ventas, archivar, preventa (link y mail a quienes vinieron antes) | archivar y mandar la preventa: owner |
+| `/admin/events/<id>` | Resumen del evento, tandas, activar ventas, archivar, preventa (link y mail a quienes vinieron antes), duplicar para otra fecha | ver: todos; editar el evento, tandas (precio, cupo, activar, agotar), ventas, archivar, preventa y duplicar: owner |
+| `/admin/events/<id>/duplicar` | **Duplicar para otra fecha**: título (precargado), Inicio y Fin (hora de Montevideo; el fin se completa con la duración del original). Crea una copia en borrador y lleva a su edición con un aviso para revisar lugar, tandas y precios, transporte y barra | owner |
 | `/admin/events/<id>/ventas` | **Ventas**: entradas válidas contra capacidad, vendidas por tanda, códigos de descuento, ventas por día y, el día del evento, la puerta en vivo (se refresca sola cada 10 s). "Recaudado" incluye transporte y cargo por servicio, con el desglose "Entradas y cargo" / "Transporte". El Resumen del evento usa las mismas "Entradas válidas" (pagas + usadas, con invitaciones) | todos; la plata (recaudado, medios de pago, montos): owner |
 | `/admin/events/<id>/lista` | Descarga la **lista de la puerta** en CSV para Excel (`;`, UTF-8 con BOM) | todos |
 | `/admin/events/<id>/lista/imprimir` | La misma lista para imprimir en blanco y negro, con casilla para tildar a mano | todos |
-| `/admin/events/<id>/tickets` | **Entradas**: transferencias a validar del evento (lo mismo que Entradas a confirmar), cargar manuales/invitaciones, buscar (en la base, por nombre, email o cédula), anular, reembolsar. Lista de a 100 con "Más nuevas / Más viejas"; los totales se cuentan en la base, sin el tope de 1000 filas | todos; validar transferencias, ver comprobantes y la plata (recaudado, montos): owner |
+| `/admin/events/<id>/tickets` | **Entradas**: transferencias a validar del evento (lo mismo que Entradas a confirmar), cargar manuales/invitaciones, buscar (en la base, por nombre, email o cédula), anular, reembolsar. Lista de a 100 con "Más nuevas / Más viejas"; los totales se cuentan en la base, sin el tope de 1000 filas | ver y buscar: todos; cargar entradas e invitaciones, anular, reembolsar, validar transferencias, ver comprobantes y la plata: owner |
 | `/admin/events/<id>/descuentos` | **Descuentos**: códigos del evento y sus usos | crear y pausar: owner |
 | `/admin/events/<id>/barra` | **Barra**: venta abierta/pausada, resumen (pedidos pagos, total vendido, tragos vendidos y entregados por trago), carta y pedidos | todos; carta y pausar venta: owner |
 | `/admin/events/<id>/transporte` | **Transporte**: opciones de bus del evento y pasajeros por opción, con CSV (`/pasajeros`) e imprimible (`/imprimir`) para el chofer (§5.8) | todos; cambiar opciones: owner |
 | `/admin/scan/<id>` | **Puerta**: scanner de QR, pantalla completa, solo celular | todos; cerrar puerta: owner |
 | `/admin/barra/<id>` | **Escáner de barra**: un QR = un trago, pantalla completa; sin QR, por email | todos |
 | `/admin/config` | Venta (pedir contraseña sí/no, medios de pago, datos para transferir, máximo de entradas por compra) y contraseña del gate | cambiar: owner |
+| `/admin/landing` | **Landing**: título de la portada, La casa (título, texto y créditos opcionales), Reglas (título y lista: agregar, sacar, reordenar, hasta 12) e Instagram del sitio. **Fotos y videos**: maqueta de la portada (compu y celular) y de la grilla de La casa; tocar un lugar para cambiarlo por una foto o un video, editar su texto alternativo o volver a la original. Ver "Landing" abajo | owner (el staff no la ve) |
+| `/admin/events/<id>/accesos` | **Accesos**: códigos de acceso del evento (§3b) | owner (el staff no la ve) |
 | `/admin/account` | Cambiar mi contraseña | todos |
 | `/admin/admins` | Usuarios | owner |
-| `/admin/logs` | **Historial**: las últimas 200 acciones, con fecha (hora de Montevideo), quién, qué y el detalle "Campo: antes → después" al editar evento, tanda y configuración de venta (incluidos los datos para transferir; nunca la contraseña) | owner |
+| `/admin/logs` | **Historial**: las últimas 200 acciones, con fecha (hora de Montevideo), quién, qué y el detalle "Campo: antes → después" al editar evento, tanda, configuración de venta (incluidos los datos para transferir; nunca la contraseña) y la landing (incluido el Instagram, y las fotos y videos: lugar, archivo antes → después y texto alternativo) | owner |
+
+**Menú de acciones (clic derecho), solo en el admin** (`src/components/admin/context-menu.tsx`):
+- En las listas del admin (eventos, tandas, transporte, carta, descuentos, accesos y entradas), el clic derecho, mantener apretado en el celular, Shift+F10 o el botón ⋯ abren las acciones de esa fila.
+- Son las mismas acciones y permisos que los botones: el staff solo ve lo que puede hacer (en Entradas: Ver entrada y Reenviar mail; en Descuentos: Copiar código).
+- Anular, reembolsar, archivar y eliminar piden confirmación.
+- La web pública no tiene este menú: ahí el clic derecho es el del navegador.
 
 **Edición de eventos y tandas:**
-- Archivar y desarchivar (también desde Editar y en el alta) es solo de owners; archivar apaga las ventas.
+- Archivar y desarchivar (también desde Editar y en el alta) es solo de owners; archivar apaga las ventas. **Desarchivar** deja el evento en borrador.
+- **Eliminar** (`0025_admin_delete.sql`, solo owners, con la confirmación "¿Eliminar X? No se puede deshacer"). Solo se elimina lo que nunca se usó; lo demás se archiva, se desactiva o se pausa:
+  - **Evento:** solo si nunca tuvo entradas (de ningún estado), pedidos de barra ni escaneos en la puerta o la barra (`event_delete_blocker`). Se va con sus tandas, transporte, carta y códigos en una sola transacción (`admin_delete_event`). Si no se puede, el menú ofrece archivarlo y dice por qué.
+  - **Tanda:** solo sin ninguna entrada; si no, se desactiva.
+  - **Opción de transporte:** solo si nadie la eligió; si no, se desactiva.
+  - **Trago:** solo si no está en ningún pedido (`admin_delete_bar_product`); si no, se desactiva.
+  - **Código de descuento o de acceso:** solo si ninguna entrada lo usó, de ningún estado (`admin_delete_discount_code`; el de acceso lo frena la base); si no, se pausa.
+  - Todo queda en el Historial (`delete_event`, `delete_tier`, `delete_transport_option`, `delete_bar_product`, `delete_discount_code`, `delete_access_code`, `unarchive`) con el nombre de lo eliminado y, en un evento, la lista de lo que se borró con él.
 - El nombre de la tanda es único por evento sin importar mayúsculas. El cupo no puede quedar por debajo de lo vendido (el servidor lo controla).
 - Si las tandas activas suman más que la capacidad del evento, se avisa: se vende hasta la capacidad, invitaciones incluidas (§4.3).
 - El alta es atómica: si fallan las tandas, no queda el evento creado.
+- **Duplicar** (`duplicate_event`, migración `0023`, una sola transacción): para cada fiesta nueva se copia la anterior y se ajusta a mano.
+  - **Se copia:** lugar, URL del mapa, capacidad, formato, descripción, hero, galería y lineup; las tandas (nombre, descripción, precio, cupo, orden, activa, ingreso temprano y código de preventa) con 0 vendidas, sin agotar a mano y sin fechas de salida a la venta; el transporte (nombre, punto y horario de salida, precio, cupo, activa) en el mismo orden; la carta de la barra (nombre, descripción, precio, activo, orden).
+  - **Cómo queda:** borrador, ventas apagadas, puerta abierta y barra sin pausar. Slug desde el título, con -2, -3… si ya existe.
+  - **No se copia:** entradas, compras, check-ins, códigos de descuento y de acceso, pedidos de barra, comunicaciones ni encuestas.
+  - Queda en el Historial (`duplicate_event`) con de qué evento se copió.
+- **Formato** (`events.format`, migración `0022`, por defecto "Open air", hasta 30 caracteres): sale en la landing, `/entradas`, la entrada y Preguntas frecuentes. "Es al aire libre: calzado cómodo…" sale solo si el formato dice open air o aire libre.
+- **Descripción** (`description_md`, hasta 1000 caracteres): texto simple con saltos de línea debajo de la próxima fecha, sin Markdown.
+
+**Landing** (`/admin/landing`, `src/lib/landing.ts`, `getLandingContent` en `src/lib/site.ts`):
+- Claves en `site_config`: `landing_hero_title`, `landing_house_title`, `landing_house_text` (un renglón vacío arma otro párrafo), `landing_house_credits` (vacío = no se muestra), `landing_rules_title`, `landing_rules` (una por renglón, hasta 12 de 160 caracteres) e `ig_handle` (se normaliza y se guarda con @; es el Instagram de toda la web y de los mails).
+- Si una clave no está, va el texto de siempre (`LANDING_DEFAULTS`). Si la base no responde en 2,5 s, también.
+- Se guarda solo lo que cambió, queda en el Historial (`update_landing`, con antes y después) y se actualiza todo el sitio.
+- **Fotos y videos** (`0024_landing_media.sql`, `src/app/admin/(panel)/landing/media-editor.tsx`):
+  - **Lugares:** 11: portada compu (`hero-desktop`), portada celular (`hero-mobile`) y La casa 1 a 9 en orden de lectura. Cualquiera puede ser foto o video. Por defecto, los de `public/photos` y `public/video` (`LANDING_MEDIA_DEFAULTS` en `src/lib/landing.ts`).
+  - **Dónde se guarda:** `site_config.landing_media`, un JSON solo con los lugares cambiados (tipo, URL, poster si es video, texto alternativo y medidas). Solo se acepta el archivo de siempre de ese lugar o uno del bucket de ese lugar; si la base no responde, van los de siempre.
+  - **Archivos:** bucket público `landing` de Supabase Storage: fotos JPG, PNG, WebP o AVIF hasta 15 MB y videos MP4, WebM o MOV hasta 50 MB. El navegador sube directo con un link firmado que el servidor da solo a owners (Vercel corta los pedidos en 4,5 MB), con barra de avance. De cada video se saca el primer cuadro como imagen fija.
+  - **Al reemplazar o volver a la original** se borra del bucket el archivo anterior (nunca los de `public/`), queda en el Historial (`update_landing_media`) y la landing se actualiza.
+  - **Texto alternativo:** obligatorio en La casa; la portada no lo lleva porque es de fondo.
+  - **En la landing:** las fotos pasan por `next/image` (`remotePatterns` con el host de Supabase en `next.config.mjs`); los videos, sin sonido, en loop, se bajan al entrar en pantalla y con "reducir movimiento" se ve solo la imagen fija.
+  - Límite conocido: si dos owners guardan lugares distintos en el mismo segundo, el último puede pisar al otro.
 
 ### Endpoints de máquina
 
@@ -103,6 +139,22 @@ Las entradas son **QR personales**: una por persona, a nombre y cédula, y de un
 - Si en la base no hay contraseña cargada, se usa la variable `GATE_PASSWORD`.
 - **5 intentos cada 15 minutos por IP** (§8c). El sexto, aunque sea la contraseña correcta, recibe 429 con "Hiciste muchos intentos seguidos...".
 - **Modo local sin claves** (`src/lib/auth/local-mode.ts`): saltea esta contraseña y el login del admin **solo en la máquina de quien desarrolla**. Exige `npm run dev` (en producción `NODE_ENV` es `production`), `LOCAL_SIN_CLAVES=1`, que no sea Vercel (`VERCEL`) y que la base sea la de Docker (`127.0.0.1`/`localhost`). `npm run dev` escucha solo en `127.0.0.1`, así nadie de la misma red entra al admin. En la web publicada nunca aplica.
+
+## 3b. Códigos de acceso
+
+La venta es selectiva: quien quiere ir les escribe por Instagram y los owners deciden. Si le dicen que sí, le generan un **código de acceso para X entradas** (por ejemplo, para ella y sus amigas) y se lo pasan.
+
+- **Se crean** en Admin → evento → **Accesos** (solo owners): para quién (texto libre, "Sofi @sofi.mates y amigas"), cuántas entradas (1 a 1000) y vencimiento opcional. El código son 8 letras y números al azar sin caracteres que se confunden (`K7P2-QX9M`, `src/lib/access-codes.ts`). Se copia el código o el link `/acceso/<código>`, o se manda por WhatsApp.
+- **Se usa:** abriendo el link (`src/app/acceso/[codigo]/route.ts`) o escribiéndolo en `/access`, en la misma caja que la contraseña ("Contraseña o código"). Queda guardado en la cookie de acceso (`hm_access`, 24 h). Con la contraseña de compra prendida, el código da acceso a `/entradas` mientras le queden entradas.
+- **En `/entradas`** aparece "Entraste con el código K7P2-QX9M. Te quedan N entradas", y el selector de cantidad no pasa de esas N (ni del máximo por compra).
+- **Cada entrada comprada con el código gasta un uso** y queda marcada con él (`tickets.access_code_id`). Cuentan las vivas y las reservas vigentes (`access_code_uses`): una compra abandonada devuelve el uso cuando vence la reserva. La compra usa el código de la cookie, nunca uno que mande el formulario.
+- **Todo o nada** (`create_order`, `0021_access_codes.sql`): bloquea la fila del código, así dos compras no se llevan el último uso. Si no alcanza: "Tu código de acceso alcanza para N entradas: bajá la cantidad". Si la misma persona reintenta, su reserva anterior se anula y no gasta otro uso.
+- **Deja de servir** si se pausa en el admin, si vence, si se usaron todas sus entradas o si terminó su evento. En `/access` se dice por qué (no existe o venció, ya se usó).
+- **Para una historia de Instagram:** el mismo código con más usos (por ejemplo 20) y un vencimiento corto.
+- **Estados en el admin:** Activo, Pausado (lo pausó un owner), Vencido o Agotado. El vencimiento se pone en hora de Montevideo y no puede estar en el pasado.
+- **Trazabilidad:** en Accesos, cada código muestra "X de N usadas" y se despliegan las entradas compradas con él (nombre, CI y estado). En la pestaña Entradas, cada entrada dice "Código K7P2-QX9M · para …" (solo lo ven los owners). El Historial registra crear, pausar y activar.
+- **Límite de intentos:** 20 cada 15 minutos por IP para los códigos (un grupo de amigas en el mismo wifi entra con el mismo código; con 8 caracteres al azar no se pueden adivinar). La contraseña sigue en 5 cada 15 minutos.
+- Si la contraseña de compra está apagada, cualquiera compra igual; el código (si entró con el link) solo marca las entradas y respeta sus usos.
 
 ---
 
@@ -139,20 +191,21 @@ Una reserva `pending` no se anula desde el admin: vence sola a los 20 minutos. S
 |---|---|---|---|
 | `purchase` | Compra web, con Mercado Pago o transferencia (`payment_method`) | Precio de la tanda − descuento; + cargo por servicio solo con Mercado Pago | Sí (reserva al empezar, confirma al pagar o al validar) |
 | `manual` | Un admin la carga: se cobró por transferencia | Lo que se cobró | Sí |
-| `invitation` | Un admin la carga: gratis | 0 | No (no tiene tanda) |
+| `invitation` | Un admin la carga eligiendo **"Cortesía (gratis)"** en Tipo: el monto queda en $0 fijo | 0 | No (no tiene tanda), pero cuenta para la capacidad del evento |
 
-Las tres generan el **mismo tipo de QR** y pasan por el **mismo scanner**.
+Las tres generan el **mismo tipo de QR** y pasan por el **mismo scanner**. En la web, el admin, la puerta y los mails, las `invitation` se muestran como **Cortesía**.
 
 ### 4.3 Reglas
 
 1. **Una entrada por email y una por cédula, por evento.** Solo cuentan las entradas vivas (`pending`, `review`, `paid`, `used`): si una se anuló, la persona puede volver a tener otra.
    - El email se compara normalizado: en Gmail, `Juan.Perez+fiesta@gmail.com` = `juanperez@gmail.com` (`normalizeEmail`).
    - La cédula se guarda solo con dígitos y 8 cifras: `1.234.567-2` = `12345672` (`normalizeDocument`). Se valida el dígito verificador uruguayo.
-2. **Datos obligatorios:** nombre, cédula y email. Celular opcional. La compra web no pide Instagram; en las entradas manuales el admin puede anotarlo (opcional).
+2. **Datos obligatorios:** nombre, cédula y email. Celular (solo quien compra) e Instagram (cada persona), opcionales.
 3. **Stock por tanda.** Disponibles = total − vendidas − reservas web en curso (`tier_available`).
    - **Capacidad del evento** (`events.capacity`, migración `0018`): además del cupo de cada tanda, no se vende por encima de la capacidad. Libres = capacidad − entradas vivas, invitaciones incluidas (`event_available`). `create_ticket` lo controla bloqueando la fila del evento; la landing y `/entradas` muestran cada tanda como agotada si el evento está lleno. Las invitaciones no se frenan, pero cuentan.
-4. **"Agotado manual"** (`sold_out_override` en la tanda): corta la venta web aunque quede stock. Las entradas manuales lo ignoran, porque ya se cobraron.
-5. **Una invitación no tiene tanda** ni descuenta stock.
+4. **"Agotado manual"** (`sold_out_override` en la tanda): corta la venta web aunque quede stock.
+5. **Excepciones de los owners** (`0026_manual_ticket_override.sql`): una entrada cargada a mano en el admin puede ser de una tanda agotada (por cupo o a mano) y pasar la capacidad del evento; el formulario avisa "Tanda agotada: se carga igual, como excepción". Los cupos y la capacidad los respeta solo la compra web.
+6. **Una cortesía (invitación) no tiene tanda** ni descuenta stock de la tanda.
 
 Todo esto lo hace la función `create_ticket` en Postgres (`supabase/migrations/0006_ticketing.sql`; la última versión, con preventa, tandas próximas y capacidad del evento, está en `0018_event_capacity.sql`). Bloquea la tanda mientras crea la entrada, así dos compras por el último lugar nunca salen las dos.
 
@@ -287,7 +340,8 @@ Se cargan en el alta y en la edición de los tiers (Admin → evento → Editar)
 
 Quien compra puede sumar entradas para sus amigos y pagar todo junto. Cada entrada sigue siendo **nominativa**: una por persona, con su nombre, cédula y email.
 
-- **Cuántas:** de 1 hasta el tope de `/admin/config` → "Máximo de entradas por compra" (`site_config.max_tickets_per_order`, arranca en 6).
+- **Cuántas:** de 1 hasta el tope de `/admin/config` → "Máximo de entradas por compra" (`site_config.max_tickets_per_order`, arranca en 6, máximo 10). Si entró con un código de acceso (§3b), además hasta las entradas que le quedan al código.
+- **Fichas:** "Entrada 1" (la de quien compra), "Entrada 2", "Entrada 3"…
 - **La entrada 1 es siempre la de quien compra** (con celular opcional y su cuenta, si tiene). Las demás piden nombre, cédula y email de cada amigo, obligatorios. En una misma compra no se pueden repetir emails ni cédulas, y valen las reglas de siempre: una entrada por email y una por cédula por evento (§4.3).
 - **Misma tanda para todas.** El código de descuento se aplica a cada entrada y cada una gasta un uso: si no alcanzan los usos, se avisa cuántas entradas cubre.
 - **Transporte por persona:** cada uno elige su bus o ninguno.
@@ -447,14 +501,14 @@ página de pago de Mercado Pago
 
 Bus opcional que se suma al comprar la entrada (la fiesta es fuera de Montevideo). Código: `src/lib/transport.ts`, `src/app/admin/(panel)/events/[id]/transporte/` · migración `0015_transport.sql`.
 
-- **Opciones por evento**, en Admin → evento → **Transporte** (solo owners): nombre ("Ida", "Vuelta", "Ida y vuelta"), punto y horario de salida (texto libre), precio y cupo opcional. Se activan o desactivan. Una opción que alguien eligió no se borra: se desactiva.
+- **Opciones por evento**, en Admin → evento → **Transporte** (solo owners): nombre ("Ida", "Vuelta", "Ida y vuelta"), punto y horario de salida (texto libre), precio y cupo opcional. Se activan o desactivan. Eliminar está en el menú de la fila (⋯ o clic derecho): una opción que alguien eligió no se borra, se desactiva.
 - **En `/entradas`**, antes de "¿Cómo querés pagar?": "¿Necesitás transporte?" con "No, gracias" (por defecto) y las opciones activas con precio, horario y "Quedan N" si tienen cupo ("Sin lugares" si se llenó). Va antes del pago para que el total a transferir ya incluya el bus. Sin opciones activas, no aparece.
 - **Precio:** se suma al total. El código de descuento aplica solo a la entrada. Con Mercado Pago el cargo del 7,5 % va sobre todo lo que se cobra (entrada con descuento + bus); con transferencia no hay cargo. Ej.: $1.600 + bus $400 → Mercado Pago $2.150 (cargo $150); transferencia $2.000.
 - **Registro:** `amount_paid_uyu` guarda el total cobrado (entrada + bus + cargo), así cierra con lo que confirma Mercado Pago. El bus va en `ticket_transport` (una fila por entrada) con el precio del momento: cambiar el precio de la opción no toca a quien ya compró. En Mercado Pago es una línea más de la preferencia ("Transporte · …"). Reembolsar devuelve el total, bus incluido.
 - **Cupo:** cuenta solo entradas vivas (`pending` sin vencer, `review`, `paid`, `used`). Si la entrada se anula, se rechaza la transferencia o vence la reserva de Mercado Pago, el lugar se libera solo.
   - Justo después de `create_ticket`, `reserve_transport` bloquea la opción (como la tanda) y reserva el lugar. Si no hay, borra en la misma transacción la entrada recién creada (todavía sin pago ni comprobante): la persona ve "No quedan lugares en el bus…" y no se crea ni se cobra nada.
   - Igual que con la tanda, un pago de Mercado Pago aprobado después de vencida la reserva se honra, y puede pasar el cupo por 1.
-- **Dónde se ve:** la entrada (`/ticket/<token>`), los mails "Recibimos tu comprobante", "Entrada confirmada" y el aviso a los owners (línea "Transporte" en el desglose, más el punto y horario), Mis entradas y Admin → Entradas ("Bus: …").
+- **Dónde se ve:** la entrada (`/ticket/<token>`), los mails "Recibimos tu comprobante", "Entrada confirmada" y el aviso a los owners (línea "Transporte" en el desglose, más el punto y horario), Mis entradas y Admin → Entradas ("Bus: …"). Siempre es el mismo texto que se ve al elegir el bus, completo y sacado de la opción, así que si se edita en el admin cambia en todos lados (en los mails, desde el próximo que se mande).
 - **Lista para el chofer:** Admin → Transporte muestra los pasajeros de cada opción (nombre, cédula, celular, estado). "Descargar CSV" (`;`, UTF-8 con BOM) e "Imprimir" (una hoja por opción, con casilla para tildar) llevan solo entradas válidas (pagas o usadas): una transferencia sin validar no figura.
 - **Fuera de alcance:** las entradas manuales e invitaciones no llevan bus; si hace falta, se arregla por fuera.
 
@@ -468,11 +522,15 @@ Bus opcional que se suma al comprar la entrada (la fiesta es fuera de Montevideo
 | Preventa (código) y tandas que todavía no salieron | `create_ticket` (`0014`): `presale_required`, `tier_not_started` |
 | Ingreso temprano en puerta (aviso, `late_entry`) | `entry_deadline`, `inspect_ticket`, `check_in_ticket` (`0014`) |
 | A quién le llega el mail de preventa | `presale_audience` + `presale_sends` (`0014`) · `src/lib/mail/presale-mails.ts` |
-| Comprar varias entradas (todo o nada, una por persona) | `create_order` — `0020_group_purchase.sql` · `createOrder` en `src/lib/tickets.ts` · `startCheckoutAction` |
+| Comprar varias entradas (todo o nada, una por persona) | `create_order` — `0020_group_purchase.sql` (última versión, con código de acceso, en `0021`) · `createOrder` en `src/lib/tickets.ts` · `startCheckoutAction` |
+| Eliminar desde el admin (qué se puede y qué no) | `event_delete_blocker`, `admin_delete_event`, `admin_delete_bar_product`, `admin_delete_discount_code` — `supabase/migrations/0025_admin_delete.sql` · menú: `src/components/admin/context-menu.tsx` |
+| Duplicar un evento (qué se copia y qué no) | `duplicate_event` — `supabase/migrations/0023_duplicate_event.sql` · `src/app/admin/(panel)/events/[id]/duplicar/` |
+| Textos de la landing e Instagram | `src/lib/landing.ts` · `getLandingContent` en `src/lib/site.ts` · `src/app/admin/(panel)/landing/` |
+| Códigos de acceso (usos, vencimiento, cookie) | `access_codes`, `access_code_uses` (`0021`) · `src/lib/access-codes.ts` · `getSessionAccessCode` / `hasGateAccess` en `src/lib/auth/gate.ts` · `/api/gate`, `/acceso/<código>` |
 | Confirmar pago (idempotente, controla el monto, pagos tarde o repetidos, todo el grupo) | `confirm_order_payment` (`0020`; misma lógica que `confirm_ticket_payment` de `0017`) · `syncPayment` en `src/lib/mercadopago.ts` |
 | Reserva que espera un pago pendiente; devolución o contracargo desde MP | `extend_order_hold` / `reverse_order_payment` (`0020`) |
 | Capacidad del evento | `event_available` y `create_ticket` (`0018_event_capacity.sql`) · `src/lib/next-event.ts` |
-| No repetir recordatorio, encuesta ni preventa | `0019_comms_dedupe.sql` (`email_log.send_key` + `sending`) · `src/lib/mail/event-mails.ts`, `src/lib/mail/presale-mails.ts` |
+| No repetir encuesta ni preventa | `0019_comms_dedupe.sql` (`email_log.send_key` + `sending`) · `src/lib/mail/event-mails.ts`, `src/lib/mail/presale-mails.ts` |
 | Anular / devolver stock | `cancel_ticket` — misma migración |
 | Puerta: consultar sin cambiar / confirmar / cancelar | `inspect_ticket`, `reject_check_in` (`0007_door_two_step.sql`) y `check_in_ticket` (`0006`) |
 | Normalizar email/CI/IG, token, URL del QR | `src/lib/tickets.ts` |
@@ -543,7 +601,7 @@ Bus opcional que se suma al comprar la entrada (la fiesta es fuera de Montevideo
 - **Instagram del pie y de los botones:** sale de `site_config.ig_handle` (`getIgHandle()`), como en la web.
 - **Preventa:** lleva al pie cómo darse de baja (responder el mail o escribir por Instagram). La baja se carga poniendo el email en la tabla `whitelist` con status `banned`, que `presale_audience` ya excluye.
 - La cédula enmascarada usa espacios de no corte, para que no se parta en dos líneas en el celular.
-- Estos mails (Antes de ir, encuesta y preventa) están declarados en `/privacidad`.
+- Estos mails (encuesta y preventa) están declarados en `/privacidad`.
 - **Pendiente:** dominio propio + `no-reply@` con Resend; ver `docs/BACKLOG.md`.
 
 ## 8b. Caché
@@ -586,23 +644,18 @@ Las consultas a Supabase se hacen con `cache: 'no-store'` (`src/lib/supabase/adm
 - **Invitaciones sin control de capacidad total.** No descuentan de ninguna tanda.
 - **Barra: devoluciones por fuera.** No hay reembolso de barra desde el admin, y si se devuelve un pago desde el panel de Mercado Pago el webhook no lo marca `refunded`: esos QRs siguen valiendo hasta que alguien cambie el pedido a mano.
 
-## 10. Comunicación con quienes tienen entrada
+## 10. Encuesta del día después
 
-En Admin → evento → **Resumen**, sección "Comunicación". Mandar: solo owners.
+En Admin → evento → **Resumen**, sección "Encuesta". Mandar: solo owners. Lo de "antes de ir" (fecha, lugar, qué llevar) se comunica por **Instagram**: no hay mail de recordatorio.
 
-| Mail | A quién | Qué lleva |
-|---|---|---|
-| **Antes de ir** (recordatorio) | Entradas válidas (`paid`) | Fecha y hora, lugar con link a Google Maps, "Cómo llegar" (si se cargó), qué llevar (cédula física + QR), las reglas de la landing y su entrada con el QR embebido |
-| **Encuesta** | Quienes entraron (`used`) | Link a `/encuesta/<token>` (el mismo token del QR, que ya no sirve para entrar). Tocar un número del mail abre la encuesta con ese puntaje elegido |
-
-- **No se repite:** cada envío queda en `email_log` (`reminder` / `survey`). "Mandar" va solo a quien no tiene un envío exitoso de ese tipo; los que fallaron quedan pendientes. **"Reenviar a todos"** manda de nuevo a todos.
-- **Dos envíos a la vez no duplican** (`0019_comms_dedupe.sql`): cada destinatario se reserva antes de mandar (fila de `email_log` en `sending` con `send_key` único) y el mail sale solo si la reserva entró; después pasa a `sent` o `failed`. Vale para dos owners a la vez, un doble clic o el cron mientras alguien manda a mano. El aviso dice a cuántos "ya se lo estaba mandando otro envío". Una reserva colgada más de 10 minutos se reintenta. Límite conocido: dos "Reenviar a todos" iniciados a la vez sí pueden duplicar.
-- El Instagram del pie sale de `site_config.ig_handle`, como el resto de los mails.
+- **A quién:** a quienes entraron (`used`). Link a `/encuesta/<token>` (el mismo token del QR, que ya no sirve para entrar). Tocar un número del mail abre la encuesta con ese puntaje elegido.
+- **No se repite:** cada envío queda en `email_log` (`survey`). "Mandar" va solo a quien no tiene un envío exitoso; los que fallaron quedan pendientes. **"Reenviar a todos"** manda de nuevo a todos.
+- **Dos envíos a la vez no duplican** (`0019_comms_dedupe.sql`): cada destinatario se reserva antes de mandar (fila de `email_log` en `sending` con `send_key` único) y el mail sale solo si la reserva entró. Una reserva colgada más de 10 minutos se reintenta. Límite conocido: dos "Reenviar a todos" iniciados a la vez sí pueden duplicar.
 - **Por tandas:** un clic manda durante unos 45 segundos (4 mails en paralelo). Si quedan pendientes, el aviso dice cuántos y se toca de nuevo. Si fallan 5 seguidos (por ejemplo, se llegó al límite de Gmail), se corta.
-- **"Cómo llegar":** texto libre del evento (`events.arrival_info`), opcional. Va en el recordatorio, abajo del link a Maps.
-- **Automático:** `GET /api/cron/comunicacion`, una vez por día a las 12:00 de Montevideo (`vercel.json`). El día anterior al evento manda el recordatorio a quien no lo recibió, y el mismo día lo vuelve a intentar con los que compraron después. El día siguiente, ya terminado el evento, manda la encuesta, y al otro día repite con los pendientes. Pide `CRON_SECRET`: sin esa variable solo responde en desarrollo.
+- **Automático:** `GET /api/cron/comunicacion`, una vez por día a las 12:00 de Montevideo (`vercel.json`). El día siguiente al evento, ya terminado, manda la encuesta a quien no la recibió, y al otro día repite con los pendientes. Pide `CRON_SECRET`: sin esa variable solo responde en desarrollo.
 - **Encuesta** (`/encuesta/<token>`): puntaje del 1 al 5, "¿Qué mejorarías?" (opcional) y "¿Volverías a la próxima?". Una respuesta por entrada (`event_feedback`, `ticket_id` único): si vuelve a entrar, la ve cargada y la puede cambiar. Un token que no existe da 404. Una entrada que no se usó en puerta ve "Esta encuesta es para quienes vinieron".
 - **Resultados** en la misma sección: promedio, cuántos respondieron de los que entraron, % que volvería, puntajes y los comentarios (sin nombre).
-- **Límite de Gmail:** unos 500 mails por día **en total**, contando las entradas que se venden ese día. Con más de ~400 entradas, el recordatorio puede dejar a Gmail sin cupo para los mails de compra; hasta tener Resend (ver `docs/BACKLOG.md`), conviene mandarlo a mano un par de días antes.
+- El Instagram del pie sale de `site_config.ig_handle`, como el resto de los mails.
+- `events.arrival_info` ("Cómo llegar") quedó sin uso: solo iba en el recordatorio.
 
 Código: `src/lib/mail/event-mails.ts` · `src/app/admin/(panel)/events/[id]/comms.tsx` · `src/app/encuesta/[token]/` · `src/app/api/cron/comunicacion/route.ts` · SQL: `0013_event_comms.sql`.

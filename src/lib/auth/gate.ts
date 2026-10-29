@@ -4,6 +4,7 @@ import { getIronSession, type SessionOptions } from 'iron-session';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { GATE_COOKIE, GATE_TTL_SECONDS, type GateSession } from '@/lib/auth/gate-shared';
 import { isLocalNoAuth } from '@/lib/auth/local-mode';
+import { findAccessCode, type AccessCodeState } from '@/lib/access-codes';
 
 export { GATE_COOKIE, GATE_TTL_SECONDS, type GateSession };
 
@@ -67,10 +68,22 @@ export async function isGateEnabled(): Promise<boolean> {
   }
 }
 
+// El código de acceso con el que entró esta persona (§3b), si sigue sirviendo. Vale aunque la
+// contraseña esté apagada: la compra lo usa para descontar sus entradas.
+export async function getSessionAccessCode(): Promise<AccessCodeState | null> {
+  const session = await getGateSession();
+  return session.accessCodeId ? findAccessCode({ id: session.accessCodeId }) : null;
+}
+
 export async function hasGateAccess(): Promise<boolean> {
   if (isLocalNoAuth()) return true;
   if (!(await isGateEnabled())) return true;
   const session = await getGateSession();
+  // Entró con un código de acceso que todavía tiene entradas.
+  if (session.accessCodeId) {
+    const code = await findAccessCode({ id: session.accessCodeId });
+    if (code && code.left > 0) return true;
+  }
   if (!session.granted || !session.version) return false;
   const password = await getGatePassword();
   return !!password && session.version === gateVersion(password);

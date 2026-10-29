@@ -21,6 +21,7 @@ export async function createManualTicketAction(
 ): Promise<ManualTicketResult> {
   const admin = await requireAdmin().catch(() => null);
   if (!admin) return { error: 'Tu sesión venció. Volvé a entrar.' };
+  if (admin.role !== 'owner') return { error: 'Solo los owners pueden cargar entradas e invitaciones.' };
 
   const parsed = buyerSchema.safeParse({
     name: formData.get('name'),
@@ -112,6 +113,7 @@ export async function cancelTicketAction(
 ): Promise<CancelTicketState> {
   const admin = await requireAdmin().catch(() => null);
   if (!admin) return { error: 'Tu sesión venció. Volvé a entrar.' };
+  if (admin.role !== 'owner') return { error: 'Solo los owners pueden anular o reembolsar entradas.' };
   const db = createAdminClient();
 
   const { data: ticket, error: readError } = await db

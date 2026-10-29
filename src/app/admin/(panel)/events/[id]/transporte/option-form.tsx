@@ -52,7 +52,7 @@ export function OptionForm({ eventId, option, notice }: { eventId: string; optio
         hint="Ej: Sale 22:00 de Tres Cruces (puerta de Bv. Artigas). Vuelve 06:30."
         error={fieldError('departure')}
       >
-        <Textarea name="departure" required maxLength={300} rows={2} className="min-h-0" defaultValue={option?.departure} />
+        <Textarea name="departure" required maxLength={300} rows={4} defaultValue={option?.departure} />
       </Field>
       <div className="flex flex-wrap items-center gap-4">
         <Button type="submit" variant="outline" disabled={pending}>

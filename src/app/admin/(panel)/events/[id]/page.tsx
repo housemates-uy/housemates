@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/auth/admin';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { StatusBadge } from '@/components/admin/events/status-badge';
 import { TierTags } from '@/components/admin/events/tier-fields';
+import { ContextMenu, ContextMenuButton, type ContextMenuItem } from '@/components/admin/context-menu';
 import { ConfirmSubmitButton, SubmitButton } from '@/components/admin/submit-button';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
@@ -13,6 +14,7 @@ import type { TicketTier } from '@/types/database';
 import {
   toggleSalesAction,
   archiveEventAction,
+  deleteTierAction,
   toggleTierActiveAction,
   toggleTierSoldOutAction,
 } from './actions';
@@ -60,9 +62,62 @@ export default async function EventOverviewPage({
     (a, b) => a.sort_order - b.sort_order,
   );
 
+  // Precios, cupos, tandas y ventas: solo los owners (los socios).
+  const isOwner = admin.role === 'owner';
+  const editable = event.status !== 'archived';
+
+  // Una tanda con alguna entrada (de cualquier estado) no se elimina: se desactiva.
+  const tiersWithTickets = new Set(
+    isOwner
+      ? (
+          await Promise.all(
+            tiers.map(async (t) => {
+              const { count } = await db
+                .from('tickets')
+                .select('id', { count: 'exact', head: true })
+                .eq('tier_id', t.id);
+              return count ? t.id : null;
+            }),
+          )
+        ).filter(Boolean)
+      : [],
+  );
+
+  const tierMenu = (tier: TicketTier): ContextMenuItem[] => {
+    if (!isOwner) return [];
+    const hasTickets = tiersWithTickets.has(tier.id);
+    return [
+      { label: 'Editar', href: `/admin/events/${params.id}/edit#tanda-${tier.id}` },
+      ...(editable
+        ? [
+            {
+              label: tier.active ? 'Desactivar' : 'Activar',
+              hint: hasTickets
+                ? `Tiene entradas: ${tier.active ? 'se puede desactivar' : 'no se puede eliminar'}`
+                : undefined,
+              action: toggleTierActiveAction.bind(null, tier.id, params.id, tier.active),
+            },
+            {
+              label: tier.sold_out_override ? 'Restaurar' : 'Agotar',
+              action: toggleTierSoldOutAction.bind(null, tier.id, params.id, tier.sold_out_override),
+            },
+          ]
+        : []),
+      ...(hasTickets
+        ? []
+        : [
+            {
+              label: 'Eliminar',
+              danger: true,
+              action: deleteTierAction.bind(null, tier.id, params.id),
+              confirm: { title: `¿Eliminar la tanda ${tier.name}?`, body: 'No se puede deshacer.', label: 'Sí, eliminar' },
+            },
+          ]),
+    ];
+  };
+
   const toggleSales = toggleSalesAction.bind(null, event.id, event.sales_active);
   const archive = archiveEventAction.bind(null, event.id);
-  const editable = event.status !== 'archived';
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -102,7 +157,13 @@ export default async function EventOverviewPage({
                 tier.sold_out_override,
               );
               return (
-                <li key={tier.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4">
+                <ContextMenu
+                  key={tier.id}
+                  as="li"
+                  label={`Acciones de la tanda ${tier.name}`}
+                  items={tierMenu(tier)}
+                  className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4"
+                >
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-sm font-medium">{tier.name}</p>
@@ -115,33 +176,46 @@ export default async function EventOverviewPage({
                       {tier.description && ` · ${tier.description}`}
                     </p>
                   </div>
-                  {editable && (
+                  {isOwner && (
                     <div className="flex items-center gap-1">
-                      <form action={toggleActive}>
-                        <SubmitButton variant="ghost" size="sm">
-                          {tier.active ? 'Desactivar' : 'Activar'}
-                        </SubmitButton>
-                      </form>
-                      <form action={toggleSoldOut}>
-                        <SubmitButton variant="ghost" size="sm">
-                          {tier.sold_out_override ? 'Restaurar' : 'Agotar'}
-                        </SubmitButton>
-                      </form>
+                      {editable && (
+                        <>
+                          <form action={toggleActive}>
+                            <SubmitButton variant="ghost" size="sm">
+                              {tier.active ? 'Desactivar' : 'Activar'}
+                            </SubmitButton>
+                          </form>
+                          <form action={toggleSoldOut}>
+                            <SubmitButton variant="ghost" size="sm">
+                              {tier.sold_out_override ? 'Restaurar' : 'Agotar'}
+                            </SubmitButton>
+                          </form>
+                        </>
+                      )}
+                      <ContextMenuButton />
                     </div>
                   )}
-                </li>
+                </ContextMenu>
               );
             })}
           </ul>
         </section>
       )}
 
+      {isOwner && (
       <div className="flex flex-wrap gap-3">
         <Link
           href={`/admin/events/${params.id}/edit`}
           className={buttonVariants({ variant: 'outline', size: 'sm' })}
         >
           Editar
+        </Link>
+
+        <Link
+          href={`/admin/events/${params.id}/duplicar`}
+          className={buttonVariants({ variant: 'outline', size: 'sm' })}
+        >
+          Duplicar para otra fecha
         </Link>
 
         {editable && (
@@ -152,7 +226,7 @@ export default async function EventOverviewPage({
           </form>
         )}
 
-        {admin.role === 'owner' && editable && (
+        {editable && (
           <form action={archive}>
             <ConfirmSubmitButton variant="ghost" size="sm" confirmLabel="Sí, archivar">
               Archivar
@@ -160,6 +234,7 @@ export default async function EventOverviewPage({
           </form>
         )}
       </div>
+      )}
 
       <PresaleSection
         eventId={event.id}
@@ -171,7 +246,6 @@ export default async function EventOverviewPage({
 
       <CommsSection
         eventId={event.id}
-        arrivalInfo={event.arrival_info}
         isOwner={admin.role === 'owner'}
         searchParams={searchParams}
       />

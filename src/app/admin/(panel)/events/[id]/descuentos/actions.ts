@@ -1,6 +1,6 @@
 'use server';
 
-// Códigos de descuento de un evento. Crear y prender/apagar: solo owners.
+// Códigos de descuento de un evento. Crear, prender/apagar y eliminar: solo owners.
 // Reglas: ver docs/LOGICA_DE_NEGOCIO.md → "Códigos de descuento".
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -79,5 +79,21 @@ export async function toggleDiscountCodeAction(eventId: string, codeId: string, 
   const admin = await requireOwner();
   await createAdminClient().from('discount_codes').update({ active }).eq('id', codeId).eq('event_id', eventId);
   await logAdminAction(admin.id, active ? 'enable_discount_code' : 'disable_discount_code', 'discount_code', codeId);
+  revalidatePath(`/admin/events/${eventId}/descuentos`);
+}
+
+// Solo un código que ninguna entrada usó, de ningún estado: la FK es SET NULL y borrarlo dejaría
+// entradas sin saber con qué código se compraron (admin_delete_discount_code, migración 0025).
+export async function deleteDiscountCodeAction(eventId: string, codeId: string): Promise<{ error: string } | void> {
+  const admin = await requireOwner().catch(() => null);
+  if (!admin) return { error: 'Solo los owners pueden eliminar códigos.' };
+  const db = createAdminClient();
+  const { data: code } = await db.from('discount_codes').select('code').eq('id', codeId).maybeSingle();
+  const { data: result, error } = await db.rpc('admin_delete_discount_code', { p_code_id: codeId, p_event_id: eventId });
+  if (error) return { error: 'No se pudo eliminar el código. Probá de nuevo.' };
+  if (result === 'in_use') return { error: 'El código ya se usó: no se puede eliminar. Pausalo.' };
+  if (result === 'deleted') {
+    await logAdminAction(admin.id, 'delete_discount_code', 'discount_code', codeId, { deleted: code?.code ?? null });
+  }
   revalidatePath(`/admin/events/${eventId}/descuentos`);
 }

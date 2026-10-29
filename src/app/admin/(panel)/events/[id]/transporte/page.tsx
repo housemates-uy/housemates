@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Download, Printer } from 'lucide-react';
-import { ConfirmSubmitButton, SubmitButton } from '@/components/admin/submit-button';
+import { ContextMenu, ContextMenuButton } from '@/components/admin/context-menu';
+import { SubmitButton } from '@/components/admin/submit-button';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { EmptyState, StatCard } from '@/components/ui/card';
@@ -64,7 +65,7 @@ export default async function EventTransportPage({
           <h2 className="text-lg font-bold tracking-tight">Opciones ({options.length})</h2>
           <p className="mt-1 text-sm text-bone/55">
             {isOwner
-              ? 'Cambiar el precio no toca a quienes ya compraron. Una opción que alguien eligió no se borra: se desactiva.'
+              ? 'Cambiar el precio no toca a quienes ya compraron. Una opción que alguien eligió no se elimina: se desactiva. Eliminar está en el menú de cada opción (⋯ o clic derecho).'
               : 'Solo los owners pueden cambiar las opciones de transporte.'}
           </p>
         </div>
@@ -78,7 +79,36 @@ export default async function EventTransportPage({
         ) : (
           <ul aria-label="Opciones de transporte" className="divide-y divide-bone/10 rounded-card border border-bone/10">
             {options.map((o) => (
-              <li key={o.id} className="px-5 py-4">
+              <ContextMenu
+                key={o.id}
+                as="li"
+                label={`Acciones de ${o.name}`}
+                items={
+                  isOwner
+                    ? [
+                        { label: 'Editar', reveal: `editar-${o.id}` },
+                        {
+                          label: o.active ? 'Desactivar' : 'Activar',
+                          hint: o.everReserved
+                            ? `Alguien la eligió: ${o.active ? 'se puede desactivar' : 'no se puede eliminar'}`
+                            : undefined,
+                          action: toggleTransportOptionAction.bind(null, params.id, o.id, !o.active),
+                        },
+                        ...(o.everReserved
+                          ? []
+                          : [
+                              {
+                                label: 'Eliminar',
+                                danger: true,
+                                action: deleteTransportOptionAction.bind(null, params.id, o.id),
+                                confirm: { title: `¿Eliminar ${o.name}?`, body: 'No se puede deshacer.', label: 'Sí, eliminar' },
+                              },
+                            ]),
+                      ]
+                    : []
+                }
+                className="px-5 py-4"
+              >
                 <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -108,18 +138,12 @@ export default async function EventTransportPage({
                           {o.active ? 'Desactivar' : 'Activar'}
                         </SubmitButton>
                       </form>
-                      {!o.everReserved && (
-                        <form action={deleteTransportOptionAction.bind(null, params.id, o.id)}>
-                          <ConfirmSubmitButton variant="ghost" size="sm" confirmLabel="Sí, borrar">
-                            Borrar
-                          </ConfirmSubmitButton>
-                        </form>
-                      )}
+                      <ContextMenuButton />
                     </div>
                   )}
                 </div>
                 {isOwner && (
-                  <details className="group mt-2">
+                  <details id={`editar-${o.id}`} className="group mt-2">
                     <summary className="cursor-pointer list-none text-xs text-bone/55 underline-offset-4 hover:text-bone hover:underline">
                       <span className="group-open:hidden">Editar</span>
                       <span className="hidden group-open:inline">Cerrar edición</span>
@@ -138,7 +162,7 @@ export default async function EventTransportPage({
                     </div>
                   </details>
                 )}
-              </li>
+              </ContextMenu>
             ))}
           </ul>
         )}

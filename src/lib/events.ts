@@ -55,3 +55,10 @@ export function entryTime(value: string | null | undefined): string | null {
 export function formatUYU(amount: number) {
   return `$${amount.toLocaleString('es-UY')}`;
 }
+
+// Por qué un evento no se puede eliminar (event_delete_blocker, migración 0025).
+export const EVENT_DELETE_BLOCKERS: Record<string, string> = {
+  has_tickets: 'Tiene entradas',
+  has_bar_orders: 'Tiene pedidos de barra',
+  has_scans: 'Tiene escaneos en la puerta o la barra',
+};

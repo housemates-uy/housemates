@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { requireAdmin } from '@/lib/auth/admin';
+import { formatAccessCode } from '@/lib/access-codes';
 import { createAdminClient, fetchAll } from '@/lib/supabase/admin';
+import { ContextMenu, ContextMenuButton, type ContextMenuItem } from '@/components/admin/context-menu';
 import { ConfirmSubmitButton, SubmitButton } from '@/components/admin/submit-button';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
@@ -75,9 +77,9 @@ const CANCEL_OUTCOMES: Record<string, { ok: boolean; text: string }> = {
 };
 
 const LIST_COLUMNS =
-  'id, order_id, buyer_name, buyer_email, buyer_document, buyer_instagram, status, source, tier_id, amount_paid_uyu, qr_token, payment_method, mp_payment_id, notes';
+  'id, order_id, buyer_name, buyer_email, buyer_document, buyer_instagram, status, source, tier_id, amount_paid_uyu, qr_token, payment_method, mp_payment_id, notes, access_code_id';
 const REVIEW_COLUMNS =
-  'id, order_id, buyer_name, buyer_email, buyer_document, buyer_instagram, tier_id, amount_paid_uyu, discount_uyu, receipt_path, created_at';
+  'id, order_id, buyer_name, buyer_email, buyer_document, buyer_instagram, tier_id, amount_paid_uyu, discount_uyu, receipt_path, created_at, access_code_id';
 
 // La búsqueda va dentro de un filtro `or` de PostgREST: se sacan los caracteres que lo rompen
 // (coma, paréntesis, comillas, comodines) y cada valor va entre comillas.
@@ -175,12 +177,24 @@ export default async function EventTicketsPage({
   const listedTotal = list.count ?? listed.length;
   const pages = Math.max(1, Math.ceil(listedTotal / PAGE_SIZE));
   const orderIds = Array.from(new Set(listed.flatMap((t) => (t.order_id ? [t.order_id] : []))));
-  const [buses, { data: orderTickets }] = await Promise.all([
+  // Con qué código de acceso se compró (solo owners: el código sirve para comprar).
+  const accessCodeIds = isOwner
+    ? Array.from(new Set([...listed, ...toReview].flatMap((t) => (t.access_code_id ? [t.access_code_id] : []))))
+    : [];
+  const [buses, { data: orderTickets }, { data: accessCodes }] = await Promise.all([
     getTransportByTicket({ ticketIds: [...listed, ...toReview].map((t) => t.id) }),
     orderIds.length > 0
       ? db.from('tickets').select('id, order_id, buyer_name').in('order_id', orderIds)
       : Promise.resolve({ data: [] as { id: string; order_id: string | null; buyer_name: string }[] }),
+    accessCodeIds.length > 0
+      ? db.from('access_codes').select('id, code, label').in('id', accessCodeIds)
+      : Promise.resolve({ data: [] as { id: string; code: string; label: string }[] }),
   ]);
+  const accessCodeById = new Map((accessCodes ?? []).map((c) => [c.id, c]));
+  const accessLine = (codeId: string | null) => {
+    const c = codeId ? accessCodeById.get(codeId) : undefined;
+    return c ? `Código ${formatAccessCode(c.code)} · para ${c.label}` : null;
+  };
 
   // Compras de varias entradas (order_id = la entrada de quien compró): cuántas tiene y quién
   // la hizo, para la lista.
@@ -262,6 +276,7 @@ export default async function EventTicketsPage({
               const reject = rejectTransferAction.bind(null, lead.id);
               const total = people.reduce((sum, t) => sum + Number(t.amount_paid_uyu), 0);
               const discount = people.reduce((sum, t) => sum + Number(t.discount_uyu), 0);
+              const access = accessLine(lead.access_code_id);
               const busLabel = (id: string) => {
                 const bus = buses.get(id);
                 return bus ? ` · Bus: ${bus.name}${isOwner ? ` ${formatUYU(bus.price)}` : ''}` : '';
@@ -289,6 +304,7 @@ export default async function EventTicketsPage({
                       {busLabel(lead.id)}
                       {` · subido ${formatLocal(lead.created_at, "d/MM 'a las' HH:mm")}`}
                     </p>
+                    {access && <p className="mt-0.5 break-words text-xs text-bone/45">{access}</p>}
                     {friends.length > 0 && (
                       <ul className="mt-2 space-y-1 border-l border-bone/15 pl-3 text-xs text-bone/55">
                         {friends.map((t) => (
@@ -347,10 +363,12 @@ export default async function EventTicketsPage({
         </section>
       )}
 
-      <section className="space-y-4">
-        <h2 className="text-lg font-bold tracking-tight">Nueva entrada</h2>
-        <NewTicketForm eventId={params.id} tiers={tierOptions} />
-      </section>
+      {isOwner && (
+        <section className="space-y-4">
+          <h2 className="text-lg font-bold tracking-tight">Nueva entrada</h2>
+          <NewTicketForm eventId={params.id} tiers={tierOptions} />
+        </section>
+      )}
 
       <section id="lista" className="scroll-mt-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -397,8 +415,43 @@ export default async function EventTicketsPage({
               const refundable = t.source === 'purchase' && !!t.mp_payment_id;
               const cancelMode = t.status !== 'paid' ? null : refundable ? 'refund' : 'cancel';
               const order = t.order_id ? orders.get(t.order_id) : undefined;
+              const access = accessLine(t.access_code_id);
+              // Las mismas acciones de la fila, con la misma confirmación para anular o reembolsar.
+              const menu: ContextMenuItem[] = [
+                ...(t.qr_token && t.status !== 'pending'
+                  ? [{ label: 'Ver entrada', href: ticketUrl(t.qr_token), newTab: true }]
+                  : []),
+                ...(t.status === 'paid' ? [{ label: 'Reenviar mail', action: resend, done: 'Mail reenviado' }] : []),
+                ...(isOwner && cancelMode
+                  ? [
+                      {
+                        label: cancelMode === 'refund' ? 'Reembolsar' : 'Anular',
+                        danger: true,
+                        action: cancelTicketAction.bind(null, params.id, t.id, view, null),
+                        confirm:
+                          cancelMode === 'refund'
+                            ? {
+                                title: `¿Reembolsar la entrada de ${t.buyer_name}?`,
+                                body: 'Se le devuelve por Mercado Pago lo que pagó esta entrada y le avisamos por mail.',
+                                label: 'Sí, reembolsar',
+                              }
+                            : {
+                                title: `¿Anular la entrada de ${t.buyer_name}?`,
+                                body: 'Deja de servir en la puerta y le avisamos por mail.',
+                                label: 'Sí, anular',
+                              },
+                      },
+                    ]
+                  : []),
+              ];
               return (
-                <li key={t.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4">
+                <ContextMenu
+                  key={t.id}
+                  as="li"
+                  label={`Acciones de la entrada de ${t.buyer_name}`}
+                  items={menu}
+                  className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4"
+                >
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-sm font-medium">{t.buyer_name}</p>
@@ -421,6 +474,7 @@ export default async function EventTicketsPage({
                         {order.buyer && ` · la hizo ${order.buyer}`}
                       </p>
                     )}
+                    {access && <p className="mt-0.5 break-words text-xs text-bone/45">{access}</p>}
                     {t.notes && (
                       <p className="mt-1 whitespace-pre-line text-xs text-bone/65">Nota: {t.notes}</p>
                     )}
@@ -434,9 +488,10 @@ export default async function EventTicketsPage({
                         </SubmitButton>
                       </form>
                     )}
-                    {cancelMode && <CancelTicketButton action={cancel} mode={cancelMode} />}
+                    {isOwner && cancelMode && <CancelTicketButton action={cancel} mode={cancelMode} />}
+                    <ContextMenuButton />
                   </div>
-                </li>
+                </ContextMenu>
               );
             })}
           </ul>

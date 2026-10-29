@@ -39,7 +39,7 @@ export default async function TicketPage({ params }: { params: { token: string }
   if (!ticket || !ticket.qr_token) notFound();
 
   const [{ data: event }, { data: tier }, bus] = await Promise.all([
-    db.from('events').select('title, date_start').eq('id', ticket.event_id).single(),
+    db.from('events').select('title, date_start, format').eq('id', ticket.event_id).single(),
     ticket.tier_id
       ? db.from('ticket_tiers').select('name, entry_until').eq('id', ticket.tier_id).single()
       : Promise.resolve({ data: null }),
@@ -50,19 +50,20 @@ export default async function TicketPage({ params }: { params: { token: string }
   const svg = valid ? await qrSvg(ticketUrl(ticket.qr_token)) : null;
   const doc = ticket.buyer_document.slice(-4);
   const state = STATE[ticket.status];
-  const entryLabel = ticket.source === 'invitation' ? 'Invitación' : (tier?.name ?? 'Entrada');
+  const entryLabel = ticket.source === 'invitation' ? 'Cortesía' : (tier?.name ?? 'Entrada');
   // Tanda de ingreso temprano: hay que entrar antes de esa hora (en puerta se avisa si no).
   const entryUntil = ticket.status !== 'used' ? entryTime(tier?.entry_until) : null;
 
   return (
     <main
       id="contenido"
-      className="print-ink relative isolate h-[100dvh] overflow-hidden print:h-auto print:bg-white"
+      className="print-ink relative isolate min-h-[100dvh] overflow-hidden print:min-h-0 print:bg-white"
     >
       <LiveRefresh active={valid || ticket.status === 'pending' || ticket.status === 'review'} />
       <DoodleBackdrop className="-z-10 print:hidden" />
 
-      <div className="mx-auto flex h-full max-w-md flex-col items-center gap-[2.2dvh] px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.75rem,env(safe-area-inset-top))]">
+      {/* Entra en una pantalla; si el texto del bus es largo, la página baja un poco. */}
+      <div className="mx-auto flex min-h-[100dvh] max-w-md print:min-h-0 flex-col items-center gap-[2.2dvh] px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.75rem,env(safe-area-inset-top))]">
         <Logo className="h-[clamp(64px,13dvh,112px)] shrink-0 print:text-ink" />
 
         {event && (
@@ -71,7 +72,7 @@ export default async function TicketPage({ params }: { params: { token: string }
               {formatLocal(event.date_start, 'dd.MM.yy')}
             </h1>
             <p className="mt-2 text-sm text-bone/80 first-letter:uppercase">
-              {formatLocal(event.date_start, "EEEE · HH:mm 'hs'")} · Open air
+              {formatLocal(event.date_start, "EEEE · HH:mm 'hs'")} · {event.format}
             </p>
           </div>
         )}
@@ -143,12 +144,7 @@ export default async function TicketPage({ params }: { params: { token: string }
             {bus && (
               <>
                 <p className="mt-2 text-[11px] font-bold uppercase tracking-[0.16em]">Bus · {bus.name}</p>
-                {/* El punto y horario entra solo en pantallas altas; si no, está en el mail y en Mi cuenta. */}
-                <span className="hidden [@media(min-height:760px)]:block">
-                  <span className="mt-1 line-clamp-2 whitespace-pre-line text-xs leading-snug text-bone/70">
-                    {bus.departure}
-                  </span>
-                </span>
+                <p className="mt-1 whitespace-pre-line text-xs leading-snug text-bone/70">{bus.departure}</p>
               </>
             )}
           </div>
