@@ -1,107 +1,177 @@
 import { ImageResponse } from 'next/og';
 import QRCode from 'qrcode';
-import { formatLocal } from '@/lib/events';
+import { entryTime, formatLocal } from '@/lib/events';
+import { FALLBACK_FONT_CSS } from '@/lib/fonts';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { ticketUrl } from '@/lib/tickets';
+import { formatDocument, ticketUrl } from '@/lib/tickets';
+import { getTicketTransport } from '@/lib/transport';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // GET /ticket/<token>/imagen → PNG de la entrada (formato historia, 1080×1920) para
 // guardar en el celular. Solo para entradas válidas: una usada o anulada no se descarga.
-// Neue Montreal (la de la web). Satori no lee woff2: se usan los .otf de public/fonts/,
-// que no están en git (fuente paga, repo público). Si no están, cae a la fuente por defecto.
-async function loadFonts(req: Request) {
-  const weights = [
-    ['Regular', 400],
-    ['Medium', 500],
-    ['Bold', 700],
-  ] as const;
-  const fonts = await Promise.all(
-    weights.map(async ([name, weight]) => {
-      try {
-        const res = await fetch(new URL(`/fonts/NeueMontreal-${name}.otf`, req.url), { cache: 'force-cache' });
-        if (!res.ok) return null;
-        return { name: 'Neue Montreal', data: await res.arrayBuffer(), weight, style: 'normal' as const };
-      } catch {
-        return null;
-      }
-    }),
-  );
-  return fonts.filter((f): f is NonNullable<typeof f> => f !== null);
+// Es la misma entrada que /ticket/<token> (fondo doodle, letra, punto violeta, datos y bus),
+// pasada a 1080 de ancho: cada px de la página son ~2,77 px acá.
+
+type Font = { name: string; data: ArrayBuffer; weight: 400 | 500 | 700; style: 'normal' };
+
+// La letra de la web (src/lib/fonts.ts): Neue Montreal si NEXT_PUBLIC_FONTS_URL apunta a sus
+// archivos (acá hacen falta los .otf: Satori no lee woff2); si no, General Sans de Fontshare.
+async function loadFonts(req: Request): Promise<Font[]> {
+  const base = process.env.NEXT_PUBLIC_FONTS_URL?.replace(/\/$/, '');
+  if (base) {
+    const weights = [['Regular', 400], ['Medium', 500], ['Bold', 700]] as const;
+    const neue = await Promise.all(
+      weights.map(async ([name, weight]): Promise<Font | null> => {
+        try {
+          const res = await fetch(new URL(`${base}/NeueMontreal-${name}.otf`, req.url), { cache: 'force-cache' });
+          return res.ok ? { name: 'Neue Montreal', data: await res.arrayBuffer(), weight, style: 'normal' } : null;
+        } catch {
+          return null;
+        }
+      }),
+    );
+    const loaded = neue.filter((f): f is Font => f !== null);
+    if (loaded.length === weights.length) return loaded;
+  }
+  try {
+    const css = await (await fetch(FALLBACK_FONT_CSS, { cache: 'force-cache' })).text();
+    const faces = await Promise.all(
+      [...css.matchAll(/@font-face\s*{([^}]*)}/g)].map(async ([, face]): Promise<Font | null> => {
+        const weight = Number(/font-weight:\s*(\d+)/.exec(face)?.[1]);
+        const url = /url\('([^']+\.ttf)'\)/.exec(face)?.[1];
+        if (!url || (weight !== 400 && weight !== 500 && weight !== 700)) return null;
+        const res = await fetch(url.startsWith('//') ? `https:${url}` : url, { cache: 'force-cache' });
+        return res.ok ? { name: 'General Sans', data: await res.arrayBuffer(), weight, style: 'normal' } : null;
+      }),
+    );
+    return faces.filter((f): f is Font => f !== null);
+  } catch {
+    return [];
+  }
 }
+
+const BONE = '#FAFAFA';
+const INK = '#0A0A0A';
+const VIOLET = '#8A4FFF';
+// Mismo estilo que "Válida", "Ingreso hasta" y "Bus" en la página (11px, bold, mayúsculas).
+const LABEL = { fontSize: 30, fontWeight: 700, letterSpacing: 4.8, textTransform: 'uppercase' } as const;
 
 export async function GET(req: Request, { params }: { params: { token: string } }) {
   const db = createAdminClient();
   const { data: ticket } = await db
     .from('tickets')
-    .select('buyer_name, buyer_document, status, source, tier_id, event_id, qr_token')
+    .select('id, buyer_name, buyer_document, status, source, tier_id, event_id, qr_token')
     .eq('qr_token', params.token)
     .maybeSingle();
   if (!ticket?.qr_token || ticket.status !== 'paid') {
     return new Response('Entrada no disponible', { status: 404 });
   }
 
-  const [{ data: event }, { data: tier }] = await Promise.all([
-    db.from('events').select('title, date_start').eq('id', ticket.event_id).single(),
+  const [{ data: event }, { data: tier }, bus, fonts] = await Promise.all([
+    db.from('events').select('date_start, format').eq('id', ticket.event_id).single(),
     ticket.tier_id
-      ? db.from('ticket_tiers').select('name').eq('id', ticket.tier_id).single()
+      ? db.from('ticket_tiers').select('name, entry_until').eq('id', ticket.tier_id).single()
       : Promise.resolve({ data: null }),
+    getTicketTransport(ticket.id),
+    loadFonts(req),
   ]);
 
-  const fonts = await loadFonts(req);
   const qr = await QRCode.toDataURL(ticketUrl(ticket.qr_token), { margin: 1, width: 720, errorCorrectionLevel: 'M' });
   const logo = new URL('/brand/logo.svg', req.url).toString();
-  const doc = ticket.buyer_document.slice(-4);
+  const background = new URL('/brand/ticket-bg.jpg', req.url).toString();
+  const doc = formatDocument(ticket.buyer_document);
   const entry = ticket.source === 'invitation' ? 'Cortesía' : (tier?.name ?? 'Entrada');
+  const entryUntil = entryTime(tier?.entry_until);
+  const when = event ? `${formatLocal(event.date_start, "EEEE · HH:mm 'hs'")} · ${event.format}` : '';
+
+  // Con bus, el logo y el QR se achican para que entre el texto de salida completo (hasta 300
+  // caracteres): cada renglón (unos 46 caracteres) y el "Ingreso hasta" le sacan lugar al QR.
+  const busLines = bus ? bus.departure.split('\n').map((line) => line.trim()).filter(Boolean) : [];
+  const wrappedLines = busLines.reduce((n, line) => n + Math.ceil(line.length / 46), 0);
+  const size = bus
+    ? { pad: 90, logo: 200, qr: Math.max(300, Math.min(440, 677 - wrappedLines * 45 - (entryUntil ? 58 : 0))) }
+    : { pad: 100, logo: 254, qr: 600 };
 
   return new ImageResponse(
     (
       <div
         style={{
+          position: 'relative',
           width: '100%',
           height: '100%',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          background: '#0A0A0A',
-          color: '#FAFAFA',
-          padding: '120px 90px',
-          fontFamily: fonts.length ? 'Neue Montreal' : undefined,
+          background: INK,
+          color: BONE,
+          padding: `${size.pad}px 90px`,
+          fontFamily: fonts[0]?.name,
         }}
       >
+        {/* Fondo doodle desenfocado, igual que DoodleBackdrop (public/brand/ticket-bg.jpg). */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={logo} width={260} height={254} alt="" />
-        <div style={{ display: 'flex', marginTop: 60, fontSize: 150, fontWeight: 700, letterSpacing: -8 }}>
+        <img src={background} width={1080} height={1920} alt="" style={{ position: 'absolute', top: 0, left: 0 }} />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={logo} width={Math.round((size.logo * 260) / 254)} height={size.logo} alt="" />
+        <div style={{ display: 'flex', marginTop: 51, fontSize: 150, fontWeight: 700, lineHeight: 0.9, letterSpacing: -7 }}>
           {event ? formatLocal(event.date_start, 'dd.MM.yy') : ''}
         </div>
-        <div style={{ display: 'flex', marginTop: 10, fontSize: 40, opacity: 0.75 }}>{event?.title ?? ''}</div>
+        <div style={{ display: 'flex', marginTop: 22, fontSize: 39, color: 'rgba(250,250,250,0.8)' }}>
+          {when.charAt(0).toUpperCase() + when.slice(1)}
+        </div>
         <div
           style={{
-            marginTop: 70,
+            marginTop: 51,
             width: '100%',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             border: '2px solid rgba(250,250,250,0.2)',
-            borderRadius: 50,
-            padding: 60,
+            borderRadius: 61,
+            background: 'rgba(10,10,10,0.55)',
+            padding: 55,
           }}
         >
-          <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', fontSize: 34 }}>
-            <span style={{ opacity: 0.7 }}>{entry}</span>
-            <span style={{ fontWeight: 700, letterSpacing: 6 }}>VÁLIDA</span>
+          <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 33, color: 'rgba(250,250,250,0.65)' }}>{entry}</span>
+            <span style={{ display: 'flex', alignItems: 'center', ...LABEL }}>
+              <span style={{ width: 22, height: 22, borderRadius: 11, background: VIOLET, marginRight: 14 }} />
+              Válida
+            </span>
           </div>
-          <div style={{ marginTop: 40, display: 'flex', background: '#FFFFFF', borderRadius: 30, padding: 24 }}>
+          <div style={{ marginTop: 42, display: 'flex', background: '#FFFFFF', borderRadius: 39, padding: 33 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={qr} width={600} height={600} alt="" />
+            <img src={qr} width={size.qr} height={size.qr} alt="" />
           </div>
-          <div style={{ display: 'flex', marginTop: 40, fontSize: 56, fontWeight: 700 }}>{ticket.buyer_name}</div>
-          <div style={{ display: 'flex', marginTop: 10, fontSize: 36, opacity: 0.7 }}>
-            {`CI •••• ${doc.slice(0, 3)}-${doc.slice(3)}`}
+          <div style={{ display: 'flex', marginTop: 42, fontSize: 55, fontWeight: 700 }}>{ticket.buyer_name}</div>
+          <div style={{ display: 'flex', marginTop: 8, fontSize: 36, color: 'rgba(250,250,250,0.7)' }}>
+            {`CI ${doc}`}
           </div>
+          {entryUntil && <div style={{ display: 'flex', marginTop: 22, ...LABEL }}>{`Ingreso hasta ${entryUntil}`}</div>}
+          {bus && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: 22, width: '100%' }}>
+              <div style={{ display: 'flex', ...LABEL }}>{`Bus · ${bus.name}`}</div>
+              {busLines.map((line, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: 'flex',
+                    marginTop: i === 0 ? 8 : 0,
+                    fontSize: 33,
+                    lineHeight: 1.375,
+                    color: 'rgba(250,250,250,0.7)',
+                    textAlign: 'center',
+                  }}
+                >
+                  {line}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-        <div style={{ display: 'flex', marginTop: 'auto', fontSize: 32, opacity: 0.6 }}>
+        <div style={{ display: 'flex', marginTop: 'auto', paddingTop: 24, fontSize: 33, color: 'rgba(250,250,250,0.6)' }}>
           Entrada personal · En puerta te pedimos la cédula
         </div>
       </div>

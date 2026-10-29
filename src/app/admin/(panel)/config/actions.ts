@@ -94,3 +94,30 @@ export async function saveSaleConfigAction(
   // revalida la página.
   redirect('/admin/config?venta=guardada')
 }
+
+// "Mi cuenta" para el público (ver isAccountsEnabled en src/lib/customers.ts). Al cambiarla se
+// rearma todo el sitio: los textos y el link de la cuenta salen o vuelven en todas las páginas.
+export async function setAccountsEnabledAction(formData: FormData): Promise<void> {
+  const admin = await requireOwner()
+  const value = formData.get('enabled') === '1' ? '1' : '0'
+
+  const db = createAdminClient()
+  const { data: current } = await db.from('site_config').select('value').eq('key', 'accounts_enabled').maybeSingle()
+  const before = current?.value === '1' ? '1' : '0'
+
+  const { error } = await db
+    .from('site_config')
+    .upsert(
+      { key: 'accounts_enabled', value, updated_by: admin.id, updated_at: new Date().toISOString() },
+      { onConflict: 'key' }
+    )
+  if (error) redirect('/admin/config?cuenta=error')
+
+  if (before !== value) {
+    await logAdminAction(admin.id, 'update_sale_config', 'site_config', undefined, {
+      changes: fieldChanges({ accounts_enabled: before }, { accounts_enabled: value }),
+    })
+  }
+  revalidatePath('/', 'layout')
+  redirect(`/admin/config?cuenta=${value === '1' ? 'prendida' : 'apagada'}`)
+}

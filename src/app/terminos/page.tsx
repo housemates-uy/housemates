@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { LegalPage, LegalSection } from '@/components/legal/legal-page';
 import { SERVICE_FEE_LABEL } from '@/lib/pricing';
+import { isAccountsEnabled } from '@/lib/customers';
 import { getIgHandle, igUrl } from '@/lib/site';
 
 // A CONFIRMAR: texto pendiente de revisión de un abogado (ver docs/BACKLOG.md).
@@ -17,7 +18,8 @@ export const revalidate = 3600;
 const UPDATED = { iso: '2026-10-28', label: '28 de octubre de 2026' };
 
 export default async function TermsPage() {
-  const handle = await getIgHandle();
+  // Con "Mi cuenta" apagada (/admin/config) no se habla de cuentas.
+  const [handle, accounts] = await Promise.all([getIgHandle(), isAccountsEnabled()]);
   const instagram = (
     <a href={igUrl(handle)} target="_blank" rel="noreferrer">
       Instagram ({handle})
@@ -108,7 +110,7 @@ export default async function TermsPage() {
         <>
           <p>
             La entrada es válida recién cuando el pago está aprobado o la transferencia, validada. Ahí te llega por mail
-            con tu QR, y también la ves en el link de tu entrada y, si creaste una, en tu cuenta.
+            con tu QR, y también la ves en el link de tu entrada{accounts ? ' y, si creaste una, en tu cuenta.' : '.'}
           </p>
           <p>Revisá que tu email esté bien escrito: es por donde te mandamos la entrada y cualquier aviso.</p>
           <p>

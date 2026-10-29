@@ -12,6 +12,7 @@
 //     toca un link del mail ("Confirmá tu email" o el de recupero) y ahí elige la
 //     contraseña. Al guardarla se cierran las otras sesiones y queda verificada: si la
 //     cuenta la creó otro con este email, su contraseña deja de servir.
+import { cache } from 'react';
 import { z } from 'zod';
 import { formatLocal } from '@/lib/events';
 import { sendMail } from '@/lib/mail/send';
@@ -38,8 +39,26 @@ export type CustomerSession = {
   verified: boolean;
 };
 
+// "Mi cuenta" para el público se prende y apaga desde /admin/config (site_config.accounts_enabled).
+// Apagada, o si falta la fila o la base no responde: no se muestra nada de cuentas, no se crean
+// y nadie entra a la suya. Una vez por pedido (cache).
+export const isAccountsEnabled = cache(async (): Promise<boolean> => {
+  try {
+    const { data } = await createAdminClient()
+      .from('site_config')
+      .select('value')
+      .eq('key', 'accounts_enabled')
+      .maybeSingle();
+    return data?.value === '1';
+  } catch {
+    return false;
+  }
+});
+
 // getUser() valida la sesión contra Supabase (getSession() solo lee la cookie).
+// Con "Mi cuenta" apagada no hay sesión de comprador para nadie.
 export async function getCustomer(): Promise<CustomerSession | null> {
+  if (!(await isAccountsEnabled())) return null;
   const supabase = await createClient();
   const {
     data: { user },

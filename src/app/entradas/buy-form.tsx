@@ -110,6 +110,8 @@ export function BuyForm({
   transport = [],
   account,
   maxPerOrder,
+  accountsEnabled,
+  ig,
 }: {
   tandas: Tanda[];
   initialTanda?: string;
@@ -119,6 +121,8 @@ export function BuyForm({
   transport?: Bus[];
   account: Account | null;
   maxPerOrder: number;
+  accountsEnabled: boolean; // "Mi cuenta" prendida en /admin/config: se ofrece crear la contraseña
+  ig: { handle: string; href: string }; // Instagram del sitio, para el aviso de reventa
 }) {
   const [state, action] = useFormState<CheckoutState, FormData>(startCheckoutAction, null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -514,32 +518,34 @@ export function BuyForm({
                 <Field label="Email" hint="Te mandamos la entrada acá" error={fieldError('email')}>
                   <Input name="email" type="email" required autoComplete="email" onChange={() => edited('email')} />
                 </Field>
-                <Field
-                  label="Creá una contraseña (opcional)"
-                  hint="Así guardamos tus datos para la próxima y ves tus entradas en Mi cuenta. Mínimo 8 caracteres."
-                  error={
-                    passwordError && state?.accountExists ? (
-                      <>
-                        Ya tenés cuenta con este email:{' '}
-                        <Link href="/cuenta/ingresar?next=/entradas" className="font-medium text-bone underline underline-offset-4">
-                          ingresá
-                        </Link>
-                        .
-                      </>
-                    ) : (
-                      passwordError
-                    )
-                  }
-                >
-                  <Input
-                    name="password"
-                    type="password"
-                    autoComplete="new-password"
-                    minLength={8}
-                    maxLength={72}
-                    onChange={() => edited('password')}
-                  />
-                </Field>
+                {accountsEnabled && (
+                  <Field
+                    label="Creá una contraseña (opcional)"
+                    hint="Así guardamos tus datos para la próxima y ves tus entradas en Mi cuenta. Mínimo 8 caracteres."
+                    error={
+                      passwordError && state?.accountExists ? (
+                        <>
+                          Ya tenés cuenta con este email:{' '}
+                          <Link href="/cuenta/ingresar?next=/entradas" className="font-medium text-bone underline underline-offset-4">
+                            ingresá
+                          </Link>
+                          .
+                        </>
+                      ) : (
+                        passwordError
+                      )
+                    }
+                  >
+                    <Input
+                      name="password"
+                      type="password"
+                      autoComplete="new-password"
+                      minLength={8}
+                      maxLength={72}
+                      onChange={() => edited('password')}
+                    />
+                  </Field>
+                )}
               </>
             )}
             {group && transport.length > 0 && busPicker(1, '¿Necesitás transporte?')}
@@ -786,19 +792,24 @@ export function BuyForm({
         </dl>
       )}
 
-      <label className="flex cursor-pointer items-start gap-3 text-sm text-bone/70">
-        <input type="checkbox" name="accept" className="mt-0.5 h-4 w-4 shrink-0 accent-bone" />
-        <span>
-          {group
-            ? 'Entiendo que las entradas son personales e intransferibles: una por persona, a nombre de quien va, y en puerta le piden la cédula a cada uno. '
-            : 'Entiendo que la entrada es personal e intransferible: una por persona, y en puerta me piden la cédula. '}
-          Acepto los{' '}
-          <a href="/terminos" className="underline decoration-bone/40 underline-offset-2 hover:text-bone">
-            términos y condiciones
-          </a>
-          .
-        </span>
-      </label>
+      <div className="space-y-2">
+        <label className="flex cursor-pointer items-start gap-3 text-sm text-bone/70">
+          <input type="checkbox" name="accept" className="mt-0.5 h-4 w-4 shrink-0 accent-bone" />
+          <span>
+            {group
+              ? 'Entiendo que las entradas son personales e intransferibles.'
+              : 'Entiendo que la entrada es personal e intransferible.'}
+          </span>
+        </label>
+        <p className="pl-7 text-xs leading-relaxed text-bone/55">
+          Intentar revender la entrada sin notificar a{' '}
+          <a href={ig.href} target="_blank" rel="noreferrer" className="underline decoration-bone/40 underline-offset-2 hover:text-bone">
+            {ig.handle}
+          </a>{' '}
+          puede tener como consecuencia la inhabilitación para ingresar a este y futuros eventos, tanto del comprador
+          como del vendedor. Si no podés asistir, comunicate por Instagram y lo solucionamos.
+        </p>
+      </div>
       {state && (!state.field || state.field === 'accept') && editedField === null && (
         <p role="alert" className="text-sm text-alert">
           {state.error}

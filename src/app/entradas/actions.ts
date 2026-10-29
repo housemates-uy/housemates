@@ -18,6 +18,7 @@ import {
   accountExists,
   ensureProfile,
   getCustomer,
+  isAccountsEnabled,
   openAccount,
   passwordSchema,
   type CustomerSession,
@@ -177,9 +178,10 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
     };
   }
 
-  // Con la sesión iniciada, la entrada de quien compra va al email de la cuenta.
-  const customer = await getCustomer();
-  if (!customer && formData.get('as_account') === '1') {
+  // Con la sesión iniciada, la entrada de quien compra va al email de la cuenta. Con "Mi cuenta"
+  // apagada (/admin/config) no hay sesión ni se crean cuentas.
+  const [customer, accountsOn] = await Promise.all([getCustomer(), isAccountsEnabled()]);
+  if (accountsOn && !customer && formData.get('as_account') === '1') {
     return { error: 'Tu sesión se cerró. Ingresá de nuevo para comprar con tu cuenta.' };
   }
 
@@ -213,7 +215,7 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
 
   // Contraseña opcional para crear la cuenta de quien compra. Si ya hay una con ese email,
   // no se cobra nada: se le pide que ingrese.
-  const password = customer ? '' : formText(formData, 'password');
+  const password = customer || !accountsOn ? '' : formText(formData, 'password');
   if (password) {
     const checked = passwordSchema.safeParse(password);
     if (!checked.success) return { error: checked.error.issues[0].message, field: 'password' };

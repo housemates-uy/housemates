@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { Plus } from 'lucide-react';
 import { LegalPage, proseClass } from '@/components/legal/legal-page';
 import { buttonVariants } from '@/components/ui/button';
+import { isAccountsEnabled } from '@/lib/customers';
 import { getNextEvent, mapsUrl, type NextEvent } from '@/lib/next-event';
 import { SERVICE_FEE_LABEL } from '@/lib/pricing';
 import { getIgHandle, igUrl } from '@/lib/site';
@@ -11,14 +12,15 @@ import { cn } from '@/lib/utils';
 export const metadata: Metadata = {
   title: 'Preguntas frecuentes',
   description:
-    'Cómo comprar tu entrada, cómo pagar, qué llevar el día de la fiesta, la barra y tu cuenta: lo que más nos preguntan.',
+    'Cómo comprar tu entrada, cómo pagar, qué llevar el día de la fiesta y la barra: lo que más nos preguntan.',
 };
 
 export const revalidate = 300;
 
 type Group = { id: string; title: string; items: { q: string; a: React.ReactNode }[] };
 
-function faq(event: NextEvent, ig: { handle: string; href: string }): Group[] {
+// accounts: "Mi cuenta" prendida en /admin/config. Apagada, no se habla de cuentas.
+function faq(event: NextEvent, ig: { handle: string; href: string }, accounts: boolean): Group[] {
   const instagram = (
     <a href={ig.href} target="_blank" rel="noreferrer">
       Instagram ({ig.handle})
@@ -117,7 +119,12 @@ function faq(event: NextEvent, ig: { handle: string; href: string }): Group[] {
           a: (
             <>
               <p>
-                Revisá spam y promociones. Si creaste cuenta, la tenés en <Link href="/cuenta">Mi cuenta</Link>.
+                Revisá spam y promociones.
+                {accounts && (
+                  <>
+                    {' '}Si creaste cuenta, la tenés en <Link href="/cuenta">Mi cuenta</Link>.
+                  </>
+                )}
               </p>
               <p>
                 Si pagaste por transferencia, primero te llega «Recibimos tu comprobante» y la entrada recién cuando la
@@ -319,8 +326,8 @@ function faq(event: NextEvent, ig: { handle: string; href: string }): Group[] {
           a: (
             <p>
               En <Link href="/barra">Barra</Link>, antes o durante la fiesta, y pagás con Mercado Pago. El precio que
-              ves es el final, sin cargo por servicio. Te llega un QR por cada trago: si pedís tres, son tres QR. No hace
-              falta cuenta, alcanza con tu email.
+              ves es el final, sin cargo por servicio. Te llega un QR por cada trago: si pedís tres, son tres QR.
+              {accounts && ' No hace falta cuenta, alcanza con tu email.'}
             </p>
           ),
         },
@@ -406,9 +413,9 @@ function Question({ q, children }: { q: string; children: React.ReactNode }) {
 }
 
 export default async function FaqPage() {
-  const [event, handle] = await Promise.all([getNextEvent(), getIgHandle()]);
+  const [event, handle, accounts] = await Promise.all([getNextEvent(), getIgHandle(), isAccountsEnabled()]);
   const href = igUrl(handle);
-  const groups = faq(event, { handle, href });
+  const groups = faq(event, { handle, href }, accounts).filter((g) => accounts || g.id !== 'cuenta');
 
   return (
     <LegalPage

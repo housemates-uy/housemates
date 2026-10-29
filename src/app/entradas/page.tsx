@@ -9,7 +9,7 @@ import { Logo } from '@/components/ui/logo';
 import { TandaStatus } from '@/components/ui/tanda-status';
 import { formatAccessCode } from '@/lib/access-codes';
 import { getSessionAccessCode, hasGateAccess } from '@/lib/auth/gate';
-import { getCustomer } from '@/lib/customers';
+import { getCustomer, isAccountsEnabled } from '@/lib/customers';
 import { formatUYU } from '@/lib/events';
 import { getNextEvent } from '@/lib/next-event';
 import { getSaleConfig } from '@/lib/sale-config';
@@ -35,12 +35,13 @@ export default async function EntradasPage({
     redirect(`/access?next=${encodeURIComponent(here)}`);
   }
 
-  const [event, igHandle, sale, customer, sessionCode] = await Promise.all([
+  const [event, igHandle, sale, customer, sessionCode, accountsOn] = await Promise.all([
     getNextEvent({ presaleCode: searchParams.preventa }),
     getIgHandle(),
     getSaleConfig(),
     getCustomer(),
     getSessionAccessCode(),
+    isAccountsEnabled(),
   ]);
   // Código de acceso (§3b): si entró con uno de este evento, la compra no puede pasar de las
   // entradas que le quedan.
@@ -71,12 +72,14 @@ export default async function EntradasPage({
             <Logo className="h-11" />
           </Link>
           <div className="flex items-center gap-1">
-            <Link
-              href={customer ? '/cuenta' : `/cuenta/ingresar?next=${encodeURIComponent(here)}`}
-              className={buttonVariants({ variant: 'ghost', size: 'sm' })}
-            >
-              {customer ? 'Mi cuenta' : 'Ingresar'}
-            </Link>
+            {accountsOn && (
+              <Link
+                href={customer ? '/cuenta' : `/cuenta/ingresar?next=${encodeURIComponent(here)}`}
+                className={buttonVariants({ variant: 'ghost', size: 'sm' })}
+              >
+                {customer ? 'Mi cuenta' : 'Ingresar'}
+              </Link>
+            )}
             <Link href="/" className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
               Volver
             </Link>
@@ -140,6 +143,8 @@ export default async function EntradasPage({
                 methods={{ mercadopago: sale.mpEnabled, transfer: sale.transferEnabled }}
                 transferDetails={sale.transferDetails}
                 maxPerOrder={maxPerOrder}
+                accountsEnabled={accountsOn}
+                ig={{ handle: igHandle, href: igUrl(igHandle) }}
                 transport={transport.map((o) => ({
                   id: o.id,
                   name: o.name,

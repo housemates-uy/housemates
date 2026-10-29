@@ -4,7 +4,7 @@ import { DoodleBackdrop } from '@/components/ui/doodle-backdrop';
 import { Logo } from '@/components/ui/logo';
 import { entryTime, formatLocal } from '@/lib/events';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { qrSvg, ticketUrl } from '@/lib/tickets';
+import { formatDocument, qrSvg, ticketUrl } from '@/lib/tickets';
 import { getTicketTransport } from '@/lib/transport';
 import { cn } from '@/lib/utils';
 import type { TicketStatus } from '@/types/database';
@@ -18,8 +18,7 @@ export const dynamic = 'force-dynamic';
 // Es lo que recibe el comprador (por WhatsApp o al terminar de pagar) y lo que muestra en
 // puerta. Ocupa exactamente la pantalla del celular, sin scroll: los tamaños se ajustan a
 // la altura (dvh) para que entre también en teléfonos chicos.
-// Quien tenga el link ve la entrada, por eso la cédula se muestra parcial; la completa la
-// ve solo el portero en el scanner para cotejar con el documento.
+// La cédula va completa (decisión de los owners): en puerta se coteja con el documento.
 const STATE: Record<TicketStatus, { label: string; dot: string }> = {
   paid: { label: 'Válida', dot: 'bg-violet' },
   used: { label: 'Usada', dot: 'bg-violet' },
@@ -48,7 +47,7 @@ export default async function TicketPage({ params }: { params: { token: string }
 
   const valid = ticket.status === 'paid';
   const svg = valid ? await qrSvg(ticketUrl(ticket.qr_token)) : null;
-  const doc = ticket.buyer_document.slice(-4);
+  const doc = formatDocument(ticket.buyer_document);
   const state = STATE[ticket.status];
   const entryLabel = ticket.source === 'invitation' ? 'Cortesía' : (tier?.name ?? 'Entrada');
   // Tanda de ingreso temprano: hay que entrar antes de esa hora (en puerta se avisa si no).
@@ -136,7 +135,7 @@ export default async function TicketPage({ params }: { params: { token: string }
           <div className="text-center">
             <p className="text-xl font-bold">{ticket.buyer_name}</p>
             <p className="mt-1 text-[13px] text-bone/70">
-              CI •••• {doc.slice(0, 3)}-{doc.slice(3)}
+              CI {doc}
             </p>
             {entryUntil && (
               <p className="mt-2 text-[11px] font-bold uppercase tracking-[0.16em]">Ingreso hasta {entryUntil}</p>

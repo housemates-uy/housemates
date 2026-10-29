@@ -8,7 +8,7 @@ import { mapsUrl } from '@/lib/next-event';
 import { quote, type PayMethod } from '@/lib/pricing';
 import { getIgHandle } from '@/lib/site';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { appUrl, ticketUrl } from '@/lib/tickets';
+import { appUrl, formatDocument, ticketUrl } from '@/lib/tickets';
 import { getTicketTransport } from '@/lib/transport';
 import { sendMail } from './send';
 import {
@@ -67,7 +67,7 @@ async function loadTicket(ticketId: string) {
   const data: TicketMailData = {
     firstName: t.buyer_name.split(' ')[0],
     fullName: t.buyer_name,
-    docTail: t.buyer_document.slice(-4),
+    document: formatDocument(t.buyer_document),
     eventTitle: event.title,
     dateLong: formatLocal(event.date_start, "EEEE d 'de' MMMM · HH:mm 'hs'").replace(/^./, (c) => c.toUpperCase()),
     dateShort: formatLocal(event.date_start, 'dd.MM.yy'),

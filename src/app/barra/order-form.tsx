@@ -26,10 +26,12 @@ const MAX_PER_PRODUCT = 20;
 export function BarOrderForm({
   products,
   account,
+  accountsEnabled,
   allowSimulate,
 }: {
   products: Product[];
   account: { email: string; name: string | null } | null;
+  accountsEnabled: boolean; // "Mi cuenta" prendida en /admin/config: se recomienda usarla
   allowSimulate: boolean;
 }) {
   const router = useRouter();
@@ -142,7 +144,7 @@ export function BarOrderForm({
         <p className="mt-6 text-sm text-bone/60">
           Comprás con tu cuenta <span className="text-bone">{account.email}</span>: el pedido queda guardado ahí.
         </p>
-      ) : (
+      ) : accountsEnabled ? (
         <div className="mt-6 rounded-card border border-bone/15 bg-ink/40 p-5">
           <p className="text-sm font-bold">Te recomendamos usar tu cuenta</p>
           <p className="mt-1.5 text-sm leading-relaxed text-bone/65">
@@ -156,7 +158,7 @@ export function BarOrderForm({
             Ingresar a mi cuenta
           </Link>
         </div>
-      )}
+      ) : null}
 
       {/* Total y pagar: fijo abajo mientras se arma el pedido */}
       <div className="sticky bottom-0 -mx-5 mt-10 border-t border-bone/10 bg-ink/90 px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 backdrop-blur-md">

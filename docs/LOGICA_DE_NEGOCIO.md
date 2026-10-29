@@ -46,6 +46,8 @@ Las entradas son **QR personales**: una por persona, a nombre y cédula, y de un
 
 ### Cuenta del comprador (ver §5.6)
 
+Solo con **Mi cuenta prendida** en `/admin/config`. Apagada, estas rutas llevan al inicio.
+
 | Ruta | Qué hace | Archivo |
 |---|---|---|
 | `/cuenta` | **Mis entradas** (próximas y pasadas, con "Ver entrada"), **Pedidos de barra** pagos con la cuenta (con "Ver pedido"), editar nombre y celular, salir. Sin sesión → `/cuenta/ingresar` | `src/app/cuenta/page.tsx` |
@@ -71,7 +73,7 @@ Las entradas son **QR personales**: una por persona, a nombre y cédula, y de un
 | `/admin/events/<id>/transporte` | **Transporte**: opciones de bus del evento y pasajeros por opción, con CSV (`/pasajeros`) e imprimible (`/imprimir`) para el chofer (§5.8) | todos; cambiar opciones: owner |
 | `/admin/scan/<id>` | **Puerta**: scanner de QR, pantalla completa, solo celular | todos; cerrar puerta: owner |
 | `/admin/barra/<id>` | **Escáner de barra**: un QR = un trago, pantalla completa; sin QR, por email | todos |
-| `/admin/config` | Venta (pedir contraseña sí/no, medios de pago, datos para transferir, máximo de entradas por compra) y contraseña del gate | cambiar: owner |
+| `/admin/config` | Venta (pedir contraseña sí/no, medios de pago, datos para transferir, máximo de entradas por compra), **Mi cuenta** (prender o apagar, §5.6) y contraseña del gate | cambiar: owner |
 | `/admin/landing` | **Landing**: título de la portada, La casa (título, texto y créditos opcionales), Reglas (título y lista: agregar, sacar, reordenar, hasta 12) e Instagram del sitio. **Fotos y videos**: maqueta de la portada (compu y celular) y de la grilla de La casa; tocar un lugar para cambiarlo por una foto o un video, editar su texto alternativo o volver a la original. Ver "Landing" abajo | owner (el staff no la ve) |
 | `/admin/events/<id>/accesos` | **Accesos**: códigos de acceso del evento (§3b) | owner (el staff no la ve) |
 | `/admin/account` | Cambiar mi contraseña | todos |
@@ -212,7 +214,8 @@ Todo esto lo hace la función `create_ticket` en Postgres (`supabase/migrations/
 ### 4.4 El QR
 
 - La persona puede **guardar la entrada** desde su página:
-  - **"Guardar imagen"** descarga un PNG formato historia (`/ticket/<token>/imagen`, solo si está válida).
+  - **"Guardar imagen"** descarga un PNG formato historia (`/ticket/<token>/imagen`, solo si está válida). Es la misma entrada de la página: fondo doodle (`public/brand/ticket-bg.jpg`, el de `DoodleBackdrop` ya desenfocado), la letra de la web (Neue Montreal si `NEXT_PUBLIC_FONTS_URL` tiene sus `.otf`; si no, General Sans de Fontshare), punto violeta, día, hora y formato, "Ingreso hasta" en la tanda temprana y el bus con el texto completo de salida. Si ese texto es largo, el QR se achica para que entre todo.
+  - Límite conocido: en Windows la imagen no se puede generar (falla la librería de Next que la dibuja, también en el build de producción). En Vercel (Linux) funciona.
   - **"Guardar PDF"** abre la impresión del navegador; la versión impresa sale en blanco y negro.
 
 - Cada entrada tiene un `qr_token`: 22 caracteres aleatorios. No contiene datos ni firma; solo vale si existe en la base. Adivinarlo es imposible en la práctica.
@@ -423,6 +426,12 @@ Código: `src/app/admin/scan/[id]/` · Lista: `src/app/admin/(panel)/events/[id]
 ### 5.6 Cuentas de compradores
 
 Opcionales: se puede comprar sin cuenta, como siempre. Código: `src/lib/customers.ts` · migración `0011_customer_accounts.sql`.
+
+- **Prender o apagar** (`/admin/config` → Mi cuenta, solo owners; `site_config.accounts_enabled`, `isAccountsEnabled`):
+  - **Apagada** (el valor de siempre si la fila no está o la base no responde): la web no muestra nada de cuentas. No aparece "Creá una contraseña" al comprar ni "Ingresar" o "Mi cuenta" en la compra y la portada. Tampoco el recuadro de la barra, el aviso del resultado de la compra, la sección Cuenta de Preguntas frecuentes ni las menciones en privacidad y términos.
+  - **Apagada, del lado del servidor:** no se crean cuentas (la contraseña se ignora), `getCustomer` no devuelve sesión, `/cuenta/*` lleva al inicio y las acciones de ingresar y recuperar no hacen nada.
+  - **Prendida:** vuelve todo como se describe abajo.
+  - El cambio es al instante para todo el sitio y queda en el Historial ("Mi cuenta para el público").
 
 - **Qué es:** un usuario de Supabase Auth (el mismo de los admins) + su perfil en `customers` (nombre, cédula, celular). **No da acceso al admin**: el admin sigue pidiendo fila activa en `admins`; un comprador que abre `/admin` termina en el login con "no está habilitado como admin".
 - **Cómo se crea:** en `/entradas`, el campo opcional "Creá una contraseña" (mínimo 8 caracteres). La cuenta se crea **recién con la compra hecha** (comprobante subido o pago de Mercado Pago iniciado): si la compra falla (agotado, cédula repetida, etc.) no se crea nada, y si falla la cuenta, la compra sigue igual. Queda logueada y le llega el mail "Confirmá tu email". Nadie se registra solo: Supabase tiene el registro público apagado y la cuenta la crea el servidor.

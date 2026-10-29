@@ -4,7 +4,15 @@ import { Logo } from '@/components/ui/logo';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
-export function SiteNav({ igHandle, igHref }: { igHandle: string; igHref: string }) {
+export function SiteNav({
+  igHandle,
+  igHref,
+  accountsEnabled,
+}: {
+  igHandle: string;
+  igHref: string;
+  accountsEnabled: boolean; // "Mi cuenta" prendida en /admin/config
+}) {
   return (
     <header className="absolute inset-x-0 top-0 z-20">
       <nav
@@ -26,14 +34,16 @@ export function SiteNav({ igHandle, igHref }: { igHandle: string; igHref: string
           >
             {igHandle}
           </a>
-          <Link
-            href="/cuenta"
-            aria-label="Mi cuenta"
-            className={cn(buttonVariants({ variant: 'ghost', size: 'md' }), 'px-2.5 sm:px-5')}
-          >
-            <User size={18} strokeWidth={1.5} aria-hidden className="sm:hidden" />
-            <span className="hidden sm:inline">Mi cuenta</span>
-          </Link>
+          {accountsEnabled && (
+            <Link
+              href="/cuenta"
+              aria-label="Mi cuenta"
+              className={cn(buttonVariants({ variant: 'ghost', size: 'md' }), 'px-2.5 sm:px-5')}
+            >
+              <User size={18} strokeWidth={1.5} aria-hidden className="sm:hidden" />
+              <span className="hidden sm:inline">Mi cuenta</span>
+            </Link>
+          )}
           <Link
             href="/entradas"
             className={cn(

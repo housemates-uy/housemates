@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { LegalPage, LegalSection } from '@/components/legal/legal-page';
+import { isAccountsEnabled } from '@/lib/customers';
 import { getIgHandle, igUrl } from '@/lib/site';
 
 // A CONFIRMAR: texto pendiente de revisión de un abogado (ver docs/BACKLOG.md).
@@ -29,7 +30,8 @@ const COOKIES = [
 ];
 
 export default async function PrivacyPage() {
-  const handle = await getIgHandle();
+  // Con "Mi cuenta" apagada (/admin/config) no se habla de cuentas.
+  const [handle, accounts] = await Promise.all([getIgHandle(), isAccountsEnabled()]);
   const instagram = (
     <a href={igUrl(handle)} target="_blank" rel="noreferrer">
       Instagram ({handle})
@@ -68,10 +70,12 @@ export default async function PrivacyPage() {
             <strong>Si pagás con Mercado Pago:</strong> el pago lo procesa Mercado Pago. Nosotros recibimos el número de
             operación, el estado y el monto; nunca vemos tu tarjeta.
           </li>
-          <li>
-            <strong>Si creás una cuenta:</strong> tu email, tu contraseña (la guarda cifrada nuestro proveedor y
-            nosotros no la vemos) y los datos de compra, para precargarte el formulario.
-          </li>
+          {accounts && (
+            <li>
+              <strong>Si creás una cuenta:</strong> tu email, tu contraseña (la guarda cifrada nuestro proveedor y
+              nosotros no la vemos) y los datos de compra, para precargarte el formulario.
+            </li>
+          )}
           {/* A CONFIRMAR: quién opera el bus y qué datos de la lista de pasajeros recibe. */}
           <li>
             <strong>Si sumás transporte:</strong> qué bus elegiste. Para la lista de pasajeros usamos tu nombre, tu
@@ -106,7 +110,7 @@ export default async function PrivacyPage() {
             </li>
             <li>Cobrar, validar transferencias y hacer devoluciones.</li>
             <li>Avisarte cambios sobre la fiesta, como fecha, lugar o cancelación.</li>
-            <li>Manejar tu cuenta, tus pedidos de barra y tu lugar en el bus.</li>
+            <li>{accounts ? 'Manejar tu cuenta, tus pedidos de barra y tu lugar en el bus.' : 'Manejar tus pedidos de barra y tu lugar en el bus.'}</li>
             <li>
               Mandarte los mails que explicamos en «Los mails que te mandamos»: el recordatorio antes de la fiesta, la
               encuesta del día después y la preventa de la próxima fecha si tuviste entrada para una anterior.
@@ -131,7 +135,7 @@ export default async function PrivacyPage() {
           {/* A CONFIRMAR (abogado): estos mails, sus destinatarios y la forma de darse de baja. */}
           <p>
             Además de los mails de tu compra (tu entrada, el aviso de que recibimos tu comprobante o de que se anuló una
-            entrada) y los de tu cuenta, te podemos mandar estos:
+            entrada){accounts && ' y los de tu cuenta'}, te podemos mandar estos:
           </p>
           <ul>
             <li>
@@ -226,8 +230,8 @@ export default async function PrivacyPage() {
           {/* A CONFIRMAR: plazos de conservación (datos de compra, comprobantes, registros de puerta y cuentas). */}
           <p>
             Los datos de tu compra, mientras los necesitemos para la fiesta y lo que pida la ley (por ejemplo, registros
-            contables). Los comprobantes de transferencia, hasta un año después de la fiesta. Tu cuenta, hasta que nos
-            pidas borrarla.
+            contables). Los comprobantes de transferencia, hasta un año después de la fiesta.
+            {accounts && ' Tu cuenta, hasta que nos pidas borrarla.'}
           </p>
         </>
       ),
@@ -282,7 +286,7 @@ export default async function PrivacyPage() {
         <>
           <p>Usamos solo las cookies que el sitio necesita para funcionar:</p>
           <dl className="divide-y divide-bone/10 rounded-card border border-bone/15 bg-ink/40">
-            {COOKIES.map((c) => (
+            {COOKIES.filter((c) => accounts || c.name !== 'sb-…').map((c) => (
               <div key={c.name} className="grid gap-1 px-4 py-4 sm:grid-cols-[8rem_1fr] sm:gap-4">
                 <dt className="font-mono text-[13px] text-bone">{c.name}</dt>
                 <dd>

@@ -7,6 +7,7 @@ import { safeNextPath } from '@/lib/auth/gate';
 import { allowAttempt, TOO_MANY_ATTEMPTS } from '@/lib/rate-limit';
 import {
   getCustomer,
+  isAccountsEnabled,
   markEmailVerified,
   openedFromEmailLink,
   passwordSchema,
@@ -20,6 +21,7 @@ import { isValidEmail } from '@/lib/validation/email';
 export type FormState = { error?: string; ok?: string } | null;
 
 export async function signInAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  if (!(await isAccountsEnabled())) redirect('/');
   const email = String(formData.get('email') ?? '').trim().toLowerCase();
   const password = String(formData.get('password') ?? '');
   if (!isValidEmail(email) || !password) return { error: 'Completá tu email y tu contraseña.' };
@@ -50,6 +52,7 @@ export async function signOutAction(next: string) {
 const RESET_MIN_MS = 1500;
 
 export async function requestPasswordResetAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  if (!(await isAccountsEnabled())) redirect('/');
   const email = String(formData.get('email') ?? '').trim();
   if (!isValidEmail(email)) return { error: 'Escribí un email válido.' };
   const started = Date.now();
@@ -62,6 +65,7 @@ export async function requestPasswordResetAction(_prev: FormState, formData: For
 // Solo con la sesión que abrió un link del mail (/auth/confirm): "Confirmá tu email" o
 // recupero. Guardar la contraseña con esa sesión es lo que prueba que el email es suyo.
 export async function updatePasswordAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  if (!(await isAccountsEnabled())) redirect('/');
   const parsed = passwordSchema.safeParse(String(formData.get('password') ?? ''));
   if (!parsed.success) return { error: parsed.error.issues[0].message };
 

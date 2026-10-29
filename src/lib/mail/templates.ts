@@ -97,7 +97,7 @@ function button(href: string, label: string) {
 export type TicketMailData = {
   firstName: string;
   fullName: string;
-  docTail: string; // últimos 4 dígitos, p. ej. "6783"
+  document: string; // cédula completa con formato, p. ej. "4.097.298-0"
   eventTitle: string;
   dateLong: string; // "Viernes 11 de diciembre · 23:00 hs"
   dateShort: string; // "11.12.26"
@@ -161,11 +161,11 @@ ${blend(`<strong style="color:${C.bone};">Tu lugar en el bus · ${esc(d.transpor
 const busText = (d: TicketMailData) =>
   d.transport ? `Transporte: ${d.transport.name} · ${d.transport.departure.replace(/\s*\n\s*/g, ' · ')}` : '';
 
-// Con espacios de no corte: en pantallas angostas no se parte en dos líneas.
-const ciMasked = (tail: string) => `CI\u00A0••••\u00A0${tail.slice(0, 3)}-${tail.slice(3)}`;
+// Cédula completa. Con espacio de no corte: en pantallas angostas no se parte en dos líneas.
+const ciText = (document: string) => `CI ${document}`;
 
 // Para los mails de comunicación del evento (src/lib/mail/event-mails.ts).
-export { C as MAIL_COLORS, IG_URL, blend, solid, esc, layout, heading, rows, button, ciMasked };
+export { C as MAIL_COLORS, IG_URL, blend, solid, esc, layout, heading, rows, button, ciText };
 
 // 1 · Entrada confirmada: compra web aprobada, entrada manual o invitación.
 // El QR va como imagen adjunta embebida (cid:qr) porque Gmail no muestra imágenes data:.
@@ -188,7 +188,7 @@ export function ticketConfirmedEmail(d: TicketMailData) {
 </td></tr></table>
 </td></tr>
 <tr><td colspan="2" align="center" style="padding:0 24px 22px;font-size:20px;font-weight:700;">${blend(`${esc(d.fullName)}<br>
-<span style="font-size:13px;font-weight:400;color:${C.soft};">${esc(ciMasked(d.docTail))}</span>`)}</td></tr>
+<span style="font-size:13px;font-weight:400;color:${C.soft};">${esc(ciText(d.document))}</span>`)}</td></tr>
 </table>
 </td></tr>
 ${button(d.ticketUrl, 'Ver mi entrada')}
@@ -208,7 +208,7 @@ ${blend(`<strong style="color:${C.bone};">Antes de ir</strong><br>La entrada es 
   const text = [
     `${d.firstName}, ya tenés tu entrada para ${d.eventTitle} (${d.dateLong}).`,
     d.boughtBy ? `Te la compró ${d.boughtBy}.` : '',
-    `${d.entryLabel} · ${d.fullName} · ${ciMasked(d.docTail)}`,
+    `${d.entryLabel} · ${d.fullName} · ${ciText(d.document)}`,
     d.entryUntil ? `Ingreso temprano: entrá antes de las ${d.entryUntil}.` : '',
     `Tu entrada con el QR: ${d.ticketUrl}`,
     d.location ? `Lugar: ${d.location}${d.locationUrl ? ` (${d.locationUrl})` : ''}` : '',
@@ -249,7 +249,7 @@ ${blend(
 <tr><td style="padding-top:28px;">${rows([
     ['Evento', d.eventTitle],
     ['Entrada', d.entryLabel],
-    ['A nombre de', `${d.fullName} · ${ciMasked(d.docTail)}`],
+    ['A nombre de', `${d.fullName} · ${ciText(d.document)}`],
   ])}</td></tr>
 ${refundBlock}
 <tr><td align="center" style="padding-top:24px;font-size:14px;line-height:1.55;color:${C.bone};">${blend('Si tenés dudas o creés que es un error, escribinos por Instagram.')}</td></tr>
@@ -282,7 +282,7 @@ export function transferReceivedEmail(d: TicketMailData) {
       ? `Lo estamos validando. Cuando confirmemos la transferencia, a cada uno le llega su entrada con el QR a su mail.`
       : 'Lo estamos validando. Cuando confirmemos la transferencia te mandamos la entrada con el QR a este mail.',
   )}
-<tr><td style="padding-top:28px;">${rows([['Fecha', d.dateLong], ['Lugar', d.location ?? 'A confirmar'], ...(several ? [] : ([['A nombre de', `${d.fullName} · ${ciMasked(d.docTail)}`]] as [string, string][])), ...payment], total)}</td></tr>
+<tr><td style="padding-top:28px;">${rows([['Fecha', d.dateLong], ['Lugar', d.location ?? 'A confirmar'], ...(several ? [] : ([['A nombre de', `${d.fullName} · ${ciText(d.document)}`]] as [string, string][])), ...payment], total)}</td></tr>
 ${busPanel(d)}
 <tr><td style="padding-top:24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="${solid(C.panel)}border-radius:14px;"><tr><td style="padding:18px 20px;font-size:13px;line-height:1.6;color:${C.soft};">
 ${blend(`<strong style="color:${C.bone};">${several ? 'Los lugares quedan reservados' : 'Tu lugar queda reservado'}</strong><br>Mientras validamos el comprobante nadie más puede usar ${several ? 'esos lugares' : 'tu lugar'}. Si algo no coincide te escribimos.`)}
@@ -317,7 +317,7 @@ export function transferRejectedEmail(d: TicketMailData) {
     ['Entrada', d.entryLabel],
     d.group && d.group.count > 1
       ? ['Entradas', `${d.group.count} · ${groupNames(d)}`]
-      : ['A nombre de', `${d.fullName} · ${ciMasked(d.docTail)}`],
+      : ['A nombre de', `${d.fullName} · ${ciText(d.document)}`],
   ])}</td></tr>
 <tr><td align="center" style="padding-top:24px;font-size:14px;line-height:1.55;color:${C.bone};">${blend('Si ya transferiste, escribinos por Instagram con el comprobante y lo revisamos. Si la plata llegó, te la devolvemos.')}</td></tr>
 ${button(ig, 'Escribinos por Instagram')}`;

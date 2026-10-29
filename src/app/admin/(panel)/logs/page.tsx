@@ -98,6 +98,7 @@ const FIELDS: Record<string, string> = {
   pay_transfer_enabled: 'Transferencia',
   transfer_details: 'Datos para transferir',
   max_tickets_per_order: 'Máximo de entradas por compra',
+  accounts_enabled: 'Mi cuenta para el público',
   landing_hero_title: 'Título de la portada',
   landing_house_title: 'La casa: título',
   landing_house_text: 'La casa: texto',
@@ -145,7 +146,7 @@ function formatValue(field: string, value: Json | undefined): string {
   if (Array.isArray(value)) return value.map((v) => formatValue(field, v)).join(', ');
   if (typeof value === 'object') return JSON.stringify(value);
   const text = String(value);
-  if (['gate_enabled', 'pay_mp_enabled', 'pay_transfer_enabled'].includes(field)) {
+  if (['gate_enabled', 'pay_mp_enabled', 'pay_transfer_enabled', 'accounts_enabled'].includes(field)) {
     return text === '1' ? 'Sí' : text === '0' ? 'No' : text;
   }
   if (field === 'status') return STATUS_VALUES[text] ?? text;

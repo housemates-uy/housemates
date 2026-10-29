@@ -7,7 +7,7 @@ import { Eyebrow } from '@/components/ui/eyebrow';
 import { Logo } from '@/components/ui/logo';
 import { isLocalNoAuth } from '@/lib/auth/local-mode';
 import { getBarMenu } from '@/lib/bar';
-import { getCustomer } from '@/lib/customers';
+import { getCustomer, isAccountsEnabled } from '@/lib/customers';
 import { getNextEvent } from '@/lib/next-event';
 import { getIgHandle, igUrl } from '@/lib/site';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -20,10 +20,11 @@ export const dynamic = 'force-dynamic';
 // letra grande, botones grandes y el total siempre visible abajo.
 // No pide la contraseña del gate (esa es solo para comprar entradas) ni cuenta.
 export default async function BarraPage() {
-  const [event, igHandle, customer] = await Promise.all([
+  const [event, igHandle, customer, accountsOn] = await Promise.all([
     getNextEvent(),
     getIgHandle(),
     getCustomer().catch(() => null),
+    isAccountsEnabled(),
   ]);
 
   const [menu, paused] = event.id
@@ -67,6 +68,7 @@ export default async function BarraPage() {
           <BarOrderForm
             products={menu}
             account={customer ? { email: customer.email, name: customer.profile?.name ?? null } : null}
+            accountsEnabled={accountsOn}
             allowSimulate={isLocalNoAuth()}
           />
         ) : (
