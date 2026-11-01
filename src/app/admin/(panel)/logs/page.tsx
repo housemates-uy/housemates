@@ -108,6 +108,7 @@ const FIELDS: Record<string, string> = {
   ig_handle: 'Instagram',
   slot: 'Lugar',
   file: 'Archivo',
+  photo: 'Foto',
   alt: 'Texto alternativo',
   new_tiers: 'Tandas nuevas',
   tiers: 'Tandas',

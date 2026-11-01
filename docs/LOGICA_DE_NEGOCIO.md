@@ -99,7 +99,7 @@ Solo con **Mi cuenta prendida** en `/admin/config`. Apagada, estas rutas llevan 
 - Si las tandas activas suman más que la capacidad del evento, se avisa: se vende hasta la capacidad, invitaciones incluidas (§4.3).
 - El alta es atómica: si fallan las tandas, no queda el evento creado.
 - **Duplicar** (`duplicate_event`, migración `0023`, una sola transacción): para cada fiesta nueva se copia la anterior y se ajusta a mano.
-  - **Se copia:** lugar, URL del mapa, capacidad, formato, descripción, hero, galería y lineup; las tandas (nombre, descripción, precio, cupo, orden, activa, ingreso temprano y código de preventa) con 0 vendidas, sin agotar a mano y sin fechas de salida a la venta; el transporte (nombre, punto y horario de salida, precio, cupo, activa) en el mismo orden; la carta de la barra (nombre, descripción, precio, activo, orden).
+  - **Se copia:** lugar, URL del mapa, capacidad, formato, descripción, hero, galería y lineup; las tandas (nombre, descripción, precio, cupo, orden, activa, ingreso temprano y código de preventa) con 0 vendidas, sin agotar a mano y sin fechas de salida a la venta; el transporte (nombre, punto y horario de salida, precio, cupo, activa) en el mismo orden; la carta de la barra (nombre, descripción, precio, activo, orden y foto).
   - **Cómo queda:** borrador, ventas apagadas, puerta abierta y barra sin pausar. Slug desde el título, con -2, -3… si ya existe.
   - **No se copia:** entradas, compras, check-ins, códigos de descuento y de acceso, pedidos de barra, comunicaciones ni encuestas.
   - Queda en el Historial (`duplicate_event`) con de qué evento se copió.
@@ -458,7 +458,8 @@ Tragos que se compran por la web y se retiran en la barra con un QR por trago. C
 
 **Reglas**
 
-- **La carta es por evento.** Los owners la cargan en Admin → evento → **Barra**: nombre, precio y descripción opcional. Se ordena con ↑ ↓ (es el orden de `/barra`) y cada trago se activa o desactiva. Uno desactivado no aparece en `/barra`. No se borran.
+- **La carta es por evento.** Los owners la cargan en Admin → evento → **Barra**: nombre, precio, descripción opcional y foto opcional. Se ordena con ↑ ↓ (es el orden de `/barra`) y cada trago se activa o desactiva. Uno desactivado no aparece en `/barra`. No se borran.
+- **Foto de cada trago** (`0028_bar_product_images.sql`): se elige al cargar el trago o en **Editar** (Cambiar foto / Sacar la foto). El navegador la achica (lado más largo 1400 px, WebP o JPG) y el servidor la sube con la service key al bucket público `bar`, después de controlar por los primeros bytes que sea JPG, PNG o WebP de hasta 4 MB. En `/barra` se ve cuadrada, recortada al centro, al lado del nombre; si ningún trago tiene foto, la carta va sin fotos, y si solo algunos tienen, los demás muestran un vaso dibujado. La foto vieja se borra del bucket cuando ya no la usa ningún trago (al duplicar un evento la carta nueva usa los mismos archivos). En el Historial queda como "Foto: Nueva" o "Foto: Sacada".
 - **El precio de la carta es el final:** la barra no tiene cargo por servicio. El total lo calcula la base con los precios vigentes al comprar (`create_bar_order`): la app nunca manda un precio. Cada trago comprado guarda nombre y precio del momento, así que editar la carta no cambia los pedidos hechos.
 - **Cuándo se vende:** para el próximo evento (el mismo de la landing, `getNextEvent()`), mientras esté publicado y no haya terminado, antes o durante la fiesta. No depende de "ventas activas" de las entradas ni de la contraseña del gate.
 - **Pausar venta** (owners, Admin → Barra): nadie puede comprar; los QRs ya pagos se siguen entregando. Arranca prendida (`events.bar_paused = false`).
@@ -565,6 +566,7 @@ Bus opcional que se suma al comprar la entrada (la fiesta es fuera de Montevideo
 | Barra: escanear sin cambiar / entregar una sola vez | `inspect_bar_unit` / `deliver_bar_unit` (`0012`) |
 | Barra: resumen por trago | `bar_summary` (`0012`) |
 | Barra: carrito, tokens y URLs de los QRs | `src/lib/bar.ts` |
+| Barra: foto de cada trago (bucket `bar`, copia al duplicar) | `bar_products.image_path` y `duplicate_event` (`0028_bar_product_images.sql`) · `saveBarProductAction` en `src/app/admin/(panel)/events/[id]/barra/actions.ts` |
 | Transporte: cupo del bus (atómico, solo entradas vivas) | `reserve_transport` / `transport_seats_taken` — `supabase/migrations/0015_transport.sql` · `src/lib/transport.ts` |
 | CSV de puerta y de bus: celular como texto ("099 123 456", para que Excel no se coma el 0), sin tope de 1000 filas | `formatPhone` en `src/lib/tickets.ts` · `fetchAll` en `src/lib/supabase/admin.ts` |
 

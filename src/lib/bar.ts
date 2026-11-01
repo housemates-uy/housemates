@@ -89,17 +89,32 @@ export async function createBarOrder(params: {
   return { id: data as string, accessToken };
 }
 
-export type BarProduct = { id: string; name: string; description: string | null; price: number };
+// Foto de cada trago: bucket público `bar` (migración 0028). En bar_products.image_path va la
+// ruta dentro del bucket; al duplicar un evento la carta nueva usa los mismos archivos.
+export const BAR_BUCKET = 'bar';
+
+export function barImageUrl(path: string | null): string | null {
+  if (!path) return null;
+  return `${(process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '')}/storage/v1/object/public/${BAR_BUCKET}/${path}`;
+}
+
+export type BarProduct = { id: string; name: string; description: string | null; price: number; image: string | null };
 
 export async function getBarMenu(eventId: string): Promise<BarProduct[]> {
   const { data } = await createAdminClient()
     .from('bar_products')
-    .select('id, name, description, price_uyu')
+    .select('id, name, description, price_uyu, image_path')
     .eq('event_id', eventId)
     .eq('active', true)
     .order('sort_order', { ascending: true })
     .order('name', { ascending: true });
-  return (data ?? []).map((p) => ({ id: p.id, name: p.name, description: p.description, price: Number(p.price_uyu) }));
+  return (data ?? []).map((p) => ({
+    id: p.id,
+    name: p.name,
+    description: p.description,
+    price: Number(p.price_uyu),
+    image: barImageUrl(p.image_path),
+  }));
 }
 
 export type BarUnit = {

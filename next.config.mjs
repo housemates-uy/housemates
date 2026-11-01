@@ -6,7 +6,7 @@ const securityHeaders = [
   { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
 ];
 
-// Fotos de la landing que suben los owners (bucket público `landing` de Supabase Storage).
+// Fotos de la landing y de los tragos que suben los owners (buckets públicos de Supabase Storage).
 // En local es 127.0.0.1:54321; en producción, <ref>.supabase.co.
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ? new URL(process.env.NEXT_PUBLIC_SUPABASE_URL) : null;
 
@@ -22,6 +22,13 @@ const nextConfig = {
             hostname: supabaseUrl.hostname,
             port: supabaseUrl.port,
             pathname: '/storage/v1/object/public/landing/**',
+          },
+          // Fotos de los tragos de la barra (bucket público `bar`).
+          {
+            protocol: supabaseUrl.protocol.replace(':', ''),
+            hostname: supabaseUrl.hostname,
+            port: supabaseUrl.port,
+            pathname: '/storage/v1/object/public/bar/**',
           },
         ]
       : [],

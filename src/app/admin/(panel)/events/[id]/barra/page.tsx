@@ -1,13 +1,13 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowDown, ArrowUp } from 'lucide-react';
+import { ArrowDown, ArrowUp, GlassWater } from 'lucide-react';
 import { ContextMenu, ContextMenuButton } from '@/components/admin/context-menu';
 import { SubmitButton } from '@/components/admin/submit-button';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { EmptyState, StatCard } from '@/components/ui/card';
 import { requireAdmin } from '@/lib/auth/admin';
-import { BAR_STATUS_LABELS, groupUnits } from '@/lib/bar';
+import { BAR_STATUS_LABELS, barImageUrl, groupUnits } from '@/lib/bar';
 import { formatLocal, formatUYU } from '@/lib/events';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { deleteBarProductAction, moveBarProductAction, setBarPausedAction, toggleBarProductAction } from './actions';
@@ -36,7 +36,7 @@ export default async function EventBarPage({
       db.from('events').select('id, status, date_end, bar_paused').eq('id', params.id).single(),
       db
         .from('bar_products')
-        .select('id, name, description, price_uyu, active, sort_order')
+        .select('id, name, description, price_uyu, active, sort_order, image_path')
         .eq('event_id', params.id)
         .order('sort_order', { ascending: true })
         .order('name', { ascending: true }),
@@ -155,7 +155,7 @@ export default async function EventBarPage({
           <h2 className="text-lg font-bold tracking-tight">Carta ({list.length})</h2>
           <p className="mt-1 text-sm text-bone/55">
             {isOwner
-              ? 'El orden de esta lista es el de /barra. Cambiar un precio no toca los pedidos ya hechos. Un trago que ya está en pedidos no se elimina: se desactiva.'
+              ? 'El orden de esta lista es el de /barra. La foto de cada trago se cambia en Editar. Cambiar un precio no toca los pedidos ya hechos. Un trago que ya está en pedidos no se elimina: se desactiva.'
               : 'Solo los owners pueden cambiar la carta y pausar la venta.'}
           </p>
         </div>
@@ -198,20 +198,30 @@ export default async function EventBarPage({
                 className="px-5 py-4"
               >
                 <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-medium">{p.name}</p>
-                      {!p.active && <Badge>Inactivo</Badge>}
-                      {searchParams.guardado === p.id && (
-                        <span role="status" className="text-xs text-bone/60">
-                          Guardado
-                        </span>
+                  <div className="flex min-w-0 items-center gap-4">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-bone/10 bg-bone/[0.04]">
+                      {p.image_path ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- miniatura del bucket público
+                        <img src={barImageUrl(p.image_path)!} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <GlassWater size={18} strokeWidth={1.5} aria-label="Sin foto" className="text-bone/30" />
                       )}
                     </div>
-                    <p className="mt-1 text-xs text-bone/55">
-                      {formatUYU(Number(p.price_uyu))}
-                      {p.description && ` · ${p.description}`}
-                    </p>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium">{p.name}</p>
+                        {!p.active && <Badge>Inactivo</Badge>}
+                        {searchParams.guardado === p.id && (
+                          <span role="status" className="text-xs text-bone/60">
+                            Guardado
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs text-bone/55">
+                        {formatUYU(Number(p.price_uyu))}
+                        {p.description && ` · ${p.description}`}
+                      </p>
+                    </div>
                   </div>
                   {isOwner && (
                     <div className="flex items-center gap-1">
@@ -248,7 +258,13 @@ export default async function EventBarPage({
                     <div className="mt-4 rounded-card border border-bone/10 p-5">
                       <ProductForm
                         eventId={params.id}
-                        product={{ id: p.id, name: p.name, description: p.description, price: Number(p.price_uyu) }}
+                        product={{
+                          id: p.id,
+                          name: p.name,
+                          description: p.description,
+                          price: Number(p.price_uyu),
+                          image: barImageUrl(p.image_path),
+                        }}
                       />
                     </div>
                   </details>

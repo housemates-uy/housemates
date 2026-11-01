@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Minus, Plus } from 'lucide-react';
+import { GlassWater, Minus, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -16,11 +17,12 @@ import {
   type BarCheckoutResult,
 } from './actions';
 
-type Product = { id: string; name: string; description: string | null; price: number };
+type Product = { id: string; name: string; description: string | null; price: number; image: string | null };
 
 const MAX_PER_PRODUCT = 20;
 
-// Carta con + / − por trago, email (nombre opcional) y el total fijo abajo con "Pagar".
+// Carta con la foto de cada trago y + / − debajo del nombre, email (nombre opcional) y el
+// total fijo abajo con "Pagar". Si ningún trago tiene foto, la carta va sin fotos.
 // El precio que se ve es el final: la barra no tiene cargo por servicio. El total que se
 // cobra lo vuelve a calcular la base con los precios vigentes.
 export function BarOrderForm({
@@ -43,6 +45,7 @@ export function BarOrderForm({
   const units = products.reduce((s, p) => s + (qty[p.id] ?? 0), 0);
   const total = products.reduce((s, p) => s + (qty[p.id] ?? 0) * p.price, 0);
   const error = result && 'error' in result ? result : null;
+  const withPhotos = products.some((p) => p.image);
 
   function change(id: string, delta: number) {
     setResult(null);
@@ -76,7 +79,16 @@ export function BarOrderForm({
         {products.map((p) => {
           const n = qty[p.id] ?? 0;
           return (
-            <li key={p.id} className="flex items-center gap-4 py-5">
+            <li key={p.id} className="flex gap-4 py-5">
+              {withPhotos && (
+                <div className="relative flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-bone/10 bg-bone/[0.04] sm:h-28 sm:w-28">
+                  {p.image ? (
+                    <Image src={p.image} alt="" fill sizes="112px" className="object-cover" />
+                  ) : (
+                    <GlassWater size={28} strokeWidth={1.5} aria-hidden className="text-bone/25" />
+                  )}
+                </div>
+              )}
               <div className="min-w-0 flex-1">
                 <p className="text-[1.375rem] font-bold leading-tight tracking-tight">
                   {p.name}
@@ -85,33 +97,35 @@ export function BarOrderForm({
                   )}
                 </p>
                 {p.description && <p className="mt-1 text-sm leading-snug text-bone/60">{p.description}</p>}
-                <p className="mt-2 text-lg text-bone/85">{formatUYU(p.price)}</p>
-              </div>
-              <div className="flex shrink-0 items-center gap-1" role="group" aria-label={`Cantidad de ${p.name}`}>
-                <button
-                  type="button"
-                  onClick={() => change(p.id, -1)}
-                  disabled={n === 0}
-                  aria-label={`Sacar un ${p.name}`}
-                  className="flex h-14 w-14 items-center justify-center rounded-full border border-bone/25 transition-colors active:bg-bone/10 disabled:opacity-30"
-                >
-                  <Minus size={22} aria-hidden />
-                </button>
-                <output aria-live="polite" className="w-9 text-center text-2xl font-bold tabular-nums">
-                  {n}
-                </output>
-                <button
-                  type="button"
-                  onClick={() => change(p.id, 1)}
-                  disabled={n >= MAX_PER_PRODUCT}
-                  aria-label={`Agregar un ${p.name}`}
-                  className={cn(
-                    'flex h-14 w-14 items-center justify-center rounded-full border transition-colors active:bg-bone/10 disabled:opacity-30',
-                    n > 0 ? 'border-bone bg-bone text-ink active:bg-bone/80' : 'border-bone/25',
-                  )}
-                >
-                  <Plus size={22} aria-hidden />
-                </button>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <p className="text-lg text-bone/85">{formatUYU(p.price)}</p>
+                  <div className="flex shrink-0 items-center gap-1" role="group" aria-label={`Cantidad de ${p.name}`}>
+                    <button
+                      type="button"
+                      onClick={() => change(p.id, -1)}
+                      disabled={n === 0}
+                      aria-label={`Sacar un ${p.name}`}
+                      className="flex h-14 w-14 items-center justify-center rounded-full border border-bone/25 transition-colors active:bg-bone/10 disabled:opacity-30"
+                    >
+                      <Minus size={22} aria-hidden />
+                    </button>
+                    <output aria-live="polite" className="w-9 text-center text-2xl font-bold tabular-nums">
+                      {n}
+                    </output>
+                    <button
+                      type="button"
+                      onClick={() => change(p.id, 1)}
+                      disabled={n >= MAX_PER_PRODUCT}
+                      aria-label={`Agregar un ${p.name}`}
+                      className={cn(
+                        'flex h-14 w-14 items-center justify-center rounded-full border transition-colors active:bg-bone/10 disabled:opacity-30',
+                        n > 0 ? 'border-bone bg-bone text-ink active:bg-bone/80' : 'border-bone/25',
+                      )}
+                    >
+                      <Plus size={22} aria-hidden />
+                    </button>
+                  </div>
+                </div>
               </div>
             </li>
           );

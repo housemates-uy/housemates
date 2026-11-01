@@ -1,10 +1,12 @@
 'use server';
 
-// Barra de un evento: carta (cargar, editar, activar/desactivar, ordenar, eliminar) y pausar la venta.
-// Todo esto es solo para owners. Reglas: ver docs/LOGICA_DE_NEGOCIO.md → "Barra".
+// Barra de un evento: carta (cargar, editar con foto, activar/desactivar, ordenar, eliminar) y
+// pausar la venta. Todo esto es solo para owners. Reglas: ver docs/LOGICA_DE_NEGOCIO.md → "Barra".
+import { randomBytes } from 'crypto';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { logAdminAction, requireOwner } from '@/lib/auth/admin';
+import { BAR_BUCKET } from '@/lib/bar';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export type ProductFormState = { error: string; field?: string } | { ok: true; name: string } | null;
@@ -20,6 +22,31 @@ const productSchema = z.object({
 });
 
 const barPath = (eventId: string) => `/admin/events/${eventId}/barra`;
+
+// La foto llega ya achicada por el navegador (product-form.tsx). El tipo se saca de los
+// primeros bytes, no de lo que dice el navegador.
+const IMAGE_MAX_BYTES = 4 * 1024 * 1024;
+
+function imageType(bytes: Uint8Array): { ext: string; mime: string } | null {
+  const ascii = (from: number, to: number) => String.fromCharCode(...Array.from(bytes.slice(from, to)));
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return { ext: 'jpg', mime: 'image/jpeg' };
+  if (bytes[0] === 0x89 && ascii(1, 4) === 'PNG') return { ext: 'png', mime: 'image/png' };
+  if (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') return { ext: 'webp', mime: 'image/webp' };
+  return null;
+}
+
+// Un archivo puede ser de varios tragos (al duplicar un evento la carta copia la ruta): se
+// borra del bucket solo cuando ya no lo usa ninguno.
+async function removeImageIfUnused(db: ReturnType<typeof createAdminClient>, path: string | null | undefined) {
+  if (!path) return;
+  const { count, error } = await db
+    .from('bar_products')
+    .select('id', { count: 'exact', head: true })
+    .eq('image_path', path);
+  if (error || count) return;
+  const { error: removeError } = await db.storage.from(BAR_BUCKET).remove([path]);
+  if (removeError) console.error('[barra] no se pudo borrar la foto vieja', path, removeError.message);
+}
 
 // Alta (productId = null) o edición. Cambiar el precio no toca los pedidos ya hechos: cada
 // pedido guarda el nombre y el precio del momento.
@@ -43,12 +70,34 @@ export async function saveBarProductAction(
   const d = parsed.data;
   const db = createAdminClient();
 
+  const { data: current } = productId
+    ? await db.from('bar_products').select('image_path').eq('id', productId).eq('event_id', eventId).maybeSingle()
+    : { data: null };
+  if (productId && !current) return { error: 'Ese trago ya no está en la carta. Recargá la página.' };
+
+  // Foto nueva: se sube antes de guardar; si después no se puede guardar, se borra.
+  let newImage: string | null = null;
+  const file = formData.get('image');
+  if (file instanceof Blob && file.size > 0) {
+    if (file.size > IMAGE_MAX_BYTES) return { error: 'La foto pesa más de 4 MB: probá con otra.', field: 'image' };
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const type = imageType(bytes);
+    if (!type) return { error: 'Tiene que ser una foto JPG, PNG o WebP.', field: 'image' };
+    newImage = `${eventId}/${randomBytes(4).toString('hex')}.${type.ext}`;
+    const { error: uploadError } = await db.storage
+      .from(BAR_BUCKET)
+      .upload(newImage, bytes, { contentType: type.mime, cacheControl: '31536000', upsert: false });
+    if (uploadError) return { error: 'No se pudo subir la foto. Probá de nuevo.', field: 'image' };
+  }
+  const removeImage = !newImage && formData.get('remove_image') === '1';
+  const image = newImage ? { image_path: newImage } : removeImage ? { image_path: null } : {};
+
   let error: { code?: string } | null;
   let id = productId;
   if (productId) {
     ({ error } = await db
       .from('bar_products')
-      .update({ name: d.name, description: d.description || null, price_uyu: d.price })
+      .update({ name: d.name, description: d.description || null, price_uyu: d.price, ...image })
       .eq('id', productId)
       .eq('event_id', eventId));
   } else {
@@ -67,6 +116,7 @@ export async function saveBarProductAction(
         description: d.description || null,
         price_uyu: d.price,
         sort_order: (last?.sort_order ?? 0) + 1,
+        ...image,
       })
       .select('id')
       .single();
@@ -75,11 +125,19 @@ export async function saveBarProductAction(
   }
 
   if (error) {
+    if (newImage) await db.storage.from(BAR_BUCKET).remove([newImage]);
     if (error.code === '23505') return { error: 'Ya hay un trago con ese nombre en este evento.', field: 'name' };
     return { error: 'No se pudo guardar. Probá de nuevo.' };
   }
 
-  await logAdminAction(admin.id, productId ? 'update_bar_product' : 'create_bar_product', 'bar_product', id ?? undefined);
+  if (newImage || removeImage) await removeImageIfUnused(db, current?.image_path);
+  await logAdminAction(
+    admin.id,
+    productId ? 'update_bar_product' : 'create_bar_product',
+    'bar_product',
+    id ?? undefined,
+    newImage ? { photo: 'Nueva' } : removeImage && current?.image_path ? { photo: 'Sacada' } : undefined,
+  );
   // La lista la refresca el formulario (router.refresh), igual que en Descuentos.
   return { ok: true, name: d.name };
 }
@@ -97,7 +155,7 @@ export async function deleteBarProductAction(eventId: string, productId: string)
   const admin = await requireOwner().catch(() => null);
   if (!admin) return { error: 'Solo los owners pueden cambiar la carta.' };
   const db = createAdminClient();
-  const { data: product } = await db.from('bar_products').select('name').eq('id', productId).maybeSingle();
+  const { data: product } = await db.from('bar_products').select('name, image_path').eq('id', productId).maybeSingle();
   const { data: result, error } = await db.rpc('admin_delete_bar_product', {
     p_product_id: productId,
     p_event_id: eventId,
@@ -105,6 +163,7 @@ export async function deleteBarProductAction(eventId: string, productId: string)
   if (error) return { error: 'No se pudo eliminar el trago. Probá de nuevo.' };
   if (result === 'in_use') return { error: 'El trago está en pedidos: no se puede eliminar. Desactivalo.' };
   if (result === 'deleted') {
+    await removeImageIfUnused(db, product?.image_path);
     await logAdminAction(admin.id, 'delete_bar_product', 'bar_product', productId, { deleted: product?.name ?? null });
   }
   revalidatePath(barPath(eventId));

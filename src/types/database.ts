@@ -280,6 +280,7 @@ export type Database = {
           description: string | null
           event_id: string
           id: string
+          image_path: string | null
           name: string
           price_uyu: number
           sort_order: number
@@ -291,6 +292,7 @@ export type Database = {
           description?: string | null
           event_id: string
           id?: string
+          image_path?: string | null
           name: string
           price_uyu: number
           sort_order?: number
@@ -302,6 +304,7 @@ export type Database = {
           description?: string | null
           event_id?: string
           id?: string
+          image_path?: string | null
           name?: string
           price_uyu?: number
           sort_order?: number
