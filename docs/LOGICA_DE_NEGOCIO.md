@@ -618,7 +618,7 @@ Bus opcional que se suma al comprar la entrada (la fiesta es fuera de Montevideo
 - **Plantillas:** `src/lib/mail/templates.ts`, con tablas y estilos inline, que es lo que respetan los clientes de mail. El QR va como imagen adjunta embebida (`cid:qr`), porque Gmail no muestra imágenes `data:`.
 - **Instagram del pie y de los botones:** sale de `site_config.ig_handle` (`getIgHandle()`), como en la web.
 - **Preventa:** lleva al pie cómo darse de baja (responder el mail o escribir por Instagram). La baja se carga poniendo el email en la tabla `whitelist` con status `banned`, que `presale_audience` ya excluye.
-- La cédula enmascarada usa espacios de no corte, para que no se parta en dos líneas en el celular.
+- La cédula usa espacios de no corte ("CI 4.097.298-0"), para que no se parta en dos líneas en el celular.
 - Estos mails (encuesta y preventa) están declarados en `/privacidad`.
 - **Pendiente:** dominio propio + `no-reply@` con Resend; ver `docs/BACKLOG.md`.
 

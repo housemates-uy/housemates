@@ -7,7 +7,7 @@
 > - Si una decisión cambia → nueva entrada que la supersede (con link a la anterior)
 > - Formato: contexto → decisión → alternativas descartadas → consecuencias
 >
-> Última entrada: #020
+> Última entrada: #033
 
 ---
 
@@ -430,3 +430,252 @@ como tickets `manual` / `invitation` y generan el mismo QR, así la puerta usa u
 **Por qué:** POC de venta real a amigos para la fiesta del 11.12.26 sin dominio propio ni mails.
 
 **Consecuencias:** sin mail de confirmación; el comprador ve su entrada al volver de MP y las manuales se mandan por WhatsApp. Documentado en `docs/LOGICA_DE_NEGOCIO.md`.
+
+---
+
+## #021 — Modo local sin claves, con cuatro condiciones
+
+**Fecha:** 2026-10-28
+**Autor:** Facu + Claude
+
+**Contexto:** Desarrollar y probar recorridos completos en la compu (compra, admin, puerta, barra) sin cargar la contraseña de compra ni usuarios del admin, en un repo público que publica solo al mergear a `main`.
+
+**Decisión:** `isLocalNoAuth()` (`src/lib/auth/local-mode.ts`) saltea la contraseña de `/entradas` y el login del admin solo si se cumplen las cuatro:
+1. `NODE_ENV === 'development'` (`npm run dev`; `next build` lo fija en `production`).
+2. `LOCAL_SIN_CLAVES=1` en `.env.local`.
+3. No corre en Vercel (`VERCEL` sin definir; Vercel lo define también en los previews).
+4. `NEXT_PUBLIC_SUPABASE_URL` es la base de Docker (`http://127.0.0.1` o `localhost`): nunca contra datos reales.
+
+Además, `npm run dev` escucha solo en `127.0.0.1` y el middleware responde 403 si el `Host` no es `127.0.0.1` o `localhost`. En este modo el admin actúa como el primer owner activo (o crea uno de prueba, por las FK de `admin_logs`, `check_ins` y `bar_scans`) y la barra muestra "Simular pago".
+
+**Alternativas descartadas:** no quedaron registradas. Cada condición cubre un error distinto: la variable cargada en Vercel, un build de producción o un `.env.local` apuntando a la base real.
+
+**Consecuencias:**
+- En la web publicada nunca aplica. Probado con un build de producción con la variable puesta: el admin pide login, `/entradas` pide contraseña y no aparece "Simular pago".
+- No cargar `LOCAL_SIN_CLAVES` (ni `SMTP_HOST`) en Vercel. Para probar desde el celular en la misma red: `npx next dev -H 0.0.0.0` sin `LOCAL_SIN_CLAVES` (README).
+
+---
+
+## #022 — Varias entradas nominativas en una compra
+
+**Fecha:** 2026-10-28
+**Autor:** Facu + Claude
+
+**Contexto:** Quien compra quiere sumar a sus amigos y pagar todo junto, sin perder la regla de una entrada por persona (CLAUDE.md §7.3) ni el cotejo de cédula en puerta.
+
+**Decisión:**
+- Una compra es un grupo de entradas, cada una con nombre, cédula y email propios. La entrada 1 es la de quien compra. Tope en `site_config.max_tickets_per_order` (1 a 10, arranca en 6).
+- `create_order` (`0020`, última versión en `0021`) crea todas en una transacción: si una falla no queda ninguna, y el error dice cuál (`'<motivo>#<n>'`).
+- Sin tabla nueva: `tickets.order_id` apunta a la entrada de quien compró (que se apunta a sí misma). Las entradas viejas y las manuales son un grupo de una.
+- Un pago de Mercado Pago o un comprobante para todo el grupo: `confirm_order_payment`, `extend_order_hold` y `reverse_order_payment`. `tickets.mp_payment_id` deja de ser único.
+- Cada persona recibe su entrada a su mail. Reembolsar una entrada del grupo devuelve solo su parte.
+
+**Alternativas descartadas:**
+- Una entrada por compra (como hasta ahora): cada amigo tenía que hacer su propia compra.
+- Entradas de los amigos a nombre de quien compra: rompe la entrada nominativa y el cotejo de cédula en puerta.
+
+**Consecuencias:**
+- Con la contraseña, quien la tiene puede comprar hasta el tope para amigos que no pasaron por Instagram; con un código de acceso (#023), solo las entradas del código.
+- La idempotencia del webhook la dan el bloqueo de la entrada y el control de estado, no la unicidad de `mp_payment_id`. Detalle en `docs/LOGICA_DE_NEGOCIO.md` §5.2e.
+
+---
+
+## #023 — Códigos de acceso para X entradas, además de la contraseña (complementa #017)
+
+**Fecha:** 2026-10-29
+**Autor:** Facu + Claude
+
+**Contexto:** La venta es selectiva: quien quiere ir escribe por Instagram y los owners deciden. La contraseña compartida (#017) se pasa de mano en mano y no dice quién entró con ella.
+
+**Decisión:**
+- Tabla `access_codes` (`0021`): el owner crea en Admin → evento → **Accesos** un código para X entradas (1 a 1000), con vencimiento opcional. 8 caracteres al azar sin letras ni números que se confundan (`src/lib/access-codes.ts`).
+- Se usa con el link `/acceso/<código>` o en `/access` ("Contraseña o código") y queda en la cookie `hm_access` (24 h). Sirve solo para el próximo evento publicado.
+- Cada entrada comprada con el código gasta un uso y queda marcada (`tickets.access_code_id`). Cuentan las vivas y las reservas vigentes. `create_order` bloquea la fila del código y usa el de la cookie, nunca uno que mande el formulario. Quien entró solo con código compra siempre con él.
+- La contraseña sigue: prendida por defecto (`site_config.gate_enabled`, `0010`) y solo se apaga con un `'0'` explícito.
+- Límite de intentos: 20 cada 15 min por IP para códigos (un grupo comparte wifi); la contraseña sigue en 5 cada 15 min.
+
+**Alternativas descartadas:**
+- Solo la contraseña (#017): con ella se compra hasta el tope por compra para cualquiera.
+- Códigos personales de un solo uso (descartados en #017 por trabajo manual por venta): un código para X entradas cubre a un grupo con un solo mensaje.
+
+**Consecuencias:**
+- Los socios eligen cómo combinarlos (contraseña y códigos, solo códigos o sin contraseña).
+- CLAUDE.md §7.2 no menciona los códigos ni que la contraseña se puede apagar. Detalle en `docs/LOGICA_DE_NEGOCIO.md` §3 y §3b.
+
+---
+
+## #024 — Interruptor de Mi cuenta, apagada por defecto
+
+**Fecha:** 2026-10-29
+**Autor:** Facu + Claude
+
+**Contexto:** Las cuentas de compradores (`0011`: mismo Supabase Auth que los admins + tabla `customers`) quedaron hechas y probadas, pero suman mails (confirmar email, recupero) y hay un punto de seguridad abierto: cuentas creadas con el email de un futuro admin.
+
+**Decisión:** `site_config.accounts_enabled`, que se cambia desde `/admin/config` (solo owners) y queda en el Historial. Apagada es el valor por defecto, también si falta la fila o la base no responde (`isAccountsEnabled` en `src/lib/customers.ts`):
+- la web no muestra nada de cuentas (ni "Creá una contraseña" al comprar, ni Ingresar o Mi cuenta);
+- en el servidor no se crean cuentas (la contraseña se ignora), `getCustomer` no devuelve sesión y `/cuenta/*` lleva al inicio.
+
+**Alternativas descartadas:**
+- Prenderla ya: más mails por el Gmail actual (tope de ~500 por día) y el punto de seguridad sin resolver.
+- Sacar el código de cuentas: está hecho y probado; con el interruptor se prende cuando decidan los socios.
+
+**Consecuencias:** antes de prenderla, resolver las cuentas con email de un futuro admin y tener los mails desde una casilla de la fiesta. Una cuenta de comprador no da acceso al admin: sigue haciendo falta la fila activa en `admins`.
+
+---
+
+## #025 — Cédula completa en la entrada (decisión de los owners)
+
+**Fecha:** 2026-10-29
+**Autor:** Facu + Claude
+
+**Contexto:** En puerta se coteja la entrada con el documento físico (dos pasos, `docs/LOGICA_DE_NEGOCIO.md` §5.3).
+
+**Decisión:** la cédula va completa y con formato (`4.097.298-0`, `formatDocument`) en `/ticket/<token>`, en la imagen que se guarda y en los mails de la entrada, del comprobante recibido, de anulación y de rechazo.
+
+**Alternativas descartadas:**
+- Últimos 4 dígitos (`CI •••• 298-0`, lo de antes): los owners prefirieron la cédula entera, para cotejarla con el documento en puerta.
+
+**Consecuencias:** cualquiera con el link de la entrada ve la cédula completa; lo que la protege es el token opaco de 22 caracteres (#019). `docs/LOGICA_DE_NEGOCIO.md` §8 todavía menciona la "cédula enmascarada".
+
+---
+
+## #026 — Barra: pago con Mercado Pago al instante (`binary_mode`)
+
+**Fecha:** 2026-10-29
+**Autor:** Facu + Claude
+
+**Contexto:** Los tragos se compran antes o durante la fiesta y se retiran en la barra. Un pago que se acredita al día siguiente llega con la fiesta terminada.
+
+**Decisión:**
+- La preferencia de barra va con `binary_mode: true` (aprobado o rechazado al instante) y excluye los tipos `ticket` y `atm` (sin Abitab ni RedPagos). Vence cuando termina el evento.
+- `confirm_bar_order_payment` (`0027`) devuelve `duplicate_payment` (pedido ya pago con otro pago) y `event_ended` (pago con la fiesta terminada): el pedido no cambia y los owners reciben "Pago de barra para revisar". Lo mismo con un monto menor al total.
+
+**Alternativas descartadas:**
+- Aceptar efectivo como en las entradas (reserva estirada hasta el vencimiento del cupón): el cupón se pagaría con la fiesta terminada.
+
+**Consecuencias:** la barra se paga solo con tarjeta. Las devoluciones de barra siguen por fuera: una devolución desde el panel de MP no marca el pedido `refunded` (límite conocido, `docs/LOGICA_DE_NEGOCIO.md` §9).
+
+---
+
+## #027 — Fotos de los tragos en bucket público, con la ruta en la base
+
+**Fecha:** 2026-11-01
+**Autor:** Facu + Claude
+
+**Contexto:** Mostrar una foto de cada trago en `/barra`, cargada por los owners desde Admin → evento → Barra.
+
+**Decisión:**
+- Bucket público `bar` de Supabase Storage (`0028`), sin policies en `storage.objects`: con la anon key nadie sube ni borra.
+- El navegador achica la foto (lado más largo 1400 px, WebP o JPG) y el servidor la sube con la service key, después de controlar por los primeros bytes que sea JPG, PNG o WebP de hasta 4 MB.
+- La base guarda solo la ruta dentro del bucket (`bar_products.image_path`, con un `CHECK` de formato `<evento>/<8 hex>.<ext>`). La URL se arma con `NEXT_PUBLIC_SUPABASE_URL` (`barImageUrl` en `src/lib/bar.ts`).
+- Al duplicar un evento, la carta nueva usa el mismo archivo; se borra del bucket cuando ya no lo usa ningún trago.
+
+**Alternativas descartadas:** no quedaron registradas. A diferencia de las fotos y videos de la landing, no hay subida directa con link firmado: la foto ya llega achicada.
+
+**Consecuencias:** las fotos cargadas en la base local no pasan a producción; hay que subirlas de nuevo en el admin publicado. Sin fotos, la carta se ve como antes.
+
+---
+
+## #028 — Duplicar eventos en una sola transacción
+
+**Fecha:** 2026-10-29
+**Autor:** Facu + Claude
+
+**Contexto:** Cada fiesta se arma como la anterior.
+
+**Decisión:** `duplicate_event` (`0023`, última versión en `0028`), desde `/admin/events/<id>/duplicar` (solo owners), con título y fechas nuevas:
+- **Copia:** datos del evento (lugar, mapa, capacidad, formato, descripción, imágenes, lineup), tandas con 0 vendidas y sin fechas de salida, transporte y carta de la barra (con foto).
+- **No copia:** nada de la gente (entradas, compras, check-ins, códigos de descuento y de acceso, pedidos de barra, comunicaciones, encuestas).
+- Queda en borrador, con ventas apagadas, puerta abierta y barra sin pausar. Slug con `-2`, `-3`… si existe. La tanda de preventa recibe otro código (`PRE-XXXXXX`), así el link de la fecha anterior no abre la nueva.
+
+**Alternativas descartadas:** no quedaron registradas. Va en una sola transacción de Postgres, como las demás reglas críticas (#020).
+
+**Consecuencias:** después de duplicar hay que revisar lugar, tandas y precios, transporte y barra (la pantalla lo avisa). Queda en el Historial con el evento de origen.
+
+---
+
+## #029 — Mails sin repetir con `email_log.send_key`
+
+**Fecha:** 2026-10-28
+**Autor:** Facu + Claude
+
+**Contexto:** Si dos envíos corrían a la vez (dos owners, un doble clic o el cron mientras un owner mandaba a mano), los dos calculaban los mismos pendientes y les mandaban a todos. Y los avisos de pagos a los owners eran uno por entrada: un segundo problema del mismo pago no avisaba.
+
+**Decisión:**
+- `email_log.send_key` con índice único (`0019`). Encuesta: antes de mandar, se reserva cada destinatario con una fila en `sending` (`ON CONFLICT DO NOTHING`) y el mail sale solo si la reserva entró. Al terminar pasa a `sent`, o a `failed` sin `send_key` para poder reintentar. Una reserva colgada más de 10 minutos se vuelve a tomar.
+- Claves: `<tipo>:<entrada>` para "Mandar" y el cron; `<tipo>:<entrada>:<desde>` para "Reenviar a todos"; `payment_alert:<entrada>:<problema>:<pago>` y `payment_alert:bar:<pedido>:<problema>:<pago>` para los avisos a owners.
+- La preventa usa `presale_sends` (única por tanda y email), con la misma reserva en `sending`.
+
+**Alternativas descartadas:**
+- Calcular los pendientes y mandar (lo de antes): dos envíos a la vez duplicaban.
+- Un aviso de pago por entrada (lo de antes): se perdía el segundo problema de la misma compra.
+
+**Consecuencias:** el aviso no se repite cuando MP reintenta el webhook. Límite conocido: dos "Reenviar a todos" iniciados a la vez sí pueden duplicar.
+
+---
+
+## #030 — Transferencia con comprobante, validada por los owners
+
+**Fecha:** 2026-10-28
+**Autor:** Facu + Claude
+
+**Contexto:** Parte de la venta es por transferencia bancaria. Hasta ahora un admin cargaba cada una a mano como entrada `manual` (#019).
+
+**Decisión:**
+- En `/entradas`, "Transferencia bancaria": datos de la cuenta, total exacto y sin cargo por servicio. La persona sube el comprobante (foto, captura o PDF hasta 4 MB) al bucket **privado** `comprobantes`.
+- La entrada nace `pending` (reserva de 15 min) y pasa a `review` con `receipt_path` en un solo UPDATE que exige que siga `pending`. En `review` el lugar queda reservado sin vencimiento.
+- Un owner la acepta o la declina en **Entradas a confirmar** (`/admin/confirmar`): `approve_transfer` exige comprobante (`no_receipt`) y `reject_transfer` libera tanda y bus. El comprobante se ve con un link firmado de 60 s, solo para owners.
+
+**Alternativas descartadas:**
+- Seguir cargándolas a mano como `manual`: un owner tipeaba cada venta.
+- Crear la entrada directo en `review`: si la subida se cortaba, quedaba una entrada en revisión sin comprobante bloqueando cédula, email y lugar (`0016`).
+
+**Consecuencias:** hasta que un owner la valida, la persona no tiene QR. Una transferencia aprobada no se reembolsa desde la web: se anula y la plata se devuelve por fuera.
+
+---
+
+## #031 — Sin lectura pública con la anon key (cambia CLAUDE.md §8)
+
+**Fecha:** 2026-10-28
+**Autor:** Facu + Claude
+
+**Contexto:** Con la anon key se podían leer todas las columnas de `events` y `ticket_tiers` (incluidos `presale_code` y `quantity_sold`). Con cuentas de compradores, la policy `tickets_lectura_dueno` (`0003`) dejaba leer desde la API, con la sesión, entradas de cualquier email con la cédula completa.
+
+**Decisión:** RLS prendido y sin policies de lectura pública: se borran `tickets_lectura_dueno` (`0011`), `eventos_lectura_publica` y `tiers_lectura_publica` (`0016`), y se revoca `tier_available` a `anon` y `authenticated`. La app lee todo desde el servidor con la service key.
+
+**Alternativas descartadas:**
+- Lectura pública limitada (CLAUDE.md §8): una policy filtra filas, no columnas, así que exponía `presale_code`.
+
+**Consecuencias:** no cambia nada visible. CLAUDE.md §8 quedó desactualizado; como es un cambio de RLS, necesita el OK de José y Tato (CLAUDE.md §10).
+
+---
+
+## #032 — `getUser()` en el admin (supersede #015)
+
+**Fecha:** 2026-10-28
+**Autor:** Facu + Claude
+
+**Contexto:** #015 pasó `getAdminUser()` a `getSession()`, que lee la cookie sin verificar el token y confía en que el middleware ya lo validó.
+
+**Decisión:** `getAdminUser()` (`src/lib/auth/admin.ts`) usa `supabase.auth.getUser()`, que valida el JWT contra Supabase Auth, envuelto en `cache` de React: una sola llamada por request aunque lo pidan el layout, la página y las pestañas. Si Supabase no responde, tira error ("Sin conexión") en vez de tratarlo como sesión vencida.
+
+**Alternativas descartadas:**
+- Mantener `getSession()` (#015): si una ruta queda fuera del middleware, acepta una sesión vencida.
+
+**Consecuencias:** vuelve la segunda llamada a Supabase Auth por request (middleware + admin) que #015 quería evitar. En puerta y barra, una caída de red muestra "Sin conexión" y se reintenta sin echar al portero.
+
+---
+
+## #033 — General Sans como respaldo de Neue Montreal (complementa #018)
+
+**Fecha:** 2026-10-28
+**Autor:** Facu + Claude
+
+**Contexto:** #018 deja Neue Montreal fuera del repo; sin `NEXT_PUBLIC_FONTS_URL` la web caía a Helvetica Neue / Arial. El deploy desde GitHub Actions no tiene `public/fonts/`.
+
+**Decisión:** sin `NEXT_PUBLIC_FONTS_URL`, la web usa General Sans desde Fontshare (licencia ITF Free Font, libre para uso comercial), la alternativa gratuita que indica el mismo manual de marca (`src/lib/fonts.ts`). Las imágenes que se guardan (entrada y QR de barra, `src/lib/image-fonts.ts`) usan la misma letra; para Neue Montreal necesitan los `.otf`, porque next/og no lee `.woff2`.
+
+**Alternativas descartadas:**
+- Helvetica Neue / Arial (#018): no es la alternativa que da el manual.
+
+**Consecuencias:** Neue Montreal se ve solo cuando se suben sus `.woff2` y `.otf` a un hosting propio con CORS y se carga `NEXT_PUBLIC_FONTS_URL`.

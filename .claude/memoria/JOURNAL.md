@@ -274,3 +274,96 @@ Rebranding completo del frontend según el Manual de Marca v1 y primer deploy en
 ### Problemas / consideraciones
 - El host del proyecto Supabase de dev no resuelve DNS (proyecto pausado o borrado): el admin no
   se pudo probar contra datos reales. La landing tiene fallbacks y no reintenta.
+
+---
+
+## 2026-11-02 — Facu — `feature/ticketera-completa` → `main`
+
+### Contexto
+Llevar la ticketera v1 a lo que hace falta para vender la fiesta de diciembre: transferencias, compra
+para amigos, acceso selectivo, transporte y barra. Se trabajó en local (compu de Facu, con Claude Code
+y Supabase en Docker) del 28/10 al 01/11, en 7 commits. El PR va directo a `main` a pedido de un
+socio: al mergear, Vercel publica solo.
+
+### Qué se hizo
+
+**Compra (`/entradas`)**
+- Contraseña de compra prendida por defecto; los owners la apagan en `/admin/config` (solo con un `'0'` explícito).
+- Mercado Pago con cargo por servicio del 7,5 % a la vista, o transferencia con comprobante y sin cargo.
+- Códigos de descuento por evento (% o monto, usos, vencimiento), con búsqueda exacta.
+- Tandas con ingreso temprano (aviso en puerta), "Próximamente" y preventa por link, con mail a quienes vinieron antes.
+- Capacidad del evento como tope de venta (0018); si el precio cambia mientras se compra, se pide recargar.
+- Tope de entradas por compra configurable de 1 a 10; el límite de intentos cuenta entradas (60 cada 10 min).
+
+**Entradas para amigos (0020)**
+- Varias entradas en una compra, cada una nominativa (nombre, cédula y email propios), todo o nada con `create_order`.
+- Un pago de Mercado Pago o un comprobante para el grupo; a cada persona le llega su entrada a su mail.
+- Reembolsar una entrada de un grupo devuelve solo su parte. Mi cuenta muestra "También compraste para".
+
+**Transferencias y Entradas a confirmar**
+- La entrada nace `pending` y pasa a `review` recién con el comprobante en el bucket privado `comprobantes`.
+- `/admin/confirmar` (solo owners): todas las transferencias en revisión, comprobante con link firmado de 60 s, Aceptar / Declinar con sus mails y contador en el menú.
+
+**Códigos de acceso (0021)**
+- El owner genera un código para X entradas; se usa con `/acceso/<código>` o en "Contraseña o código". Cada entrada gasta un uso.
+- Solo sirve para el evento a la venta; quien entró solo con código compra con él; si el pago no salió, puede reintentar.
+
+**Pagos (0017, 0019, 0020)**
+- Pagos tarde, repetidos o con monto menor; cupón de Abitab/RedPagos que estira la reserva; devoluciones y contracargos desde Mercado Pago.
+- Si la base falla al confirmar, el webhook responde 500 y MP reintenta; sin `MP_WEBHOOK_SECRET` en producción se rechaza.
+- Avisos a los owners ("Pago para revisar"), uno por problema y pago (`send_key`).
+
+**Transporte (0015)**
+- Opciones de bus por evento con cupo atómico, sumadas al total; lista para el chofer en CSV e imprimible.
+
+**Barra (0012, 0027, 0028)**
+- Carta por evento, pago con Mercado Pago solo con tarjeta y al instante (`binary_mode`), un QR por trago, escáner del barman con entrega única y pedidos en Mi cuenta.
+- Pagos repetidos o con la fiesta terminada avisan a los owners (0027). Foto de cada trago, editable desde el admin (0028, bucket `bar`).
+- "Simular pago" solo en modo local.
+
+**Mi cuenta (0011)**
+- Cuentas de compradores opcionales: confirmar el email es elegir la contraseña, recupero por mail. Interruptor en `/admin/config`, apagada por defecto.
+
+**Puerta y entrada**
+- "Sin conexión, reintentá" en vez de "QR inválido"; estado real de la entrada; cambiar cámara; botones siempre visibles en celulares chicos; "Es un QR de barra"; estado de la puerta al día con cada escaneo.
+- Cédula completa en la entrada, la imagen y los mails. "Guardar imagen" igual a la página (fondo doodle, letra de la web, bus e ingreso temprano).
+
+**Landing editable (0022, 0024)**
+- Portada y galería nuevas. Desde `/admin/landing`: textos, reglas, Instagram, formato del evento y fotos o videos por lugar (bucket `landing`, subida directa con link firmado).
+- Botón Barra al lado de Entradas. General Sans como respaldo de Neue Montreal.
+
+**Admin**
+- Pestañas Ventas, Descuentos, Accesos, Barra y Transporte; duplicar eventos (0023); eliminar solo lo que nunca se usó (0025); cortesía y excepciones de cupo en entradas manuales (0026).
+- Menú de acciones (clic derecho, ⋯ o mantener apretado); Historial con antes/después; lista de entradas paginada sin el tope de 1000 filas.
+- Solo los owners cambian precios y cupos, reembolsan, invitan, cargan entradas y ven comprobantes.
+
+**Mails y encuesta (0013, 0019)**
+- Comprobante recibido, rechazo, avisos a owners, pedido de barra, preventa y encuesta del día después (botón con la fiesta terminada y cron diario).
+- Ningún envío sale dos veces (`email_log.send_key`). Se sacó el mail "Antes de ir": eso va por Instagram.
+
+**Auditorías de seguridad**
+- Dos auditorías completas (28/10 y 29/10; en la segunda, 38 arreglos).
+- Sin lectura pública con la anon key (0011, 0016); límite de intentos por IP en Postgres (0016); `?next=` solo interno; cookies de Supabase `httpOnly`; `getUser()` en el admin; los links del mail invalidan el acceso anterior.
+- Modo local solo con `Host` 127.0.0.1/localhost; link del mapa solo `http(s)`; sin AVIF; al duplicar, la preventa recibe otro código.
+
+**Infra y docs**
+- Migraciones 0009 a 0028. `npm run dev` escucha en 127.0.0.1. Cron `/api/cron/comunicacion` en `vercel.json`.
+- `docs/LOGICA_DE_NEGOCIO.md` al día; README con el modo local.
+
+**Pruebas (en local)**
+- Typecheck, lint y build de producción; migraciones desde cero; recorridos de punta a punta; compra real de 3 entradas por transferencia con un mail y su QR a cada uno; build de producción con `LOCAL_SIN_CLAVES=1` (el admin pide login y `/entradas` la contraseña).
+
+### Decisiones clave tomadas
+- **#021** modo local sin claves · **#022** varias entradas nominativas en una compra · **#023** códigos de acceso · **#024** interruptor de Mi cuenta · **#025** cédula completa en la entrada · **#026** barra con pago al instante · **#027** fotos de tragos en bucket público · **#028** duplicar eventos · **#029** mails sin repetir con `send_key` · **#030** transferencia con comprobante · **#031** sin lectura pública con la anon key · **#032** `getUser()` en el admin (supersede #015) · **#033** General Sans como respaldo (complementa #018).
+
+### Problemas / consideraciones
+- Las migraciones 0009 a 0028 necesitan el OK de José y Tato y aplicarse en producción antes de mergear: al mergear, Vercel publica el código, pero la base no se migra sola.
+- Lo cargado en la base local (eventos, textos, fotos) no pasa a producción. Las fotos de los tragos están en `.local/fotos-tragos`, fuera de git.
+- "Guardar imagen" (next/og) falla en Windows, también en el build de producción; en Vercel debería andar y falta verlo.
+- Mercado Pago queda por probar de punta a punta en modo prueba, con la web publicada.
+- Next.js 14 ya no recibe arreglos de seguridad: actualizar a 15 queda pendiente (dependencia, necesita OK).
+- `develop` queda atrás de `main` después de este PR.
+
+### Estado al cerrar
+Ticketera completa y probada en local, lista para review. Falta el OK de las migraciones, configurar
+los servicios de producción, cargar la fiesta de diciembre y las pruebas finales antes de abrir la venta.
