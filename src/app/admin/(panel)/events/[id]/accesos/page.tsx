@@ -6,7 +6,14 @@ import { ContextMenu, ContextMenuButton } from '@/components/admin/context-menu'
 import { SubmitButton } from '@/components/admin/submit-button';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/card';
-import { accessLink, formatAccessCode, normalizeAccessCode } from '@/lib/access-codes';
+import {
+  ACCESS_KIND_LABELS,
+  accessLink,
+  formatAccessCode,
+  normalizeAccessCode,
+  parseAccessKind,
+  type AccessCodeKind,
+} from '@/lib/access-codes';
 import { formatLocal } from '@/lib/events';
 import { createAdminClient, fetchAll } from '@/lib/supabase/admin';
 import { formatDocument, STATUS_LABELS } from '@/lib/tickets';
@@ -26,14 +33,23 @@ const STATUS_TONE: Record<TicketStatus, 'solid' | 'neutral' | 'alert' | 'club'> 
   refunded: 'neutral',
 };
 
-type AccessCode = { code: string; max_uses: number; valid_until: string | null };
+type AccessCode = { code: string; kind: AccessCodeKind; max_uses: number | null; valid_until: string | null };
 
 const entries = (n: number) => (n === 1 ? '1 entrada' : `${n} entradas`);
 
+// Qué permite el código, en una frase: "Sirve para 4 entradas" o, el público, "Cada compra
+// lleva 1 entrada, hasta 50 en total".
+function describeCode(c: AccessCode): string {
+  if (c.kind === 'personal') return `Sirve para ${entries(c.max_uses ?? 1)}`;
+  return `Cada compra lleva 1 entrada, ${c.max_uses === null ? 'sin tope' : `hasta ${entries(c.max_uses)} en total`}`;
+}
+
 function whatsappHref(c: AccessCode, eventTitle: string): string {
+  const many = c.kind === 'personal' && (c.max_uses ?? 1) > 1;
   const lines = [
-    `¡Hola! Este es tu código para comprar ${c.max_uses === 1 ? 'tu entrada' : 'las entradas'} de ${eventTitle}: ${formatAccessCode(c.code)}`,
-    ...(c.max_uses > 1 ? [`Sirve para ${c.max_uses} entradas, cada una con el nombre y la cédula de quien va.`] : []),
+    `¡Hola! Este es tu código para comprar ${many ? 'las entradas' : 'tu entrada'} de ${eventTitle}: ${formatAccessCode(c.code)}`,
+    ...(many ? [`Sirve para ${c.max_uses} entradas, cada una con el nombre y la cédula de quien va.`] : []),
+    ...(c.kind === 'public' ? ['Es para una entrada por compra: si vienen amigos, cada uno saca la suya.'] : []),
     ...(c.valid_until ? [`Vale hasta el ${formatLocal(c.valid_until, "d/MM 'a las' HH:mm")}.`] : []),
     `Entrá acá: ${accessLink(c.code)}`,
   ];
@@ -41,7 +57,8 @@ function whatsappHref(c: AccessCode, eventTitle: string): string {
 }
 
 // Códigos de acceso del evento (solo owners): a quien escribe por Instagram se le pasa un
-// código para X entradas; cada entrada que se compra con él gasta un uso y queda marcada.
+// código personal para X entradas, y para una historia, uno público (una entrada por compra).
+// Cada entrada que se compra con un código gasta un uso y queda marcada.
 export default async function AccessCodesPage({
   params,
   searchParams,
@@ -58,7 +75,7 @@ export default async function AccessCodesPage({
     db.from('events').select('title').eq('id', params.id).single(),
     db
       .from('access_codes')
-      .select('id, code, label, max_uses, valid_until, active')
+      .select('id, code, label, kind, max_uses, valid_until, active')
       .eq('event_id', params.id)
       .order('created_at', { ascending: false }),
   ]);
@@ -87,10 +104,12 @@ export default async function AccessCodesPage({
   ]);
 
   const eventTitle = event?.title ?? 'House Mates';
-  const list = codes.map((c, i) => {
+  const list = codes.map((row, i) => {
+    const c = { ...row, kind: parseAccessKind(row.kind) };
     const used = (uses[i].data as number | null) ?? 0;
     const expired = !!c.valid_until && new Date(c.valid_until).getTime() < Date.now();
-    const status = !c.active ? 'Pausado' : expired ? 'Vencido' : used >= c.max_uses ? 'Agotado' : 'Activo';
+    const exhausted = c.max_uses !== null && used >= c.max_uses;
+    const status = !c.active ? 'Pausado' : expired ? 'Vencido' : exhausted ? 'Agotado' : 'Activo';
     return {
       ...c,
       used,
@@ -118,7 +137,8 @@ export default async function AccessCodesPage({
         >
           <div className="flex items-start justify-between gap-3">
             <p className="min-w-0 break-words text-sm text-bone/65">
-              Código para <span className="font-medium text-bone">{created.label}</span>
+              Código {created.kind === 'public' ? 'público' : 'personal'} para{' '}
+              <span className="font-medium text-bone">{created.label}</span>
             </p>
             <Link href={pageHref} aria-label="Cerrar aviso" className="shrink-0 text-bone/50 hover:text-bone">
               ✕
@@ -126,8 +146,8 @@ export default async function AccessCodesPage({
           </div>
           <p className="select-all text-4xl font-bold tracking-[0.08em] tabular-nums sm:text-5xl">{created.formatted}</p>
           <p className="text-sm text-bone/60">
-            Sirve para {entries(created.max_uses)}
-            {created.valid_until && ` hasta el ${formatLocal(created.valid_until, "d/MM 'a las' HH:mm")}`}. Con el
+            {describeCode(created)}
+            {created.valid_until && ` · vale hasta el ${formatLocal(created.valid_until, "d/MM 'a las' HH:mm")}`}. Con el
             link entra directo a comprar; con el código, lo escribe en la web.
           </p>
           <ShareButtons code={created.formatted} link={created.link} whatsapp={created.whatsapp} />
@@ -138,9 +158,10 @@ export default async function AccessCodesPage({
         <div>
           <h2 className="text-lg font-bold tracking-tight">Nuevo código</h2>
           <p className="mt-1 text-sm text-bone/55">
-            Para quien te escribe por Instagram: un código para sus entradas (las de ella y sus amigas),
-            o uno con más entradas y vencimiento para una historia. Cada entrada que se compra con el
-            código gasta una y queda marcada con él. Si se anula, se libera.
+            Personal, para quien te escribe por Instagram: un código para sus entradas (las de ella y
+            sus amigas). Público, para una historia: cada compra lleva una sola entrada, con tope o sin
+            tope. Cada entrada que se compra con el código gasta una y queda marcada con él. Si se
+            anula, se libera.
           </p>
         </div>
         <NewAccessForm eventId={params.id} />
@@ -189,10 +210,14 @@ export default async function AccessCodesPage({
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-bold tracking-wide tabular-nums">{c.formatted}</p>
                         <Badge tone={c.status === 'Activo' ? 'club' : 'neutral'}>{c.status}</Badge>
+                        <Badge tone={c.kind === 'public' ? 'casa' : 'neutral'}>{ACCESS_KIND_LABELS[c.kind]}</Badge>
                       </div>
                       <p className="mt-1 break-words text-sm text-bone/80">Para {c.label}</p>
                       <p className="mt-0.5 text-xs text-bone/55">
-                        {c.used} de {c.max_uses} {c.max_uses === 1 ? 'usada' : 'usadas'}
+                        {c.max_uses === null
+                          ? `${c.used} ${c.used === 1 ? 'usada' : 'usadas'} · sin tope`
+                          : `${c.used} de ${c.max_uses} ${c.max_uses === 1 ? 'usada' : 'usadas'}`}
+                        {c.kind === 'public' && ' · 1 por compra'}
                         {' · '}
                         {c.valid_until
                           ? `${c.expired ? 'venció' : 'vence'} ${formatLocal(c.valid_until, "d/MM 'a las' HH:mm")}`

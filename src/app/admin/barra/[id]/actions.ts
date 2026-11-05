@@ -3,9 +3,9 @@
 // Escáner de barra en dos pasos (ver docs/LOGICA_DE_NEGOCIO.md → "Barra"):
 //   inspect → muestra qué trago es, no cambia nada
 //   deliver → el barman lo entrega: marca ese QR como usado (atómico, una sola vez)
-// Cualquier admin (owner o staff) puede usarlo.
+// Lo usan owners y staff, y el usuario de barra (desde /scan, solo con la fiesta que le toca).
 import { headers } from 'next/headers';
-import { requireAdmin } from '@/lib/auth/admin';
+import { requireBarScanner } from '@/lib/auth/admin';
 import { barCounts, parseBarScan } from '@/lib/bar';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { isValidEmail, normalizeEmail } from '@/lib/validation/email';
@@ -85,7 +85,7 @@ async function inspect(eventId: string, scanned: string, adminId: string): Promi
 
 // Paso 1 con QR (o el código pegado a mano).
 export async function inspectBarUnitAction(eventId: string, scanned: string): Promise<BarScanOutcome> {
-  const admin = await requireAdmin().catch(() => null);
+  const admin = await requireBarScanner(eventId).catch(() => null);
   if (!admin) return expired();
   return inspect(eventId, scanned, admin.id);
 }
@@ -93,7 +93,7 @@ export async function inspectBarUnitAction(eventId: string, scanned: string): Pr
 // Paso 2: entregar. deliver_bar_unit garantiza una sola entrega aunque dos barmans toquen
 // "Entregar" con el mismo QR a la vez (al segundo le da 'already_delivered' con la hora).
 export async function deliverBarUnitAction(eventId: string, token: string): Promise<BarScanOutcome> {
-  const admin = await requireAdmin().catch(() => null);
+  const admin = await requireBarScanner(eventId).catch(() => null);
   if (!admin) return expired();
   const { data, error } = await createAdminClient().rpc('deliver_bar_unit', {
     p_token: token,
@@ -107,7 +107,7 @@ export async function deliverBarUnitAction(eventId: string, token: string): Prom
 // Sin QR: por email muestra los tragos pendientes de esa persona; si no tiene arroba, se
 // toma como el código (o la URL) de un QR.
 export async function searchBarAction(eventId: string, query: string): Promise<BarScanOutcome> {
-  const admin = await requireAdmin().catch(() => null);
+  const admin = await requireBarScanner(eventId).catch(() => null);
   if (!admin) return expired();
   const q = query.trim();
   if (!q.includes('@')) return inspect(eventId, q, admin.id);

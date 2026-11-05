@@ -1,8 +1,10 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { Plus } from 'lucide-react';
 import { LegalPage, proseClass } from '@/components/legal/legal-page';
 import { buttonVariants } from '@/components/ui/button';
+import { hasGateAccess } from '@/lib/auth/gate';
 import { isAccountsEnabled } from '@/lib/customers';
 import { getNextEvent, mapsUrl, type NextEvent } from '@/lib/next-event';
 import { SERVICE_FEE_LABEL } from '@/lib/pricing';
@@ -15,7 +17,9 @@ export const metadata: Metadata = {
     'Cómo comprar tu entrada, cómo pagar, qué llevar el día de la fiesta y la barra: lo que más nos preguntan.',
 };
 
-export const revalidate = 300;
+// Detrás de la contraseña o un código, como el lugar (§3): sin acceso va a /access y vuelve acá.
+// Dinámica: depende de la cookie de cada persona.
+export const dynamic = 'force-dynamic';
 
 type Group = { id: string; title: string; items: { q: string; a: React.ReactNode }[] };
 
@@ -326,8 +330,9 @@ function faq(event: NextEvent, ig: { handle: string; href: string }, accounts: b
           q: '¿Cómo compro tragos?',
           a: (
             <p>
-              En <Link href="/barra">Barra</Link>, antes o durante la fiesta, y pagás con Mercado Pago. El precio que
-              ves es el final, sin cargo por servicio. Te llega un QR por cada trago: si pedís tres, son tres QR.
+              Con el QR que está en la fiesta o con el link de nuestras historias de Instagram, y pagás con Mercado
+              Pago. El precio es el mismo que en la barra, sin cargo por servicio. Te llega un QR por cada trago: si
+              pedís tres, son tres QR.
               {accounts && ' No hace falta cuenta, alcanza con tu email.'}
             </p>
           ),
@@ -414,6 +419,7 @@ function Question({ q, children }: { q: string; children: React.ReactNode }) {
 }
 
 export default async function FaqPage() {
+  if (!(await hasGateAccess())) redirect('/access?next=%2Fpreguntas-frecuentes');
   const [event, handle, accounts] = await Promise.all([getNextEvent(), getIgHandle(), isAccountsEnabled()]);
   const href = igUrl(handle);
   const groups = faq(event, { handle, href }, accounts).filter((g) => accounts || g.id !== 'cuenta');

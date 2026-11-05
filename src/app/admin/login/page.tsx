@@ -9,7 +9,9 @@ import { Logo } from '@/components/ui/logo';
 import { loginAction, requestPasswordResetAction } from './actions';
 
 export default function LoginPage() {
-  const errorParam = useSearchParams().get('error');
+  const searchParams = useSearchParams();
+  const errorParam = searchParams.get('error');
+  const next = searchParams.get('next');
   const [error, setError] = useState<string | null>(
     errorParam === 'link'
       ? 'El link venció o ya se usó. Pedí uno nuevo con "Olvidé mi contraseña".'
@@ -42,6 +44,7 @@ export default function LoginPage() {
       const result = await loginAction(
         formData.get('email') as string,
         formData.get('password') as string,
+        next,
       );
       if (result?.error) {
         setError(result.error);
@@ -54,7 +57,9 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="mb-10 flex flex-col items-center gap-4">
           <Logo className="h-20" />
-          <h1 className="text-[11px] font-bold uppercase tracking-label text-bone/50">Admin</h1>
+          <h1 className="text-[11px] font-bold uppercase tracking-label text-bone/50">
+            {next === '/scan' ? 'Escáner' : 'Admin'}
+          </h1>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

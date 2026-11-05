@@ -4,7 +4,7 @@ import { DoodleBackdrop } from '@/components/ui/doodle-backdrop';
 import { Logo } from '@/components/ui/logo';
 import { entryTime, formatLocal } from '@/lib/events';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { formatDocument, qrSvg, ticketUrl } from '@/lib/tickets';
+import { maskDocument, qrSvg, ticketUrl } from '@/lib/tickets';
 import { getTicketTransport } from '@/lib/transport';
 import { cn } from '@/lib/utils';
 import type { TicketStatus } from '@/types/database';
@@ -18,7 +18,8 @@ export const dynamic = 'force-dynamic';
 // Es lo que recibe el comprador (por WhatsApp o al terminar de pagar) y lo que muestra en
 // puerta. Ocupa exactamente la pantalla del celular, sin scroll: los tamaños se ajustan a
 // la altura (dvh) para que entre también en teléfonos chicos.
-// La cédula va completa (decisión de los owners): en puerta se coteja con el documento.
+// Quien tenga el link ve la entrada, por eso la cédula va parcial; la completa la ve solo el
+// portero en el escáner, para cotejarla con el documento.
 const STATE: Record<TicketStatus, { label: string; dot: string }> = {
   paid: { label: 'Válida', dot: 'bg-violet' },
   used: { label: 'Usada', dot: 'bg-violet' },
@@ -47,7 +48,7 @@ export default async function TicketPage({ params }: { params: { token: string }
 
   const valid = ticket.status === 'paid';
   const svg = valid ? await qrSvg(ticketUrl(ticket.qr_token)) : null;
-  const doc = formatDocument(ticket.buyer_document);
+  const doc = maskDocument(ticket.buyer_document);
   const state = STATE[ticket.status];
   const entryLabel = ticket.source === 'invitation' ? 'Cortesía' : (tier?.name ?? 'Entrada');
   // Tanda de ingreso temprano: hay que entrar antes de esa hora (en puerta se avisa si no).

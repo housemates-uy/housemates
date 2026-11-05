@@ -11,6 +11,7 @@ import {
   Settings,
   ScrollText,
   UserCog,
+  BookUser,
   LogOut,
 } from 'lucide-react';
 import { logoutAction } from '@/app/admin/login/actions';
@@ -29,6 +30,8 @@ const NAV = [
     showsPending: true,
   },
   { href: '/admin/whitelist', label: 'Whitelist', icon: Users },
+  // Solo en compu: bajar el CSV es tarea de compu y en el celular el menú no entra en una fila.
+  { href: '/admin/compradores', label: 'Compradores', icon: BookUser, ownerOnly: true, desktopOnly: true },
   { href: '/admin/admins', label: 'Administradores', short: 'Admins', icon: UserCog },
   { href: '/admin/landing', label: 'Landing', icon: LayoutTemplate, ownerOnly: true },
   { href: '/admin/config', label: 'Configuración', short: 'Config', icon: Settings },
@@ -109,7 +112,7 @@ export function Sidebar({ toConfirm }: NavProps) {
 
 export function MobileNav({ toConfirm }: NavProps) {
   const isActive = useIsActive();
-  const items = navItems(toConfirm);
+  const items = navItems(toConfirm).filter((item) => !item.desktopOnly);
 
   return (
     <nav

@@ -367,3 +367,27 @@ socio: al mergear, Vercel publica solo.
 ### Estado al cerrar
 Ticketera completa y probada en local, lista para review. Falta el OK de las migraciones, configurar
 los servicios de producción, cargar la fiesta de diciembre y las pruebas finales antes de abrir la venta.
+
+## 2026-11-05 — Facu — `feature/ticketera-completa` → `main` (correcciones de la reunión)
+
+### Contexto
+Reunión de socios sobre el PR #14: correcciones de la portada, la compra, las anulaciones y la barra antes de publicar.
+
+### Qué se hizo
+- **Portada:** arriba solo el botón Entradas (más grande); el lugar, las reglas y las preguntas frecuentes se ven recién con la contraseña o un código, resuelto en el servidor. La pantalla de acceso tiene un texto general cuando no se llega desde la compra.
+- **Entrada:** la cédula vuelve a ir parcial en la página, la imagen y los mails; la completa, solo en el escáner de la puerta.
+- **Códigos de acceso:** tipo personal (N entradas) o público para historias (1 entrada por compra, tope opcional); con la contraseña, el público no limita. Migración `0029`.
+- **Instagram obligatorio** en cada entrada de la compra web; en el admin se ve con link al perfil.
+- **Anulación de transferencias:** exige el comprobante de devolución (bucket privado, link firmado, Historial). Migración `0030`.
+- **Barra:** se abre solo con el link o el QR impreso (`/barra/k/<clave>`, cookie httpOnly, se cambia desde el admin, cartel para imprimir); mismo precio que la barra presencial. Rol `barra` que entra por `/scan` y solo ve el escáner. Migración `0031`.
+- **Compradores:** pantalla y CSV con la base de quienes compraron, para mailing (solo owners, sin bajas, a prueba de fórmulas).
+
+### Decisiones clave tomadas
+#034 a #040 en DECISIONS.md (#040 reemplaza a #025).
+
+### Problemas / consideraciones
+- Docker Desktop no arrancaba por un socket viejo en `%LOCALAPPDATA%\docker-secrets-engine`: se renombró la carpeta (no usar "Reset to factory defaults", borra la base local).
+- El puerto 3000 lo usa otro proyecto: la web local corrió en el 3001 con `NEXT_PUBLIC_APP_URL` por variable de entorno.
+
+### Estado al cerrar
+Typecheck, lint y build de producción limpios. En la compilación de producción: contraseña, códigos y login 15/15; portada sin acceso sin el lugar ni las reglas; barra sin link, código público, Instagram y usuario de barra en `/scan` 19/19.

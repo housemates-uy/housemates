@@ -8,7 +8,7 @@ import { DoodleBackdrop } from '@/components/ui/doodle-backdrop';
 import { Eyebrow } from '@/components/ui/eyebrow';
 import { Logo } from '@/components/ui/logo';
 import { TandaStatus } from '@/components/ui/tanda-status';
-import { formatAccessCode, heldInOrder } from '@/lib/access-codes';
+import { accessOrderLimit, formatAccessCode, heldInOrder } from '@/lib/access-codes';
 import { getSessionAccessCode, hasGateAccess, hasPasswordAccess } from '@/lib/auth/gate';
 import { getCustomer, isAccountsEnabled } from '@/lib/customers';
 import { formatUYU } from '@/lib/events';
@@ -46,15 +46,20 @@ export default async function EntradasPage({
   ]);
   // Código de acceso (§3b): si entró con uno de este evento, la compra no puede pasar de las
   // entradas que le quedan, más las que tiene reservadas su compra sin terminar (al reintentar
-  // se liberan). Si todas están reservadas en la compra de otra persona y no entró con la
-  // contraseña, se le avisa en vez de mostrar el formulario.
-  const codeForEvent = sessionCode && sessionCode.eventId === event.id ? sessionCode : null;
+  // se liberan); con uno público, de una. Si todas están reservadas en compras de otras
+  // personas y no entró con la contraseña, se le avisa en vez de mostrar el formulario.
+  // Con la contraseña, un código público no limita (la contraseña ya deja comprar para amigos).
+  const passwordAccess = await hasPasswordAccess();
+  const sessionCodeForEvent = sessionCode && sessionCode.eventId === event.id ? sessionCode : null;
+  const codeForEvent = sessionCodeForEvent?.kind === 'public' && passwordAccess ? null : sessionCodeForEvent;
   const codeLeft = codeForEvent
     ? codeForEvent.left + (await heldInOrder(codeForEvent.id, cookies().get(PURCHASE_COOKIE)?.value))
     : 0;
   const accessCode = codeForEvent && codeLeft > 0 ? { ...codeForEvent, left: codeLeft } : null;
-  const codeBusy = !!codeForEvent && codeLeft === 0 && !(await hasPasswordAccess());
-  const maxPerOrder = accessCode ? Math.min(sale.maxPerOrder, accessCode.left) : sale.maxPerOrder;
+  const codeBusy = !!codeForEvent && codeLeft === 0 && !passwordAccess;
+  const maxPerOrder = accessCode
+    ? Math.min(sale.maxPerOrder, accessOrderLimit(accessCode.kind, accessCode.left))
+    : sale.maxPerOrder;
   // Link de preventa: su tanda aparece ya elegida. Si el código no existe, se avisa.
   const presaleTier = event.tandas.find((t) => t.presale);
   const presaleInvalid = !!searchParams.preventa && !presaleTier;
@@ -138,9 +143,10 @@ export default async function EntradasPage({
           <Card className="mt-12 p-4 sm:p-6 md:p-8">
             <h2 className="text-xl font-bold tracking-tight">Tu código está en uso</h2>
             <p className="mt-3 max-w-[52ch] text-sm leading-relaxed text-bone/65">
-              Las entradas del código {formatAccessCode(codeForEvent.code)} están reservadas en una compra que todavía
-              no se pagó. Si el pago no salió, esperá unos minutos y volvé a probar. Si tenés dudas, escribinos por
-              Instagram.
+              {codeForEvent.kind === 'public'
+                ? `Las entradas del código ${formatAccessCode(codeForEvent.code)} están reservadas en compras que todavía no se pagaron. Si alguna no se paga, se libera en unos minutos: volvé a probar.`
+                : `Las entradas del código ${formatAccessCode(codeForEvent.code)} están reservadas en una compra que todavía no se pagó. Si el pago no salió, esperá unos minutos y volvé a probar.`}{' '}
+              Si tenés dudas, escribinos por Instagram.
             </p>
           </Card>
         ) : canBuy ? (
@@ -149,7 +155,11 @@ export default async function EntradasPage({
             {accessCode && (
               <p role="status" className="mt-5 rounded-card border border-violet/40 bg-violet/10 px-4 py-3 text-sm text-bone/85">
                 Entraste con el código <strong className="font-semibold">{formatAccessCode(accessCode.code)}</strong>.{' '}
-                {accessCode.left === 1 ? 'Te queda 1 entrada.' : `Te quedan ${accessCode.left} entradas.`}
+                {accessCode.kind === 'public'
+                  ? 'Con este código podés sacar 1 entrada: si vienen amigos, cada uno saca la suya.'
+                  : accessCode.left === 1
+                    ? 'Te queda 1 entrada.'
+                    : `Te quedan ${accessCode.left} entradas.`}
               </p>
             )}
             <div className="mt-7">

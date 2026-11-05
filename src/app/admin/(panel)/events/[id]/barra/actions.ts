@@ -1,12 +1,13 @@
 'use server';
 
-// Barra de un evento: carta (cargar, editar con foto, activar/desactivar, ordenar, eliminar) y
-// pausar la venta. Todo esto es solo para owners. Reglas: ver docs/LOGICA_DE_NEGOCIO.md → "Barra".
+// Barra de un evento: carta (cargar, editar con foto, activar/desactivar, ordenar, eliminar),
+// pausar la venta y cambiar el link de la barra. Todo esto es solo para owners. Reglas: ver docs/LOGICA_DE_NEGOCIO.md → "Barra".
 import { randomBytes } from 'crypto';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { logAdminAction, requireOwner } from '@/lib/auth/admin';
 import { BAR_BUCKET } from '@/lib/bar';
+import { newBarKey } from '@/lib/bar-access';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export type ProductFormState = { error: string; field?: string } | { ok: true; name: string } | null;
@@ -198,5 +199,15 @@ export async function setBarPausedAction(eventId: string, paused: boolean): Prom
   const admin = await requireOwner();
   await createAdminClient().from('events').update({ bar_paused: paused }).eq('id', eventId);
   await logAdminAction(admin.id, paused ? 'pause_bar' : 'resume_bar', 'event', eventId);
+  revalidatePath(barPath(eventId));
+}
+
+// "Cambiar link": otra clave para /barra/k/<clave>. El link y el QR viejos dejan de abrir la
+// barra, también para quien ya había entrado (la cookie guarda la clave).
+export async function rotateBarKeyAction(eventId: string): Promise<void> {
+  const admin = await requireOwner();
+  const { error } = await createAdminClient().from('events').update({ bar_key: newBarKey() }).eq('id', eventId);
+  if (error) throw new Error('No se pudo cambiar el link de la barra');
+  await logAdminAction(admin.id, 'rotate_bar_link', 'event', eventId);
   revalidatePath(barPath(eventId));
 }

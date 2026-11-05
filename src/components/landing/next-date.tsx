@@ -1,21 +1,42 @@
 import Link from 'next/link';
-import { ArrowRight, MapPin } from 'lucide-react';
+import { ArrowRight, Lock, MapPin } from 'lucide-react';
 import { buttonVariants } from '@/components/ui/button';
 import { Eyebrow } from '@/components/ui/eyebrow';
 import { Reveal } from '@/components/ui/reveal';
 import { mapsUrl, type NextEvent } from '@/lib/next-event';
 import { cn } from '@/lib/utils';
 
+// Sin acceso, el lugar ya viene sin nombre ni link desde el servidor: acá va un texto de relleno
+// desenfocado (no es el lugar) y el link para entrar con la contraseña o el código.
+function LockedLocation() {
+  return (
+    <span className="flex flex-col items-start gap-2">
+      <span aria-hidden className="select-none blur-[5px]">
+        Dirección reservada para la casa
+      </span>
+      <Link
+        href="/access?next=%2F%23fecha"
+        className="inline-flex items-center gap-1.5 font-normal text-bone/70 underline decoration-bone/30 underline-offset-4 transition-colors hover:text-bone hover:decoration-bone"
+      >
+        <Lock size={14} strokeWidth={1.75} aria-hidden className="shrink-0 text-violet" />
+        Se ve al entrar con la contraseña o tu código
+      </Link>
+    </span>
+  );
+}
+
 // Las tandas y los precios se ven recién en /entradas: acá solo la fecha y el botón para ir.
 // Sin evento no hay formato: la fila no va (nunca se inventa).
-export function NextDate({ event }: { event: NextEvent }) {
+export function NextDate({ event, locked }: { event: NextEvent; locked: boolean }) {
   const details: [string, React.ReactNode][] = [
     // Espacio de no corte: "23:59 hs" no se parte en dos renglones.
     ['Cuándo', event.id ? `${event.weekday} ${event.dateLong} · ${event.time} hs` : 'A confirmar'],
     ...(event.format ? [['Formato', event.format] as [string, React.ReactNode]] : []),
     [
       'Dónde',
-      event.id && event.locationName ? (
+      event.id && locked ? (
+        <LockedLocation key="d" />
+      ) : event.id && event.locationName ? (
         <a
           key="d"
           href={mapsUrl(event.locationName, event.locationUrl)}

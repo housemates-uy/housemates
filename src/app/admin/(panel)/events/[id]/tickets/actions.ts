@@ -9,6 +9,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { buyerSchema, createTicket, ticketUrl } from '@/lib/tickets';
 import { sendTicketCancelledMail, sendTicketConfirmedMail } from '@/lib/mail/ticket-mails';
 import { isMercadoPagoConfigured, refundPayment, syncPayment } from '@/lib/mercadopago';
+import { needsRefundReceipt, removeRefundReceipt, uploadRefundReceipt } from '@/lib/receipts';
 import { approveTransfer, rejectTransfer } from '@/lib/transfers';
 
 export type ManualTicketResult =
@@ -83,7 +84,10 @@ export async function createManualTicketAction(
 // quede del pago, como una entrada sola. "Ya figura devuelto" es solo el pago entero: una
 // devolución parcial deja el pago aprobado en MP.
 // Las manuales, invitaciones y transferencias se anulan directo ('cancelled'); la devolución
-// de una transferencia se hace por fuera.
+// de una transferencia se hace por fuera. Si se cobró por transferencia (compra web o manual de
+// más de $0), sin el comprobante de esa devolución no se anula: se sube al bucket privado y la
+// ruta queda en la entrada en el mismo UPDATE de cancel_ticket, que también lo exige (0030).
+// Si al final no se anula, el archivo se borra.
 // No se anulan: una transferencia a validar (la aprueba o la rechaza un owner) ni una compra
 // con pago en curso (la reserva vence sola; si la anulamos y paga igual, revive).
 // Si no cambió nada, el error vuelve al botón (useFormState). Si cambió algo, el resultado
@@ -110,6 +114,7 @@ export async function cancelTicketAction(
   ticketId: string,
   view: CancelTicketView,
   _prev: CancelTicketState,
+  formData?: FormData,
 ): Promise<CancelTicketState> {
   const admin = await requireAdmin().catch(() => null);
   if (!admin) return { error: 'Tu sesión venció. Volvé a entrar.' };
@@ -118,7 +123,7 @@ export async function cancelTicketAction(
 
   const { data: ticket, error: readError } = await db
     .from('tickets')
-    .select('id, status, source, mp_payment_id, amount_paid_uyu')
+    .select('id, status, source, payment_method, mp_payment_id, amount_paid_uyu')
     .eq('id', ticketId)
     .eq('event_id', eventId)
     .maybeSingle();
@@ -132,6 +137,13 @@ export async function cancelTicketAction(
   }
   if (ticket.status === 'used') return { error: 'La entrada ya se usó en puerta: no se puede anular.' };
   if (ticket.status !== 'paid') return { error: 'La entrada ya estaba anulada.' };
+
+  let receipt: { path: string; kind: string } | null = null;
+  if (needsRefundReceipt(ticket)) {
+    const uploaded = await uploadRefundReceipt(ticketId, formData?.get('refund_receipt'));
+    if ('error' in uploaded) return { error: uploaded.error };
+    receipt = uploaded;
+  }
 
   let refunded = false;
   let partAmount: number | null = null;
@@ -176,9 +188,15 @@ export async function cancelTicketAction(
   const refundDetail = partAmount ? { refund_amount: partAmount } : undefined;
   const part = partAmount ? '-parte' : '';
 
-  const { data: result, error } = await db.rpc('cancel_ticket', { p_ticket_id: ticketId, p_refunded: refunded });
+  const { data: result, error } = await db.rpc('cancel_ticket', {
+    p_ticket_id: ticketId,
+    p_refunded: refunded,
+    ...(receipt && { p_refund_receipt_path: receipt.path }),
+  });
   if (error || result !== 'cancelled') {
+    if (receipt) await removeRefundReceipt(receipt.path);
     if (!refunded) {
+      if (result === 'refund_receipt_required') return { error: 'Subí el comprobante de la devolución para anularla.' };
       if (result === 'already_used') return { error: 'La entrada ya se usó en puerta: no se puede anular.' };
       if (result === 'already_cancelled') return { error: 'La entrada ya estaba anulada.' };
       if (result === 'not_found') return { error: 'No se encontró la entrada.' };
@@ -196,9 +214,15 @@ export async function cancelTicketAction(
     );
   }
 
-  await logAdminAction(admin.id, refunded ? 'refund_ticket' : 'cancel_ticket', 'ticket', ticketId, refundDetail);
+  await logAdminAction(
+    admin.id,
+    refunded ? 'refund_ticket' : 'cancel_ticket',
+    'ticket',
+    ticketId,
+    receipt ? { refund_receipt: receipt.kind } : refundDetail,
+  );
   const mailed = await sendTicketCancelledMail(ticketId, refunded);
-  const done = refunded ? `reembolsada${part}` : 'anulada';
+  const done = refunded ? `reembolsada${part}` : receipt ? 'anulada-devolucion' : 'anulada';
   backToList(eventId, ticketId, view, mailed ? done : `${done}-sin-mail`);
 }
 

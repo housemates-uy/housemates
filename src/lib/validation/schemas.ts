@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { isValidEmail } from "./email";
 import { validateCI } from "./document";
+import { instagramError, instagramUsername } from "./instagram";
 
 export const emailSchema = z
   .string()
@@ -23,6 +24,17 @@ export const buyerSchema = z.object({
   phone: phoneSchema,
   document: documentSchema,
 });
+
+// Compra web: el Instagram de cada entrada es obligatorio, así los owners miran el perfil y
+// pueden anular si es sospechoso. Devuelve el usuario sin @ (como se guarda). En las entradas
+// manuales del admin sigue opcional (buyerSchema de src/lib/tickets.ts).
+export const instagramRequiredSchema = z
+  .string()
+  .superRefine((raw, ctx) => {
+    const error = instagramError(raw);
+    if (error) ctx.addIssue({ code: z.ZodIssueCode.custom, message: error });
+  })
+  .transform(instagramUsername);
 
 export const gateSchema = z.object({
   password: z.string().min(1, "Password requerido"),

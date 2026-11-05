@@ -97,12 +97,12 @@ function button(href: string, label: string) {
 export type TicketMailData = {
   firstName: string;
   fullName: string;
-  document: string; // cédula completa con formato, p. ej. "4.097.298-0"
+  document: string; // cédula parcial, p. ej. "•••• 298-0" (maskDocument)
   eventTitle: string;
   dateLong: string; // "Viernes 11 de diciembre · 23:00 hs"
   dateShort: string; // "11.12.26"
   entryLabel: string; // "Tanda 3" o "Cortesía"
-  location: string | null; // "Viña Varela Zarranz"
+  location: string | null; // nombre del lugar, como en el admin
   locationUrl: string | null; // pin de Google Maps
   ticketUrl: string;
   price: number | null; // precio de la entrada (compra web)
@@ -161,7 +161,7 @@ ${blend(`<strong style="color:${C.bone};">Tu lugar en el bus · ${esc(d.transpor
 const busText = (d: TicketMailData) =>
   d.transport ? `Transporte: ${d.transport.name} · ${d.transport.departure.replace(/\s*\n\s*/g, ' · ')}` : '';
 
-// Cédula completa. Con espacio de no corte: en pantallas angostas no se parte en dos líneas.
+// Cédula parcial: un mail se reenvía. Con espacio de no corte: en pantallas angostas no se parte.
 const ciText = (document: string) => `CI ${document}`;
 
 // Para los mails de comunicación del evento (src/lib/mail/event-mails.ts).

@@ -209,6 +209,13 @@ export function formatDocument(doc: string): string {
   return `${d[0]}.${d.slice(1, 4)}.${d.slice(4, 7)}-${d[7]}`;
 }
 
+// La entrada, su imagen y los mails la llevan parcial ("•••• 298-0"): cualquiera con el link
+// la ve. La completa la ve solo el portero en el escáner. Espacio de no corte: no se parte.
+export function maskDocument(doc: string): string {
+  const d = normalizeDocument(doc);
+  return `•••• ${d.slice(4, 7)}-${d[7]}`;
+}
+
 // Celular agrupado con espacios ("099 123 456", "+598 99 123 456"). En los CSV hace falta:
 // Excel abre "099123456" como número y se come el 0. Lo que no es solo dígitos queda igual.
 export function formatPhone(raw: string): string {

@@ -13,6 +13,7 @@ import { formatUYU } from '@/lib/events';
 import { SERVICE_FEE_LABEL, discountAmount, quote, type PayMethod } from '@/lib/pricing';
 import { normalizeDocument, validateCI } from '@/lib/validation/document';
 import { normalizeEmail } from '@/lib/validation/email';
+import { instagramError, instagramUsername } from '@/lib/validation/instagram';
 import { cn } from '@/lib/utils';
 import { signOutAction } from '@/app/cuenta/actions';
 import { checkDiscountAction, startCheckoutAction, type CheckoutState } from './actions';
@@ -179,7 +180,7 @@ export function BuyForm({
       document.getElementById('cantidad')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
-    if (!name || !/^(name|document|email)(_\d+)?$/.test(name)) return;
+    if (!name || !/^(name|document|email|instagram)(_\d+)?$/.test(name)) return;
     const input = formRef.current?.elements.namedItem(name);
     if (input instanceof HTMLInputElement) {
       input.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -227,8 +228,22 @@ export function BuyForm({
     else if (clientErrors[name] === CI_INVALID) edited(name);
   }
 
-  // Antes de enviar: cada cédula válida, y ni emails ni cédulas repetidos dentro de la compra
-  // (normalizados igual que el servidor: una entrada por CI y una por email).
+  // El Instagram se deja como @usuario al salir del campo (aunque peguen el link del perfil).
+  // Vacío no se marca hasta enviar.
+  function checkInstagram(input: HTMLInputElement) {
+    if (!input.value.trim()) return;
+    const error = instagramError(input.value);
+    if (error) {
+      setClientErrors((errors) => ({ ...errors, [input.name]: error }));
+      return;
+    }
+    input.value = `@${instagramUsername(input.value)}`;
+    if (clientErrors[input.name]) edited(input.name);
+  }
+
+  // Antes de enviar: cada cédula válida, cada Instagram completo, y ni emails ni cédulas
+  // repetidos dentro de la compra (normalizados igual que el servidor: una entrada por CI y
+  // una por email).
   function checkPeople(form: HTMLFormElement) {
     const data = new FormData(form);
     const errors: Record<string, string> = {};
@@ -244,6 +259,8 @@ export function BuyForm({
         if (owner) errors[fieldName('document', n)] = `Ya está en la entrada ${owner}: cada entrada es de una persona distinta.`;
         else documents.set(key, n);
       }
+      const instagram = instagramError(String(data.get(fieldName('instagram', n)) ?? ''));
+      if (instagram) errors[fieldName('instagram', n)] = instagram;
       const email = normalizeEmail(n === 1 && account ? account.email : String(data.get(fieldName('email', n)) ?? ''));
       const owner = emails.get(email);
       if (owner) errors[fieldName('email', n)] = `Ya está en la entrada ${owner}: cada entrada va a un mail distinto.`;
@@ -509,15 +526,17 @@ export function BuyForm({
                 />
               </Field>
             </div>
-            <Field label="Instagram (opcional)" error={fieldError('instagram')}>
+            <Field label="Instagram" hint="Tu usuario, para saber quién viene." error={fieldError('instagram')}>
               <Input
                 name="instagram"
+                aria-required
                 autoComplete="off"
                 autoCapitalize="none"
                 spellCheck={false}
-                maxLength={60}
+                maxLength={100}
                 placeholder="@usuario"
                 onChange={() => edited('instagram')}
+                onBlur={(e) => checkInstagram(e.target)}
               />
             </Field>
             {!account && (
@@ -592,15 +611,17 @@ export function BuyForm({
                     />
                   </Field>
                 </div>
-                <Field label="Instagram (opcional)" error={fieldError(`instagram_${n}`)}>
+                <Field label="Instagram" hint="Su usuario, para saber quién viene." error={fieldError(`instagram_${n}`)}>
                   <Input
                     name={`instagram_${n}`}
+                    aria-required
                     autoComplete="off"
                     autoCapitalize="none"
                     spellCheck={false}
-                    maxLength={60}
+                    maxLength={100}
                     placeholder="@usuario"
                     onChange={() => edited(`instagram_${n}`)}
+                    onBlur={(e) => checkInstagram(e.target)}
                   />
                 </Field>
                 {transport.length > 0 && busPicker(n, '¿Necesita transporte?')}
@@ -818,10 +839,12 @@ export function BuyForm({
         </p>
       </div>
       {/* Errores generales, y los de un campo que no está en pantalla (el email con sesión
-          iniciada, la contraseña con Mi cuenta apagada): si no, el botón vuelve sin avisar nada. */}
+          iniciada, la contraseña con Mi cuenta apagada, la cantidad cuando se compra de a una):
+          si no, el botón vuelve sin avisar nada. */}
       {state &&
         (!state.field ||
           state.field === 'accept' ||
+          (state.field === 'quantity' && maxPerOrder <= 1) ||
           (state.field === 'email' && !!account) ||
           (state.field === 'password' && !accountsEnabled)) &&
         editedField === null && (

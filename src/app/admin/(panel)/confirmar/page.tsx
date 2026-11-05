@@ -4,6 +4,7 @@ import { formatDistanceToNowStrict } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { CircleAlert, CircleCheck, X } from 'lucide-react';
 import { getAdminUser } from '@/lib/auth/admin';
+import { InstagramLink } from '@/components/admin/instagram-link';
 import { PageHeader } from '@/components/admin/page-header';
 import { EmptyState } from '@/components/ui/card';
 import { formatLocal, formatUYU } from '@/lib/events';
@@ -274,7 +275,9 @@ export default async function ConfirmTransfersPage({
                     {lead.buyer_instagram && (
                       <>
                         <dt className="text-bone/45">Instagram</dt>
-                        <dd>@{lead.buyer_instagram}</dd>
+                        <dd className="break-words">
+                          <InstagramLink handle={lead.buyer_instagram} />
+                        </dd>
                       </>
                     )}
                     <dt className="text-bone/45">Enviado</dt>
@@ -303,6 +306,12 @@ export default async function ConfirmTransfersPage({
                                 </span>
                                 {' · '}
                                 {t.buyer_email}
+                                {t.buyer_instagram && (
+                                  <>
+                                    {' · '}
+                                    <InstagramLink handle={t.buyer_instagram} />
+                                  </>
+                                )}
                               </p>
                               <p className="mt-0.5 text-xs text-bone/45">
                                 {bus ? `Transporte · ${bus.name}` : 'Sin transporte'}

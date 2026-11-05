@@ -7,7 +7,7 @@
 > - Si una decisión cambia → nueva entrada que la supersede (con link a la anterior)
 > - Formato: contexto → decisión → alternativas descartadas → consecuencias
 >
-> Última entrada: #033
+> Última entrada: #040
 
 ---
 
@@ -523,7 +523,7 @@ Además, `npm run dev` escucha solo en `127.0.0.1` y el middleware responde 403 
 
 ---
 
-## #025 — Cédula completa en la entrada (decisión de los owners)
+## #025 — Cédula completa en la entrada (decisión de los owners) — reemplazada por #040
 
 **Fecha:** 2026-10-29
 **Autor:** Facu + Claude
@@ -679,3 +679,172 @@ Además, `npm run dev` escucha solo en `127.0.0.1` y el middleware responde 403 
 - Helvetica Neue / Arial (#018): no es la alternativa que da el manual.
 
 **Consecuencias:** Neue Montreal se ve solo cuando se suben sus `.woff2` y `.otf` a un hosting propio con CORS y se carga `NEXT_PUBLIC_FONTS_URL`.
+
+---
+
+## #034 — Códigos de acceso públicos (una entrada por compra) e Instagram obligatorio (complementa #023)
+
+**Fecha:** 2026-11-05
+**Autor:** Facu + Claude (reunión de socios)
+
+**Contexto:** los socios quieren poner un código en las historias de Instagram sin que quien lo usa pueda sumar amigos, y poder mirar el perfil de cada persona que compra para anular si es sospechoso. El código de #023 era siempre "para X entradas" y el Instagram era opcional.
+
+**Decisión:**
+- `access_codes.kind` (`0029_access_code_kind.sql`): `personal` (como #023, con X entradas obligatorias) o `public`. El público lleva **una entrada por compra**; con la regla de una por email y una por cédula, cada persona saca como mucho una. Su total es opcional: `max_uses` pasa a admitir `NULL` (sin tope) solo para los públicos (check `access_codes_personal_max_uses`); el rango 1–1000 sigue.
+- Se controla en el servidor: la acción de compra corta antes de reservar y `create_order` también (`access_single#2`, y sin tope no cuenta usos). Se redefinió desde su última versión (`0021`), con esos dos cambios y nada más.
+- Combinación con la contraseña: un código **personal** sigue la regla de #023 (con entradas en la cookie manda en la compra aunque haya contraseña; sin entradas, con la contraseña no limita). Un código **público** con la contraseña no se usa: la contraseña ya deja comprar para amigos. Sin contraseña, siempre con el código.
+- Instagram obligatorio en cada entrada de la compra web (quien compra y cada amigo), validado en el formulario y en la acción (`instagramRequiredSchema`, `src/lib/validation/instagram.ts`, sin zod para que lo use el navegador): `@usuario`, `usuario` o el link del perfil; letras, números, puntos y guiones bajos, hasta 30. Se sigue guardando sin @ y en minúsculas en `buyer_instagram` (como ya estaba, así la búsqueda y las vistas no cambian). En las entradas manuales del admin sigue opcional. En "A confirmar" y Entradas, el Instagram de cada persona va con link al perfil.
+
+**Alternativas descartadas:**
+- Que con la contraseña el código público limite igual a una entrada: castigaba a quien tiene la contraseña por haber entrado antes con el link de las historias.
+- Público con un tope alto en lugar de `NULL`: el admin mostraría "3 de 1000" y el código figuraría Agotado sin que nadie lo decidiera.
+- Exigir el Instagram también en `create_order`: la acción es el único borde que la llama; la regla queda en un solo lugar y las entradas manuales no cambian.
+- Guardar el Instagram con @: rompía las vistas y la búsqueda que ya agregan el @.
+
+**Consecuencias:**
+- Con un código público, quien quiera sumar a un amigo puede hacer otra compra a su nombre: no se puede evitar sin cuentas de compradores.
+- Quien entró con un código público y después consigue la contraseña sigue de a una entrada mientras dure la cookie (24 h): `/access` no se muestra a quien ya tiene acceso.
+- Las entradas compradas antes, sin Instagram, quedan como están.
+
+---
+
+## #035 — Anular una transferencia exige el comprobante de devolución
+
+**Fecha:** 2026-11-05
+**Autor:** Facu + Claude (reunión de socios)
+
+**Contexto:** una entrada cobrada por transferencia se anulaba con un clic y la plata se devolvía por fuera, sin que quedara constancia de que se devolvió (#030).
+
+**Decisión:**
+- Una entrada `paid` cobrada por transferencia (compra web con `payment_method = 'transfer'`, o `manual`) y de más de $0 se anula solo subiendo el comprobante de la devolución: JPG, PNG, WebP o PDF, hasta 4 MB, con el tipo sacado de los primeros bytes.
+- Se guarda en el bucket privado `comprobantes` (`devoluciones/<entrada>/<8 hex>.<ext>`) y la ruta en `tickets.refund_receipt_path` (`0030_refund_receipts.sql`, con CHECK del formato). El admin la ve con un link firmado de 60 s, solo owners, como el de la transferencia.
+- La regla está en la acción y también en `cancel_ticket`: sin ruta devuelve `refund_receipt_required`. La anulación y la ruta van en el mismo UPDATE. El archivo se sube antes; si al final no se anula, se borra.
+- Las entradas manuales entran en la regla porque el alta dice "Lo que pagó por transferencia".
+- Sin cambios: Mercado Pago, transferencias en revisión, cortesías y entradas de $0.
+
+**Alternativas descartadas:**
+- Exigirlo solo en la pantalla: la acción del servidor se puede llamar sin el formulario.
+- Marcarla `refunded`: ese estado significa "devuelta por Mercado Pago" y cambiaría el mail ("Te devolvimos por Mercado Pago"), las estadísticas y Mi cuenta.
+- Subir el comprobante después de anular: una caída en el medio deja la entrada anulada sin constancia.
+
+**Consecuencias:** `cancel_ticket` tiene un tercer parámetro (se borró la versión de dos). En una compra de varias se sube un comprobante por cada entrada que se anula. El mail de anulación de una transferencia sigue sin hablar de la devolución.
+
+---
+
+## #036 — La barra se abre solo con el QR de la fiesta o el link de las historias
+
+**Fecha:** 2026-11-05
+**Autor:** Facu + Claude (reunión de socios)
+
+**Contexto:** `/barra` estaba abierta a cualquiera que escribiera la dirección. Los socios quieren que se llegue solo desde el QR impreso en la fiesta o desde el link de las historias de Instagram.
+
+**Decisión:**
+- Cada evento tiene una clave al azar: `events.bar_key`, 16 hex de `new_bar_key()` (`0031_bar_access.sql`, única y con CHECK del formato). `duplicate_event` le pone una nueva a la copia.
+- `/barra/k/<clave>` deja la cookie `hm_barra` (httpOnly, `path=/barra`, 24 h) con esa clave y manda a `/barra` con una redirección relativa.
+- `/barra` y las acciones que arman el pedido (`startBarCheckoutAction` y la de simular) piden que la cookie coincida con la clave del próximo evento (`hasBarAccess` en `src/lib/bar-access.ts`). Sin eso, el aviso "La barra se abre con el QR de la fiesta o con el link de nuestras historias de Instagram" y no la carta.
+- "Cambiar link" (owners) pone otra clave: como la cookie guarda la clave, también dejan de valer las cookies del link viejo. No se saltea en modo local.
+- La página del pedido y la de cada QR siguen con su token.
+
+**Alternativas descartadas:**
+- Firmar la cookie o guardar una huella: no suma nada, porque quien tiene la cookie ya tiene el link.
+- Un "link" por cada historia o una clave que rote sola: más cosas para manejar, para algo que solo evita que se escriba la URL a mano.
+- Reusar la contraseña del gate: la barra no pide la contraseña de compra, y el QR impreso tiene que andar sin escribir nada.
+
+**Consecuencias:** quien abre el link en el navegador de Instagram y después pasa a otro navegador no tiene la cookie ahí. El link se puede reenviar (por WhatsApp, por ejemplo): es un filtro, no un control de quién compra. Preguntas frecuentes sigue linkeando a `/barra`, que ahora muestra el aviso. Al pasar a producción, la `0031` genera una clave para cada evento existente: el QR se imprime después de aplicarla.
+
+---
+
+## #037 — Usuario de barra: rol `barra`, solo `/scan`, rechazado en un solo lugar
+
+**Fecha:** 2026-11-05
+**Autor:** Facu + Claude (reunión de socios)
+
+**Contexto:** los barmans necesitan el escáner de barra y nada más. Con el staff de siempre veían todo el admin (ventas, entradas, la puerta).
+
+**Decisión:**
+- Valor nuevo `barra` en `admin_role` (`0031`; la migración no lo usa, porque un valor nuevo de enum no sirve en la misma transacción en que se agrega).
+- El rechazo está centralizado en `src/lib/auth/admin.ts`:
+  - `getAdminUser`, y con él `requireAdmin` y `requireOwner`, devuelve solo owners y staff (`PanelAdmin`).
+  - A un usuario de barra lo manda a `/scan` con `redirect()`. En las acciones que hacen `.catch(() => null)` queda como "sin sesión".
+  - Así cada página, acción y ruta del admin, y la puerta, lo rechazan sin cambios, y una pantalla nueva también.
+- Solo `getScanUser` (para `/scan`) y `requireBarScanner` (para las acciones del escáner de barra) lo dejan pasar, y solo con la fiesta de `getScanEvent`: la publicada en curso o terminada hace menos de 6 h o, si no, la próxima.
+- `/scan`: sin sesión, el middleware manda a `/admin/login?next=/scan` (el login acepta `next` con `safeNextPath`).
+  - Con usuario de barra muestra el escáner de barra de esa fiesta.
+  - Con owner o staff muestra links a la puerta y la barra.
+- El owner crea el usuario en Admin → Administradores, con email (que no tenga ya un usuario de Auth), nombre y contraseña.
+- En modo local, si el navegador tiene la sesión de un admin real, el admin usa esa en vez del owner local. Sirve para probar este rol.
+
+**Alternativas descartadas:**
+- Chequear el rol en cada página y acción: es fácil olvidarlo en una pantalla nueva.
+- Redirigir en el middleware: necesita leer `admins` con la service key en cada navegación del admin, y no cubre acciones ni rutas.
+- Guardar el rol en `app_metadata` del usuario: sería una segunda fuente de verdad que se desincroniza de `admins`.
+- Reusar `staff`: el staff tiene que seguir viendo la puerta y el resto del panel.
+
+**Consecuencias:**
+- `getAdminUser` ya no es solo de lectura: con un usuario de barra corta la página con una redirección.
+- El usuario de barra no puede cambiarse la contraseña: `/admin/account` es del panel, y "Olvidé mi contraseña" lo deja en `/scan` con una al azar. La cambia o lo desactiva un owner, desde Supabase.
+- El login del admin en local sigue salteado, así que el flujo `/scan` → login → `/scan` se prueba con la compilación de producción.
+
+---
+
+## #038 — Base de compradores para mailing, de solo lectura sobre las entradas
+
+**Fecha:** 2026-11-05
+**Autor:** Facu + Claude (reunión de socios)
+
+**Contexto:** los socios quieren guardar los mails de quienes ya compraron como base para avisar de futuras fiestas. CLAUDE.md §7.1 prohíbe llenar la whitelist sola después de cada compra.
+
+**Decisión:** pantalla `/admin/compradores` y CSV `/admin/compradores/csv`, solo para owners. No es una tabla nueva ni toca la whitelist: se calcula en el momento desde `tickets` (`src/app/admin/(panel)/compradores/buyers.ts`), así que no choca con §7.1. Desde ahí no se manda nada.
+- Un email por persona (agrupado por `buyer_email_normalized`), de entradas `paid` o `used` de cualquier evento, cortesías incluidas. Anuladas y reembolsadas no cuentan, igual que en `presale_audience`.
+- Nombre y email de la última entrada cargada, última fiesta, cantidad de fiestas y si pidió la baja.
+- La baja usa el mismo criterio que la preventa (email normalizado en `whitelist` con status `banned`). Las bajas se ven en la pantalla, pero no salen en el CSV.
+- El CSV va como la lista de la puerta (`;`, UTF-8 con BOM, apóstrofo adelante de `=`, `+`, `-` o `@`). Cada descarga queda en `admin_logs` (`download_buyers_csv`).
+- Sin migración: se agrupa en el servidor, trayendo las entradas de a 1000.
+
+**Alternativas descartadas:**
+- Llenar la whitelist o una tabla de contactos con cada compra: es el auto-populate que prohíbe §7.1, y habría que mantenerla al día con anulaciones y reembolsos.
+- Mandar los mails desde el admin: se decidió solo la lista y el CSV. La preventa sigue siendo el único mail masivo.
+- Una función SQL (migración `0032`): con unos pocos miles de entradas, agrupar en el servidor alcanza. Si la base crece mucho, se pasa a una función como `presale_audience`.
+
+**Consecuencias:** es una base con datos personales de todos los que compraron: queda solo para owners y cada descarga se registra. Para sacar a alguien del mailing se carga la baja en la whitelist, la misma que ya respeta la preventa.
+
+---
+
+## #039 — Lugar, reglas y preguntas frecuentes detrás de la contraseña, resuelto en el servidor
+
+**Fecha:** 2026-11-05
+**Autor:** Facu + Claude (reunión de socios)
+
+**Contexto:** la landing era pública entera: cualquiera que llegaba desde Instagram veía dónde es la fiesta, las reglas y las preguntas frecuentes (que también dicen el lugar). Los socios quieren que eso lo vea solo quien ya consiguió la contraseña o un código. Además, el header tenía Barra, Entradas y el Instagram con el mismo peso.
+
+**Decisión:**
+- **Con acceso = `hasGateAccess()`** (contraseña, código con entradas o contraseña apagada), el mismo criterio que `/entradas`.
+- **Lugar:** sin acceso, `src/app/page.tsx` le saca al evento `locationName` y `locationUrl` antes de pasárselo a cualquier componente. "Dónde" muestra un texto de relleno desenfocado (no es el lugar) y el link a `/access?next=/#fecha`.
+- **Reglas:** sin acceso no se dibujan. Queda el título y el botón Entrar (`/access?next=/#reglas`).
+- **Preguntas frecuentes:** sin acceso redirige a `/access?next=/preguntas-frecuentes`. `safeNextPath` ya deja volver ahí, con el `#` incluido.
+- **Sin caché:** la landing y Preguntas frecuentes pasan a `force-dynamic` (antes `revalidate` 60 y 300). Si no, una copia generada con acceso podía servirse a cualquiera.
+- **Base lenta:** la landing espera el chequeo de acceso hasta 2,5 s, como el resto de sus lecturas. Si falla o no responde, se ve como sin acceso.
+- **Header:** solo Entradas, sólido con el brillo azul eléctrico del neón de la portada, más "Mi cuenta" si está prendida. Barra e Instagram salen del header (el Instagram sigue en el pie; la Barra, en Preguntas frecuentes y por link directo).
+
+**Alternativas descartadas:**
+- Desenfocar con CSS el texto real: el nombre y el link quedan en el HTML y en el payload de React.
+- Pedir el lugar desde el cliente a un endpoint: es más código para lo mismo, y el primer dibujo sale sin el lugar aun con acceso.
+- Esconder la sección de reglas entera: sin aviso, no se entiende que hay algo más al entrar.
+
+**Consecuencias:** la landing y Preguntas frecuentes se arman en cada visita, con una consulta más a la base (si la contraseña está prendida). Quien entró con un código y ya usó todas sus entradas deja de tener acceso y ve la versión bloqueada (el lugar lo tiene en su entrada y en el mail). La descripción del evento sigue siendo pública: el lugar no se escribe ahí.
+
+---
+
+## #040 — La entrada vuelve a mostrar la cédula parcial
+
+**Fecha:** 2026-11-05
+**Autor:** Facu + Claude (reunión de socios)
+
+**Contexto:** con #025 la entrada (página, imagen guardada y mails) mostraba la cédula completa. Cualquiera con el link de la entrada o con un mail reenviado la ve.
+
+**Decisión:** la entrada, su imagen y los mails muestran la cédula parcial ("CI •••• 298-0", `maskDocument` en `src/lib/tickets.ts`). La completa aparece solo al escanear, en el escáner de la puerta, para cotejarla con el documento, y en las pantallas del admin.
+
+**Alternativas descartadas:**
+- Cédula completa en la entrada (#025): expone el documento a cualquiera con el link.
+
+**Consecuencias:** reemplaza a #025. En puerta el portero coteja con lo que muestra el escáner, no con la entrada.

@@ -5,19 +5,24 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { logAdminAction, requireOwner } from '@/lib/auth/admin';
-import { formatAccessCode, generateAccessCode } from '@/lib/access-codes';
+import { ACCESS_KIND_LABELS, formatAccessCode, generateAccessCode } from '@/lib/access-codes';
 import { toUTC } from '@/lib/events';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export type AccessFormState = { error: string; field?: string } | { ok: true; code: string } | null;
 
+const maxUses = z.coerce
+  .number({ invalid_type_error: 'Un número entero entre 1 y 1000' })
+  .int('Un número entero entre 1 y 1000')
+  .min(1, 'Al menos 1')
+  .max(1000, 'Hasta 1000');
+
+// Personal: para una persona y sus amigos, con X entradas. Público (historias de Instagram):
+// cada compra lleva una sola entrada; el total es opcional (vacío = sin tope).
 const schema = z.object({
+  kind: z.enum(['personal', 'public']),
   label: z.string().trim().min(1, 'Poné para quién es').max(120, 'Hasta 120 caracteres'),
-  max_uses: z.coerce
-    .number({ invalid_type_error: 'Un número entero entre 1 y 1000' })
-    .int('Un número entero entre 1 y 1000')
-    .min(1, 'Al menos 1')
-    .max(1000, 'Hasta 1000'),
+  max_uses: maxUses.nullable(),
   valid_until: z
     .string()
     .optional()
@@ -30,9 +35,13 @@ export async function createAccessCodeAction(eventId: string, formData: FormData
   const admin = await requireOwner().catch(() => null);
   if (!admin) return { error: 'Solo los owners pueden crear códigos de acceso.' };
 
+  const kind = formData.get('kind') === 'public' ? 'public' : 'personal';
+  const rawMax = String(formData.get('max_uses') ?? '').trim();
   const parsed = schema.safeParse({
+    kind,
     label: formData.get('label') ?? '',
-    max_uses: formData.get('max_uses') ?? '',
+    // Un personal siempre lleva cuántas entradas (vacío no pasa); un público vacío es sin tope.
+    max_uses: kind === 'public' && rawMax === '' ? null : rawMax,
     valid_until: formData.get('valid_until') || undefined,
   });
   if (!parsed.success) {
@@ -50,6 +59,7 @@ export async function createAccessCodeAction(eventId: string, formData: FormData
       .insert({
         event_id: eventId,
         code,
+        kind: d.kind,
         label: d.label,
         max_uses: d.max_uses,
         valid_until: d.valid_until,
@@ -59,8 +69,9 @@ export async function createAccessCodeAction(eventId: string, formData: FormData
       .single();
     if (!error) {
       await logAdminAction(admin.id, 'create_access_code', 'access_code', data.id, {
+        kind: ACCESS_KIND_LABELS[d.kind],
         label: d.label,
-        max_uses: d.max_uses,
+        max_uses: d.max_uses ?? 'Sin tope',
         valid_until: d.valid_until,
       });
       return { ok: true, code };

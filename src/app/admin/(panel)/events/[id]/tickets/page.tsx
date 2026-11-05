@@ -4,18 +4,20 @@ import { requireAdmin } from '@/lib/auth/admin';
 import { formatAccessCode } from '@/lib/access-codes';
 import { createAdminClient, fetchAll } from '@/lib/supabase/admin';
 import { ContextMenu, ContextMenuButton, type ContextMenuItem } from '@/components/admin/context-menu';
+import { InstagramLink } from '@/components/admin/instagram-link';
 import { ConfirmSubmitButton, SubmitButton } from '@/components/admin/submit-button';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { EmptyState, StatCard } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { formatLocal, formatUYU } from '@/lib/events';
+import { needsRefundReceipt } from '@/lib/receipts';
 import { formatDocument, normalizeDocument, SOURCE_LABELS, STATUS_LABELS, ticketUrl } from '@/lib/tickets';
 import { getTransportByTicket } from '@/lib/transport';
 import { cn } from '@/lib/utils';
 import type { TicketStatus } from '@/types/database';
 import { approveTransferAction, cancelTicketAction, rejectTransferAction, resendTicketMailAction } from './actions';
-import { CancelTicketButton } from './cancel-ticket-button';
+import { CancelTicketButton, RefundReceiptCancel } from './cancel-ticket-button';
 import { CopyLinkButton } from './copy-link-button';
 import { NewTicketForm } from './new-ticket-form';
 
@@ -41,6 +43,11 @@ const PAGE_SIZE = 100;
 const CANCEL_OUTCOMES: Record<string, { ok: boolean; text: string }> = {
   anulada: { ok: true, text: 'Anulada. Le avisamos por mail.' },
   'anulada-sin-mail': { ok: false, text: 'Anulada, pero no se pudo mandar el mail: avisale por Instagram.' },
+  'anulada-devolucion': { ok: true, text: 'Anulada, con el comprobante de la devolución guardado. Le avisamos por mail.' },
+  'anulada-devolucion-sin-mail': {
+    ok: false,
+    text: 'Anulada, con el comprobante de la devolución guardado, pero no se pudo mandar el mail: avisale por Instagram.',
+  },
   reembolsada: { ok: true, text: 'Reembolsada: se devolvió la plata por Mercado Pago y le avisamos por mail.' },
   'reembolsada-sin-mail': {
     ok: false,
@@ -77,7 +84,7 @@ const CANCEL_OUTCOMES: Record<string, { ok: boolean; text: string }> = {
 };
 
 const LIST_COLUMNS =
-  'id, order_id, buyer_name, buyer_email, buyer_document, buyer_instagram, status, source, tier_id, amount_paid_uyu, qr_token, payment_method, mp_payment_id, notes, access_code_id';
+  'id, order_id, buyer_name, buyer_email, buyer_document, buyer_instagram, status, source, tier_id, amount_paid_uyu, qr_token, payment_method, mp_payment_id, notes, access_code_id, refund_receipt_path';
 const REVIEW_COLUMNS =
   'id, order_id, buyer_name, buyer_email, buyer_document, buyer_instagram, tier_id, amount_paid_uyu, discount_uyu, receipt_path, created_at, access_code_id';
 
@@ -296,7 +303,12 @@ export default async function EventTicketsPage({
                     </p>
                     <p className="mt-1 text-xs text-bone/55">
                       CI {formatDocument(lead.buyer_document)} · {lead.buyer_email}
-                      {lead.buyer_instagram && ` · @${lead.buyer_instagram}`}
+                      {lead.buyer_instagram && (
+                        <>
+                          {' · '}
+                          <InstagramLink handle={lead.buyer_instagram} />
+                        </>
+                      )}
                     </p>
                     <p className="mt-0.5 text-xs text-bone/45">
                       {lead.tier_id && tierName.get(lead.tier_id)}
@@ -311,6 +323,12 @@ export default async function EventTicketsPage({
                           <li key={t.id} className="break-words">
                             <span className="font-medium text-bone/80">{t.buyer_name}</span>
                             {` · CI ${formatDocument(t.buyer_document)} · ${t.buyer_email}`}
+                            {t.buyer_instagram && (
+                              <>
+                                {' · '}
+                                <InstagramLink handle={t.buyer_instagram} />
+                              </>
+                            )}
                             {busLabel(t.id)}
                           </li>
                         ))}
@@ -412,8 +430,13 @@ export default async function EventTicketsPage({
               const cancel = cancelTicketAction.bind(null, params.id, t.id, view);
               const resend = resendTicketMailAction.bind(null, params.id, t.id);
               // Una compra pendiente no se anula: vence sola (y si paga después, revive igual).
+              // Cobrada por transferencia: para anularla se sube el comprobante de la devolución.
               const refundable = t.source === 'purchase' && !!t.mp_payment_id;
-              const cancelMode = t.status !== 'paid' ? null : refundable ? 'refund' : 'cancel';
+              const cancelMode =
+                t.status !== 'paid' ? null : refundable ? 'refund' : needsRefundReceipt(t) ? 'receipt' : 'cancel';
+              const receiptDialog = `anular-${t.id}`;
+              const refundReceiptHref =
+                isOwner && t.refund_receipt_path ? `/admin/events/${params.id}/tickets/${t.id}/devolucion` : null;
               const order = t.order_id ? orders.get(t.order_id) : undefined;
               const access = accessLine(t.access_code_id);
               // Las mismas acciones de la fila, con la misma confirmación para anular o reembolsar.
@@ -421,8 +444,14 @@ export default async function EventTicketsPage({
                 ...(t.qr_token && t.status !== 'pending'
                   ? [{ label: 'Ver entrada', href: ticketUrl(t.qr_token), newTab: true }]
                   : []),
+                ...(refundReceiptHref
+                  ? [{ label: 'Ver comprobante de devolución', href: refundReceiptHref, newTab: true }]
+                  : []),
                 ...(t.status === 'paid' ? [{ label: 'Reenviar mail', action: resend, done: 'Mail reenviado' }] : []),
-                ...(isOwner && cancelMode
+                ...(isOwner && cancelMode === 'receipt'
+                  ? [{ label: 'Anular', hint: 'Pide el comprobante de la devolución', reveal: receiptDialog }]
+                  : []),
+                ...(isOwner && (cancelMode === 'refund' || cancelMode === 'cancel')
                   ? [
                       {
                         label: cancelMode === 'refund' ? 'Reembolsar' : 'Anular',
@@ -460,7 +489,12 @@ export default async function EventTicketsPage({
                     </div>
                     <p className="mt-1 text-xs text-bone/55">
                       CI {formatDocument(t.buyer_document)} · {t.buyer_email}
-                      {t.buyer_instagram && ` · @${t.buyer_instagram}`}
+                      {t.buyer_instagram && (
+                        <>
+                          {' · '}
+                          <InstagramLink handle={t.buyer_instagram} />
+                        </>
+                      )}
                     </p>
                     <p className="mt-0.5 text-xs text-bone/45">
                       {SOURCE_LABELS[t.source]}
@@ -481,6 +515,17 @@ export default async function EventTicketsPage({
                   </div>
                   <div className="flex flex-wrap items-center justify-end gap-1">
                     {t.qr_token && t.status !== 'pending' && <CopyLinkButton url={ticketUrl(t.qr_token)} />}
+                    {refundReceiptHref && (
+                      // Link temporal armado en el momento, como el comprobante de la transferencia.
+                      <a
+                        href={refundReceiptHref}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2 text-[13px] text-bone/70 underline underline-offset-4 hover:text-bone"
+                      >
+                        Ver comprobante de devolución
+                      </a>
+                    )}
                     {t.status === 'paid' && (
                       <form action={resend}>
                         <SubmitButton variant="ghost" size="sm">
@@ -488,7 +533,12 @@ export default async function EventTicketsPage({
                         </SubmitButton>
                       </form>
                     )}
-                    {isOwner && cancelMode && <CancelTicketButton action={cancel} mode={cancelMode} />}
+                    {isOwner && cancelMode === 'receipt' && (
+                      <RefundReceiptCancel action={cancel} id={receiptDialog} name={t.buyer_name} />
+                    )}
+                    {isOwner && (cancelMode === 'refund' || cancelMode === 'cancel') && (
+                      <CancelTicketButton action={cancel} mode={cancelMode} />
+                    )}
                     <ContextMenuButton />
                   </div>
                 </ContextMenu>

@@ -1,8 +1,11 @@
 // ============================================================
 // Códigos de acceso para comprar. Ver docs/LOGICA_DE_NEGOCIO.md → §3b.
 // ============================================================
-// Los owners generan en el admin un código para X entradas y se lo pasan a quien quiere ir
-// (por Instagram). Se escribe en /access o se abre el link /acceso/<código>.
+// Los owners generan en el admin un código y se lo pasan a quien quiere ir (por Instagram).
+// Se escribe en /access o se abre el link /acceso/<código>. Dos tipos:
+//   - personal: para una persona y sus amigos, con X entradas.
+//   - público (una historia de Instagram): cada compra lleva una sola entrada, sin amigos;
+//     el total de entradas es opcional (sin tope = hasta que se pause, venza o termine el evento).
 import { randomInt } from 'crypto';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { appUrl } from '@/lib/tickets';
@@ -29,19 +32,38 @@ export function accessLink(code: string): string {
   return `${appUrl()}/acceso/${code}`;
 }
 
+export type AccessCodeKind = 'personal' | 'public';
+
+export const ACCESS_KIND_LABELS: Record<AccessCodeKind, string> = {
+  personal: 'Personal',
+  public: 'Público',
+};
+
+export function parseAccessKind(value: unknown): AccessCodeKind {
+  return value === 'public' ? 'public' : 'personal';
+}
+
 export type AccessCodeState = {
   id: string;
   eventId: string;
   code: string;
   label: string;
-  maxUses: number;
+  kind: AccessCodeKind;
+  maxUses: number | null; // null: público sin tope
   used: number; // entradas que ocupan un uso, incluidas las reservas sin pagar todavía
-  left: number; // usos libres ahora
+  left: number; // usos libres ahora (Infinity sin tope)
   // Usos libres sin contar las reservas sin terminar: alcanza con esto para dejar entrar. Si el
   // pago no salió, quien vuelve tiene que poder reintentar aunque su reserva siga viva.
   openLeft: number;
   validUntil: string | null;
 };
+
+// Cuántas entradas puede llevar una compra con el código, si le quedan `left`: el público,
+// una sola (cada persona saca la suya); el personal, las que le quedan. create_order controla
+// lo mismo en la base.
+export function accessOrderLimit(kind: AccessCodeKind, left: number): number {
+  return kind === 'public' ? Math.min(left, 1) : left;
+}
 
 // Un código que sirve para entrar a comprar: existe, está activo, no venció y es del evento que
 // está a la venta (el próximo publicado, el mismo de /entradas). Un código de una fecha nueva en
@@ -53,7 +75,7 @@ export async function findAccessCode(
   const db = createAdminClient();
   let query = db
     .from('access_codes')
-    .select('id, event_id, code, label, max_uses, valid_until, active');
+    .select('id, event_id, code, label, kind, max_uses, valid_until, active');
   query = 'code' in by ? query.eq('code', normalizeAccessCode(by.code)) : query.eq('id', by.id);
   const { data } = await query.maybeSingle();
   if (!data || !data.active) return null;
@@ -78,15 +100,17 @@ export async function findAccessCode(
       .gt('reserved_until', new Date().toISOString()),
   ]);
   const usedCount = (used as number | null) ?? 0;
+  const max = data.max_uses ?? Infinity;
   return {
     id: data.id,
     eventId: data.event_id,
     code: data.code,
     label: data.label,
+    kind: parseAccessKind(data.kind),
     maxUses: data.max_uses,
     used: usedCount,
-    left: Math.max(data.max_uses - usedCount, 0),
-    openLeft: Math.max(data.max_uses - usedCount + (held ?? 0), 0),
+    left: Math.max(max - usedCount, 0),
+    openLeft: Math.max(max - usedCount + (held ?? 0), 0),
     validUntil: data.valid_until,
   };
 }

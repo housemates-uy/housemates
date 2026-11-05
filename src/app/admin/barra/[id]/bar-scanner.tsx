@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import QrScanner from 'qr-scanner';
-import { SwitchCamera, X } from 'lucide-react';
+import { LogOut, SwitchCamera, X } from 'lucide-react';
+import { logoutAction } from '@/app/admin/login/actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Logo } from '@/components/ui/logo';
@@ -79,14 +80,18 @@ async function siteResponds() {
   }
 }
 
+// exitHref: adonde lleva la X. Sin él (usuario de barra en /scan, que no tiene otra pantalla)
+// la X cierra la sesión.
 export function BarScannerApp({
   eventId,
   title,
   initial,
+  exitHref,
 }: {
   eventId: string;
   title: string;
   initial: { delivered: number; sold: number };
+  exitHref: string | null;
 }) {
   const cameraRef = useRef<HTMLDivElement>(null);
   const scannerRef = useRef<QrScanner | null>(null);
@@ -291,13 +296,32 @@ export function BarScannerApp({
     <main className="fixed inset-0 flex flex-col bg-ink">
       {/* Barra superior: salir, evento y contador */}
       <header className="flex items-center gap-3 border-b border-bone/10 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
-        <Link
-          href={`/admin/events/${eventId}/barra`}
-          aria-label="Salir del escáner de barra"
-          className="-ml-2 flex h-10 w-10 items-center justify-center rounded-control text-bone/70"
-        >
-          <X size={20} aria-hidden />
-        </Link>
+        {exitHref ? (
+          <Link
+            href={exitHref}
+            aria-label="Salir del escáner de barra"
+            className="-ml-2 flex h-10 w-10 items-center justify-center rounded-control text-bone/70"
+          >
+            <X size={20} aria-hidden />
+          </Link>
+        ) : (
+          <form
+            action={logoutAction}
+            onSubmit={(e) => {
+              if (!window.confirm('¿Cerrar la sesión del escáner? Para volver a entrar hace falta la contraseña.')) {
+                e.preventDefault();
+              }
+            }}
+          >
+            <button
+              type="submit"
+              aria-label="Cerrar sesión"
+              className="-ml-2 flex h-10 w-10 items-center justify-center rounded-control text-bone/70"
+            >
+              <LogOut size={18} aria-hidden />
+            </button>
+          </form>
+        )}
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{title}</p>
           <p className="text-xs text-bone/50">Barra · tragos entregados</p>

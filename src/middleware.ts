@@ -2,18 +2,20 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { isLocalNoAuth } from '@/lib/auth/local-mode';
 
-// Protege el admin y mantiene viva la sesión de Supabase (admins y cuentas de compradores).
-// La contraseña para comprar (que se prende y apaga desde /admin/config) la chequea la
-// página /entradas con hasGateAccess(), porque el middleware no puede saber si está prendida
-// sin consultar la base. Las páginas de /cuenta piden la sesión ellas mismas.
+// Protege el admin y /scan, y mantiene viva la sesión de Supabase (admins y cuentas de
+// compradores). La contraseña para comprar (que se prende y apaga desde /admin/config) la
+// chequea la página /entradas con hasGateAccess(), porque el middleware no puede saber si está
+// prendida sin consultar la base. Las páginas de /cuenta piden la sesión ellas mismas.
+// Qué puede usar cada rol (el de barra, solo /scan) lo decide src/lib/auth/admin.ts.
 const ADMIN_PUBLIC = ['/admin/login'];
+const SCAN_PATH = '/scan';
 
 function matchesPrefix(pathname: string, prefixes: string[]) {
   return prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
 function isAdminPath(pathname: string) {
-  return matchesPrefix(pathname, ['/admin', '/api/admin']);
+  return matchesPrefix(pathname, ['/admin', '/api/admin', SCAN_PATH]);
 }
 
 // Refresca el token de Supabase si venció y propaga las cookies nuevas en la respuesta.
@@ -59,7 +61,9 @@ async function handleAdminAuth(request: NextRequest): Promise<NextResponse> {
   // de comprador no entra.
   const { user, response } = await refreshSession(request);
   if (!user) {
-    return NextResponse.redirect(new URL('/admin/login', request.url));
+    // Desde /scan, el login vuelve a /scan (el usuario de barra entra por ahí).
+    const login = request.nextUrl.pathname === SCAN_PATH ? `/admin/login?next=${SCAN_PATH}` : '/admin/login';
+    return NextResponse.redirect(new URL(login, request.url));
   }
 
   return response;
@@ -87,5 +91,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/api/admin/:path*', '/cuenta/:path*', '/entradas', '/compra/resultado', '/barra/:path*'],
+  matcher: ['/admin/:path*', '/api/admin/:path*', '/scan', '/cuenta/:path*', '/entradas', '/compra/resultado', '/barra/:path*'],
 };

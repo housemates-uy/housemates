@@ -1,6 +1,7 @@
 'use server';
 
 // Compra de barra. Ver docs/LOGICA_DE_NEGOCIO.md → "Barra".
+//   0. Solo con la cookie que deja el QR de la fiesta o el link de las historias (bar-access).
 //   1. La persona elige tragos y deja su email (nombre opcional). No hace falta cuenta; si
 //      está logueada, el pedido se guarda con su user_id.
 //   2. Se crea el pedido `pending` (create_bar_order calcula el total con los precios
@@ -9,6 +10,7 @@
 //   3. Solo en modo local: "Simular pago" lo confirma como si MP lo hubiera aprobado.
 import { isLocalNoAuth } from '@/lib/auth/local-mode';
 import { barCartSchema, createBarOrder, groupUnits, loadBarOrderById, type BarCart } from '@/lib/bar';
+import { BAR_LOCKED_MESSAGE, hasBarAccess } from '@/lib/bar-access';
 import { getCustomer } from '@/lib/customers';
 import { confirmBarOrder, createBarPreference, isMercadoPagoConfigured } from '@/lib/mercadopago';
 import { getNextEvent } from '@/lib/next-event';
@@ -38,6 +40,8 @@ async function prepare(input: BarCheckoutInput): Promise<Prepared | { error: str
     .eq('id', next.id)
     .single();
   if (!event) return { error: 'La barra todavía no está abierta.' };
+  // La página sin la cookie del link no muestra la carta; esto frena a quien llame la acción directo.
+  if (!(await hasBarAccess(event.id))) return { error: BAR_LOCKED_MESSAGE };
 
   // Cada intento crea un pedido en la base: se limita por IP una vez validado el carrito.
   if (!(await allowAttempt('bar_checkout'))) return { error: TOO_MANY_ATTEMPTS };

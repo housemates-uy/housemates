@@ -3,7 +3,7 @@ import QRCode from 'qrcode';
 import { entryTime, formatLocal } from '@/lib/events';
 import { loadImageFonts } from '@/lib/image-fonts';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { formatDocument, ticketUrl } from '@/lib/tickets';
+import { maskDocument, ticketUrl } from '@/lib/tickets';
 import { getTicketTransport } from '@/lib/transport';
 
 export const runtime = 'nodejs';
@@ -43,7 +43,7 @@ export async function GET(req: Request, { params }: { params: { token: string } 
   const qr = await QRCode.toDataURL(ticketUrl(ticket.qr_token), { margin: 1, width: 720, errorCorrectionLevel: 'M' });
   const logo = new URL('/brand/logo.svg', req.url).toString();
   const background = new URL('/brand/ticket-bg.jpg', req.url).toString();
-  const doc = formatDocument(ticket.buyer_document);
+  const doc = maskDocument(ticket.buyer_document);
   const entry = ticket.source === 'invitation' ? 'Cortesía' : (tier?.name ?? 'Entrada');
   const entryUntil = entryTime(tier?.entry_until);
   const when = event ? `${formatLocal(event.date_start, "EEEE · HH:mm 'hs'")} · ${event.format}` : '';

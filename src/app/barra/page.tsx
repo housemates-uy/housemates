@@ -7,6 +7,7 @@ import { Eyebrow } from '@/components/ui/eyebrow';
 import { Logo } from '@/components/ui/logo';
 import { isLocalNoAuth } from '@/lib/auth/local-mode';
 import { getBarMenu } from '@/lib/bar';
+import { BAR_LOCKED_MESSAGE, hasBarAccess } from '@/lib/bar-access';
 import { getCustomer, isAccountsEnabled } from '@/lib/customers';
 import { getNextEvent } from '@/lib/next-event';
 import { getIgHandle, igUrl } from '@/lib/site';
@@ -18,7 +19,9 @@ export const dynamic = 'force-dynamic';
 
 // Carta de la barra del próximo evento. Se usa también durante la fiesta, con poca luz:
 // letra grande, botones grandes y el total siempre visible abajo.
-// No pide la contraseña del gate (esa es solo para comprar entradas) ni cuenta.
+// No pide la contraseña del gate (esa es solo para comprar entradas) ni cuenta, pero sí la
+// cookie que deja el QR de la fiesta o el link de las historias (src/lib/bar-access.ts): sin
+// ella no se muestra la carta.
 export default async function BarraPage() {
   const [event, igHandle, customer, accountsOn] = await Promise.all([
     getNextEvent(),
@@ -26,18 +29,20 @@ export default async function BarraPage() {
     getCustomer().catch(() => null),
     isAccountsEnabled(),
   ]);
+  const unlocked = !!event.id && (await hasBarAccess(event.id));
 
-  const [menu, paused] = event.id
-    ? await Promise.all([
-        getBarMenu(event.id),
-        createAdminClient()
-          .from('events')
-          .select('bar_paused')
-          .eq('id', event.id)
-          .single()
-          .then(({ data }) => data?.bar_paused ?? true),
-      ])
-    : [[], true];
+  const [menu, paused] =
+    event.id && unlocked
+      ? await Promise.all([
+          getBarMenu(event.id),
+          createAdminClient()
+            .from('events')
+            .select('bar_paused')
+            .eq('id', event.id)
+            .single()
+            .then(({ data }) => data?.bar_paused ?? true),
+        ])
+      : [[], true];
   const open = !!event.id && !paused && menu.length > 0;
 
   return (
@@ -64,7 +69,20 @@ export default async function BarraPage() {
           </p>
         </section>
 
-        {open ? (
+        {!unlocked ? (
+          <Card className="mb-16 mt-12 p-6 md:p-8">
+            <h2 className="text-xl font-bold tracking-tight">¿Querés pedir tragos?</h2>
+            <p className="mt-3 max-w-[48ch] text-sm leading-relaxed text-bone/65">{BAR_LOCKED_MESSAGE}</p>
+            <a
+              href={igUrl(igHandle)}
+              target="_blank"
+              rel="noreferrer"
+              className={buttonVariants({ size: 'lg', className: 'mt-7' })}
+            >
+              Instagram {igHandle}
+            </a>
+          </Card>
+        ) : open ? (
           <BarOrderForm
             products={menu}
             account={customer ? { email: customer.email, name: customer.profile?.name ?? null } : null}

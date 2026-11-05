@@ -14,6 +14,7 @@ export function AccessForm({ next, notice }: { next: string; notice?: string | n
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(notice ?? null);
   const [attempts, setAttempts] = useState(0);
+  const buying = next.startsWith('/entradas') || next.startsWith('/checkout');
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -56,9 +57,12 @@ export function AccessForm({ next, notice }: { next: string; notice?: string | n
     <div className="flex flex-col items-center text-center">
       <LogoIntro className="h-32 w-32" />
 
-      <h1 className="mt-8 text-2xl font-bold tracking-tight">Entradas</h1>
+      {/* Desde la portada o las preguntas frecuentes llega gente que quiere ver el lugar o las reglas. */}
+      <h1 className="mt-8 text-2xl font-bold tracking-tight">{buying ? 'Entradas' : 'La casa'}</h1>
       <p className="mt-2 max-w-[32ch] text-sm leading-relaxed text-bone/60">
-        Para comprar necesitás la contraseña o tu código de acceso. Te lo pasamos por Instagram.
+        {buying
+          ? 'Para comprar necesitás la contraseña o tu código de acceso. Te lo pasamos por Instagram.'
+          : 'Para ver el lugar, las reglas y comprar entradas necesitás la contraseña o tu código de acceso. Te lo pasamos por Instagram.'}
       </p>
 
       <form

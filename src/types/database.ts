@@ -47,8 +47,9 @@ export type Database = {
           created_by_admin_id: string | null
           event_id: string
           id: string
+          kind: string
           label: string
-          max_uses: number
+          max_uses: number | null
           valid_until: string | null
         }
         Insert: {
@@ -58,8 +59,9 @@ export type Database = {
           created_by_admin_id?: string | null
           event_id: string
           id?: string
+          kind?: string
           label: string
-          max_uses: number
+          max_uses?: number | null
           valid_until?: string | null
         }
         Update: {
@@ -69,8 +71,9 @@ export type Database = {
           created_by_admin_id?: string | null
           event_id?: string
           id?: string
+          kind?: string
           label?: string
-          max_uses?: number
+          max_uses?: number | null
           valid_until?: string | null
         }
         Relationships: []
@@ -611,6 +614,7 @@ export type Database = {
           date_end: string
           date_start: string
           description_md: string | null
+          bar_key: string
           bar_paused: boolean
           door_closed: boolean
           format: string
@@ -633,6 +637,7 @@ export type Database = {
           date_end: string
           date_start: string
           description_md?: string | null
+          bar_key?: string
           bar_paused?: boolean
           door_closed?: boolean
           format?: string
@@ -655,6 +660,7 @@ export type Database = {
           date_end?: string
           date_start?: string
           description_md?: string | null
+          bar_key?: string
           bar_paused?: boolean
           door_closed?: boolean
           format?: string
@@ -904,6 +910,7 @@ export type Database = {
           discount_code_id: string | null
           discount_uyu: number
           receipt_path: string | null
+          refund_receipt_path: string | null
           reviewed_at: string | null
           reviewed_by_admin_id: string | null
         }
@@ -938,6 +945,7 @@ export type Database = {
           discount_code_id?: string | null
           discount_uyu?: number
           receipt_path?: string | null
+          refund_receipt_path?: string | null
           reviewed_at?: string | null
           reviewed_by_admin_id?: string | null
         }
@@ -972,6 +980,7 @@ export type Database = {
           discount_code_id?: string | null
           discount_uyu?: number
           receipt_path?: string | null
+          refund_receipt_path?: string | null
           reviewed_at?: string | null
           reviewed_by_admin_id?: string | null
         }
@@ -1176,7 +1185,7 @@ export type Database = {
         }[]
       }
       cancel_ticket: {
-        Args: { p_refunded?: boolean; p_ticket_id: string }
+        Args: { p_refund_receipt_path?: string; p_refunded?: boolean; p_ticket_id: string }
         Returns: string
       }
       check_in_ticket: {
@@ -1306,7 +1315,7 @@ export type Database = {
       transport_seats_taken: { Args: { p_option_id: string }; Returns: number }
     }
     Enums: {
-      admin_role: "owner" | "staff"
+      admin_role: "owner" | "staff" | "barra"
       bar_order_status: "pending" | "paid" | "cancelled" | "refunded"
       bar_scan_result:
         | "delivered"
@@ -1494,7 +1503,7 @@ export const Constants = {
   },
   public: {
     Enums: {
-      admin_role: ["owner", "staff"],
+      admin_role: ["owner", "staff", "barra"],
       bar_order_status: ["pending", "paid", "cancelled", "refunded"],
       bar_scan_result: ["delivered", "already_delivered", "invalid", "wrong_event", "not_paid"],
       checkin_result: [

@@ -11,14 +11,16 @@ import { BAR_STATUS_LABELS, barImageUrl, groupUnits } from '@/lib/bar';
 import { formatLocal, formatUYU } from '@/lib/events';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { deleteBarProductAction, moveBarProductAction, setBarPausedAction, toggleBarProductAction } from './actions';
+import { BarLinkSection } from './bar-link';
 import { ProductForm } from './product-form';
 
 export const metadata = { title: 'Barra' };
 
 const ORDERS_SHOWN = 100;
 
-// Barra del evento: venta abierta/pausada, resumen, carta y pedidos.
-// Los tragos se venden en /barra cuando este es el próximo evento publicado. Cada unidad
+// Barra del evento: venta abierta/pausada, link y QR de la barra, resumen, carta y pedidos.
+// Los tragos se venden en /barra (se entra con el link o el QR) cuando este es el próximo
+// evento publicado. Cada unidad
 // comprada es un QR que se entrega una sola vez en el escáner de barra (/admin/barra/<id>).
 export default async function EventBarPage({
   params,
@@ -33,7 +35,7 @@ export default async function EventBarPage({
 
   const [{ data: event }, { data: products }, { data: summary }, { count: paidOrders }, { data: orders }] =
     await Promise.all([
-      db.from('events').select('id, status, date_end, bar_paused').eq('id', params.id).single(),
+      db.from('events').select('id, slug, status, date_end, bar_paused, bar_key').eq('id', params.id).single(),
       db
         .from('bar_products')
         .select('id, name, description, price_uyu, active, sort_order, image_path')
@@ -95,7 +97,7 @@ export default async function EventBarPage({
           <p className="mt-1 max-w-[60ch] text-xs leading-relaxed text-bone/55">
             {event.bar_paused
               ? 'Nadie puede comprar. Los QRs ya pagos se siguen entregando.'
-              : 'Se compra desde /barra cuando este es el próximo evento publicado, hasta que termine. Precio final, sin cargo por servicio.'}
+              : 'Se compra con el link o el QR de la barra (abajo) cuando este es el próximo evento publicado, hasta que termine. El precio de la carta es lo que paga cada persona, igual que en la barra de la fiesta: sin cargo por servicio, la comisión de Mercado Pago la absorbe la fiesta.'}
             {event.status !== 'published' && ' El evento no está publicado: la barra no vende.'}
           </p>
         </div>
@@ -112,6 +114,8 @@ export default async function EventBarPage({
           </Link>
         </div>
       </section>
+
+      <BarLinkSection eventId={event.id} slug={event.slug} barKey={event.bar_key} isOwner={isOwner} />
 
       {/* Resumen */}
       <section className="space-y-4">

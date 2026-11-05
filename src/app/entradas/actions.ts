@@ -35,6 +35,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { buyerSchema, createOrder, normalizeDocument, PURCHASE_COOKIE, type OrderPerson } from '@/lib/tickets';
 import { findTransportChoice } from '@/lib/transport';
 import { normalizeEmail } from '@/lib/validation/email';
+import { instagramRequiredSchema } from '@/lib/validation/schemas';
 
 const HOLD_MINUTES = 20;
 // Lo que puede tardar en subirse el comprobante antes de que la reserva venza sola.
@@ -92,6 +93,8 @@ const formText = (formData: FormData, name: string) => String(formData.get(name)
 
 type Bus = { id: string; name: string; price: number } | null;
 
+const PUBLIC_CODE_SINGLE = 'Con este código podés sacar 1 entrada: si vienen amigos, cada uno saca la suya.';
+
 // Un error de create_order ('<motivo>#<n>') → mensaje y campo de esa persona.
 function orderError(
   err: { error: string; code?: string; person?: number },
@@ -123,6 +126,8 @@ function orderError(
         : ['Tu código de acceso ya no tiene entradas disponibles. Escribinos por Instagram.'];
     case 'access_invalid':
       return ['Tu código de acceso ya no es válido. Pedinos uno nuevo por Instagram.'];
+    case 'access_single':
+      return [PUBLIC_CODE_SINGLE, 'quantity'];
     case 'transport_full':
       return [
         `${who}No quedan lugares en el bus "${buses[n - 1]?.name ?? ''}". Elegí otra opción o seguí sin transporte.`,
@@ -190,19 +195,25 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
     return { error: 'Tu sesión se cerró. Ingresá de nuevo para comprar con tu cuenta.' };
   }
 
-  // Cada entrada es nominativa: nombre, cédula y email propios, sin repetirse en la compra.
+  // Cada entrada es nominativa: nombre, cédula y email propios, sin repetirse en la compra, y
+  // el Instagram de cada persona (obligatorio en la compra web: los owners miran el perfil).
   const people: OrderPerson['buyer'][] = [];
   for (let n = 1; n <= quantity; n++) {
+    const instagram = instagramRequiredSchema.safeParse(formText(formData, personField('instagram', n)));
     const parsed = buyerSchema.safeParse({
       name: formText(formData, personField('name', n)),
       email: n === 1 && customer ? customer.email : formText(formData, personField('email', n)),
       document: formText(formData, personField('document', n)),
       phone: n === 1 ? formText(formData, 'phone') : '',
-      instagram: formText(formData, personField('instagram', n)),
+      instagram: instagram.success ? instagram.data : '',
     });
     if (!parsed.success) {
       const issue = parsed.error.issues[0];
       return { error: n === 1 ? issue.message : `Entrada ${n}: ${issue.message}`, field: personField(String(issue.path[0]), n) };
+    }
+    if (!instagram.success) {
+      const message = instagram.error.issues[0].message;
+      return { error: n === 1 ? message : `Entrada ${n}: ${message}`, field: personField('instagram', n) };
     }
     const email = normalizeEmail(parsed.data.email);
     const document = normalizeDocument(parsed.data.document);
@@ -277,13 +288,18 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
   // Código de acceso (§3b): el de la cookie, nunca uno que mande el formulario. Si es de este
   // evento, la compra lo descuenta mientras le queden entradas (contando las que libera el
   // reintento). Quien entró SOLO con el código compra siempre con él: create_order controla los
-  // usos, así no se compra de más sin la contraseña.
+  // usos (y que un código público lleve una sola entrada), así no se compra de más sin la
+  // contraseña. Con la contraseña, un código sin entradas no limita: se compra sin él. Un código
+  // público con la contraseña tampoco: la contraseña ya deja comprar para amigos.
   const sessionCode = await getSessionAccessCode();
-  const codeForEvent = sessionCode && sessionCode.eventId === tier.eventId ? sessionCode : null;
+  const passwordAccess = await hasPasswordAccess();
+  const sessionCodeForEvent = sessionCode && sessionCode.eventId === tier.eventId ? sessionCode : null;
+  const codeForEvent = sessionCodeForEvent?.kind === 'public' && passwordAccess ? null : sessionCodeForEvent;
   const codeLeft = codeForEvent
     ? codeForEvent.left + (await heldInOrder(codeForEvent.id, cookies().get(PURCHASE_COOKIE)?.value))
     : 0;
-  const accessCodeId = codeForEvent && (codeLeft > 0 || !(await hasPasswordAccess())) ? codeForEvent.id : null;
+  const accessCodeId = codeForEvent && (codeLeft > 0 || !passwordAccess) ? codeForEvent.id : null;
+  if (accessCodeId && codeForEvent?.kind === 'public' && quantity > 1) return fail(PUBLIC_CODE_SINGLE, 'quantity');
 
   // Todas nacen `pending` con reserva. La transferencia pasa a `review` recién con el
   // comprobante subido: si algo se corta en el medio, la reserva vence sola y no quedan
