@@ -68,6 +68,8 @@ Los admins (owners y staff) se crean desde el **Dashboard de Supabase**, nunca d
 
 > **Importante:** el usuario tiene que existir en AMBOS lugares — `auth.users` (maneja la password) y `admins` (controla el acceso al panel). Si falta en `admins`, la sesión se crea pero el panel rechaza el acceso.
 
+> **Si el email ya existe en Auth** ("Create new user" falla): compradores y admins comparten Auth (migración 0011), y cualquiera puede crear una cuenta de comprador con un email ajeno. Antes de insertar la fila en `admins`, quitale el acceso a quien la haya creado: en el SQL Editor, `delete from auth.sessions where user_id = '<UUID>';` y cambiale la contraseña desde **Authentication → Users → … → Send password recovery** (o ponele una nueva y pasásela a la persona por un canal seguro). Recién después insertá la fila en `admins`.
+
 **Cambiar password de un admin:**
 
 - Desde el dashboard: Authentication → Users → clic en el usuario → **"Send password recovery"** (manda email) o editar directamente el campo password

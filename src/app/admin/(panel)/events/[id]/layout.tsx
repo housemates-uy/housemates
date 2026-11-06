@@ -26,7 +26,12 @@ export default async function EventLayout({
 
   const tabs = [
     { href: `/admin/events/${params.id}`, label: 'Resumen', exact: true },
+    { href: `/admin/events/${params.id}/ventas`, label: 'Ventas' },
     { href: `/admin/events/${params.id}/tickets`, label: 'Entradas' },
+    ...(admin.role === 'owner' ? [{ href: `/admin/events/${params.id}/accesos`, label: 'Accesos' }] : []),
+    { href: `/admin/events/${params.id}/descuentos`, label: 'Descuentos' },
+    { href: `/admin/events/${params.id}/barra`, label: 'Barra' },
+    { href: `/admin/events/${params.id}/transporte`, label: 'Transporte' },
     { href: `/admin/scan/${params.id}`, label: 'Puerta' },
   ];
 

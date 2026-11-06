@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { isValidEmail } from "./email";
 import { validateCI } from "./document";
+import { instagramError, instagramUsername } from "./instagram";
 
 export const emailSchema = z
   .string()
@@ -24,6 +25,17 @@ export const buyerSchema = z.object({
   document: documentSchema,
 });
 
+// Compra web: el Instagram de cada entrada es obligatorio, así los owners miran el perfil y
+// pueden anular si es sospechoso. Devuelve el usuario sin @ (como se guarda). En las entradas
+// manuales del admin sigue opcional (buyerSchema de src/lib/tickets.ts).
+export const instagramRequiredSchema = z
+  .string()
+  .superRefine((raw, ctx) => {
+    const error = instagramError(raw);
+    if (error) ctx.addIssue({ code: z.ZodIssueCode.custom, message: error });
+  })
+  .transform(instagramUsername);
+
 export const gateSchema = z.object({
   password: z.string().min(1, "Password requerido"),
 });
@@ -46,30 +58,64 @@ export const eventSchema = z.object({
   date_start: z.string().min(1, 'Fecha de inicio requerida'),
   date_end: z.string().min(1, 'Fecha de fin requerida'),
   location_name: z.string().min(2, 'Lugar requerido'),
-  location_url: z.string().url('URL inválida').optional().or(z.literal('')),
+  // Solo http(s): va tal cual al href de la landing, de Preguntas frecuentes y de los mails.
+  location_url: z
+    .string()
+    .url('URL inválida')
+    .refine((v) => /^https?:\/\//i.test(v), 'El link tiene que empezar con https://')
+    .optional()
+    .or(z.literal('')),
+  format: z.string().trim().min(1, 'Formato requerido (ej. Open air)').max(30, 'Formato: máximo 30 caracteres'),
   capacity: z.coerce.number().int().positive('Capacidad debe ser mayor a 0'),
   status: z.enum(['draft', 'published', 'archived']),
-  description_md: z.string().optional(),
+  description_md: z.string().max(1000, 'Descripción: máximo 1000 caracteres').optional(),
 }).refine((e) => !e.date_start || !e.date_end || e.date_end > e.date_start, {
   message: 'La fecha de fin tiene que ser posterior al inicio',
   path: ['date_end'],
 })
 
+export const PRESALE_CODE_RE = /^[A-Z0-9-]{3,30}$/
+
+// Ingreso temprano ("HH:MM", hora de Montevideo), salida a la venta (datetime-local) y
+// código de preventa (en mayúsculas). Vacío = no aplica. Ver docs/LOGICA_DE_NEGOCIO.md → "Tandas".
+const tierExtras = {
+  entry_until: z
+    .string()
+    .optional()
+    .transform((v) => (v ?? '').trim())
+    .refine((v) => v === '' || /^([01]\d|2[0-3]):[0-5]\d$/.test(v), 'Hora de ingreso inválida (HH:MM)'),
+  sales_start: z
+    .string()
+    .optional()
+    .transform((v) => (v ?? '').trim())
+    .refine((v) => v === '' || !Number.isNaN(Date.parse(v)), 'Fecha de salida a la venta inválida'),
+  presale_code: z
+    .string()
+    .optional()
+    .transform((v) => (v ?? '').trim().toUpperCase())
+    .refine(
+      (v) => v === '' || PRESALE_CODE_RE.test(v),
+      'Código de preventa: de 3 a 30 letras sin tilde, números o guiones, sin espacios',
+    ),
+}
+
 export const tierSchema = z.object({
-  name: z.string().min(1, 'Nombre requerido'),
+  name: z.string().trim().min(1, 'Nombre de la tanda requerido'),
   price_uyu: z.coerce.number().positive('Precio debe ser mayor a 0'),
   quantity_total: z.coerce.number().int().positive('Cantidad debe ser mayor a 0'),
   description: z.string().optional(),
+  ...tierExtras,
 })
 
-export const tiersSchema = z.array(tierSchema).min(1, 'Agregá al menos un tier')
+export const tiersSchema = z.array(tierSchema).min(1, 'Agregá al menos una tanda')
 
 export const tierEditSchema = z.object({
-  name: z.string().min(1, 'Nombre requerido'),
+  name: z.string().trim().min(1, 'Nombre de la tanda requerido'),
   price_uyu: z.coerce.number().positive('Precio debe ser mayor a 0'),
   quantity_total: z.coerce.number().int().positive('Cantidad debe ser mayor a 0'),
   description: z.string().optional(),
   active: z.boolean(),
+  ...tierExtras,
 })
 
 export type EventInput = z.infer<typeof eventSchema>

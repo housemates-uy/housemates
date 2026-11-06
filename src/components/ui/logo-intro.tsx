@@ -1,13 +1,13 @@
 'use client';
 
-import { useReducedMotion } from 'framer-motion';
+import { useReducedMotionSafe } from '@/lib/reduced-motion';
 import { Logo } from '@/components/ui/logo';
 import { cn } from '@/lib/utils';
 
 // Logo animado (se reproduce una vez). El video trae fondo negro puro: `screen`
 // lo funde con el fondo de la página. Con reduced motion se muestra el logo fijo.
 export function LogoIntro({ className }: { className?: string }) {
-  const reduce = useReducedMotion();
+  const reduce = useReducedMotionSafe();
 
   if (reduce) {
     return (

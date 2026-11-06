@@ -1,10 +1,20 @@
 import { cn } from '@/lib/utils';
 
-// Vocabulario cerrado del manual: SOLD OUT / DISPONIBLE / X% VENDIDA. No inventar variantes.
+// Vocabulario cerrado del manual: SOLD OUT / DISPONIBLE / X% VENDIDA, más PRÓXIMAMENTE para
+// una tanda que todavía no salió a la venta (aprobado por los dueños). No inventar variantes.
+// opens: cuándo sale ("vie 20.11 · 20:00 hs"), si tiene fecha.
 export type TandaState =
   | { kind: 'sold_out' }
   | { kind: 'available' }
-  | { kind: 'selling'; percent: number };
+  | { kind: 'selling'; percent: number }
+  | { kind: 'upcoming'; opens: string | null };
+
+export function tandaStateLabel(state: TandaState): string {
+  if (state.kind === 'sold_out') return 'Sold out';
+  if (state.kind === 'selling') return `${state.percent}% vendida`;
+  if (state.kind === 'upcoming') return 'Próximamente';
+  return 'Disponible';
+}
 
 export function tandaState(tier: {
   quantity_sold: number;
@@ -31,13 +41,12 @@ export function TandaStatus({
       <p
         className={cn(
           'text-2xl font-bold uppercase leading-none tracking-tight',
-          state.kind === 'sold_out' ? 'text-alert' : 'text-bone',
+          state.kind === 'sold_out' ? 'text-alert' : state.kind === 'upcoming' ? 'text-bone/60' : 'text-bone',
         )}
       >
-        {state.kind === 'sold_out' && 'Sold out'}
-        {state.kind === 'available' && 'Disponible'}
-        {state.kind === 'selling' && `${state.percent}% vendida`}
+        {tandaStateLabel(state)}
       </p>
+      {state.kind === 'upcoming' && state.opens && <p className="text-xs text-bone/55">Sale el {state.opens}</p>}
       {state.kind === 'selling' && (
         <div
           role="progressbar"

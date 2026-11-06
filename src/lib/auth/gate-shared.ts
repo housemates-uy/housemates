@@ -6,4 +6,6 @@ export type GateSession = {
   granted?: true;
   grantedAt?: number;
   version?: string;
+  // Código de acceso con el que entró (§3b): lo usa la compra, no lo manda el formulario.
+  accessCodeId?: string;
 };

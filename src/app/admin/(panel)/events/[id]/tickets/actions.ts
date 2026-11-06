@@ -3,11 +3,14 @@
 // Acciones del admin sobre las entradas de un evento.
 // Reglas: ver docs/LOGICA_DE_NEGOCIO.md → "Entradas manuales e invitaciones" y "Anular".
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { logAdminAction, requireAdmin } from '@/lib/auth/admin';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { buyerSchema, createTicket, ticketUrl } from '@/lib/tickets';
 import { sendTicketCancelledMail, sendTicketConfirmedMail } from '@/lib/mail/ticket-mails';
-import { refundPayment } from '@/lib/mercadopago';
+import { isMercadoPagoConfigured, refundPayment, syncPayment } from '@/lib/mercadopago';
+import { needsRefundReceipt, removeRefundReceipt, uploadRefundReceipt } from '@/lib/receipts';
+import { approveTransfer, rejectTransfer } from '@/lib/transfers';
 
 export type ManualTicketResult =
   | { ok: true; url: string; name: string; phone: string | null; mailed: boolean }
@@ -19,6 +22,7 @@ export async function createManualTicketAction(
 ): Promise<ManualTicketResult> {
   const admin = await requireAdmin().catch(() => null);
   if (!admin) return { error: 'Tu sesión venció. Volvé a entrar.' };
+  if (admin.role !== 'owner') return { error: 'Solo los owners pueden cargar entradas e invitaciones.' };
 
   const parsed = buyerSchema.safeParse({
     name: formData.get('name'),
@@ -41,6 +45,9 @@ export async function createManualTicketAction(
     return { error: 'Elegí una tanda y un monto válido.', field: 'tier' };
   }
 
+  const notes = String(formData.get('notes') ?? '').trim();
+  if (notes.length > 500) return { error: 'Las notas pueden tener hasta 500 caracteres.', field: 'notes' };
+
   const result = await createTicket({
     eventId,
     tierId: isInvitation ? null : tierValue,
@@ -49,7 +56,7 @@ export async function createManualTicketAction(
     buyer: parsed.data,
     amount,
     adminId: admin.id,
-    notes: String(formData.get('notes') ?? '') || null,
+    notes: notes || null,
   });
   if ('error' in result) return { error: result.error };
 
@@ -67,37 +74,183 @@ export async function createManualTicketAction(
 }
 
 // Anular: si la entrada se pagó por Mercado Pago, primero se devuelve la plata y recién
-// después se anula (queda 'refunded'). Si falla la devolución, no se anula nada.
-// Las manuales e invitaciones se anulan directo ('cancelled'); la devolución de una
-// transferencia se hace por fuera.
-export async function cancelTicketAction(eventId: string, ticketId: string): Promise<void> {
-  const admin = await requireAdmin();
+// después se anula (queda 'refunded'). Si falla la devolución, no se anula nada. Antes de
+// devolver se le pregunta el pago a Mercado Pago (syncPayment): si ya figura devuelto (p. ej.
+// lo devolvieron desde el panel de MP), syncPayment la anula como reembolsada y avisa, y acá
+// no se intenta devolver de nuevo.
+// Un pago de Mercado Pago puede pagar una compra de varias entradas (§5.2e): si otras entradas
+// con ese pago siguen válidas (pagas o usadas), se devuelve solo lo que pagó esta
+// (amount_paid_uyu: su entrada, su bus y su parte del cargo). La última válida devuelve lo que
+// quede del pago, como una entrada sola. "Ya figura devuelto" es solo el pago entero: una
+// devolución parcial deja el pago aprobado en MP.
+// Las manuales, invitaciones y transferencias se anulan directo ('cancelled'); la devolución
+// de una transferencia se hace por fuera. Si se cobró por transferencia (compra web o manual de
+// más de $0), sin el comprobante de esa devolución no se anula: se sube al bucket privado y la
+// ruta queda en la entrada en el mismo UPDATE de cancel_ticket, que también lo exige (0030).
+// Si al final no se anula, el archivo se borra.
+// No se anulan: una transferencia a validar (la aprueba o la rechaza un owner) ni una compra
+// con pago en curso (la reserva vence sola; si la anulamos y paga igual, revive).
+// Si no cambió nada, el error vuelve al botón (useFormState). Si cambió algo, el resultado
+// viaja en la URL (?hecho=…&entrada=…, textos en CANCEL_OUTCOMES de la página): al
+// revalidar, el loading.tsx raíz vuelve a montar la lista y un estado local se perdería.
+// Solo con 'cancelled' se registra la anulación y sale el mail.
+export type CancelTicketState = { error: string } | null;
+export type CancelTicketView = { q: string; pagina: number };
+
+const MP_REVERSED = new Set(['refunded', 'charged_back']);
+
+function backToList(eventId: string, ticketId: string, view: CancelTicketView, hecho: string): never {
+  const params = new URLSearchParams();
+  if (view.q) params.set('q', view.q);
+  if (view.pagina > 1) params.set('pagina', String(view.pagina));
+  params.set('hecho', hecho);
+  params.set('entrada', ticketId);
+  revalidatePath(`/admin/events/${eventId}`, 'layout');
+  redirect(`/admin/events/${eventId}/tickets?${params}#lista`);
+}
+
+export async function cancelTicketAction(
+  eventId: string,
+  ticketId: string,
+  view: CancelTicketView,
+  _prev: CancelTicketState,
+  formData?: FormData,
+): Promise<CancelTicketState> {
+  const admin = await requireAdmin().catch(() => null);
+  if (!admin) return { error: 'Tu sesión venció. Volvé a entrar.' };
+  if (admin.role !== 'owner') return { error: 'Solo los owners pueden anular o reembolsar entradas.' };
   const db = createAdminClient();
 
-  const { data: ticket } = await db
+  const { data: ticket, error: readError } = await db
     .from('tickets')
-    .select('id, status, source, mp_payment_id')
+    .select('id, status, source, payment_method, mp_payment_id, amount_paid_uyu')
     .eq('id', ticketId)
-    .single();
-  if (!ticket) return;
+    .eq('event_id', eventId)
+    .maybeSingle();
+  if (readError) return { error: 'No pudimos leer la entrada. Probá de nuevo.' };
+  if (!ticket) return { error: 'No se encontró la entrada.' };
+  if (ticket.status === 'review') {
+    return { error: 'Las transferencias a validar no se anulan: las aprueba o las rechaza un owner.' };
+  }
+  if (ticket.status === 'pending') {
+    return { error: 'Es un pago en curso: si no se completa, la reserva vence sola y el lugar se libera.' };
+  }
+  if (ticket.status === 'used') return { error: 'La entrada ya se usó en puerta: no se puede anular.' };
+  if (ticket.status !== 'paid') return { error: 'La entrada ya estaba anulada.' };
 
-  let refunded = false;
-  if (ticket.source === 'purchase' && ticket.status === 'paid' && ticket.mp_payment_id) {
-    const ok = await refundPayment(ticket.mp_payment_id);
-    if (!ok) throw new Error('Mercado Pago no aceptó la devolución. La entrada sigue válida.');
-    refunded = true;
+  let receipt: { path: string; kind: string } | null = null;
+  if (needsRefundReceipt(ticket)) {
+    const uploaded = await uploadRefundReceipt(ticketId, formData?.get('refund_receipt'));
+    if ('error' in uploaded) return { error: uploaded.error };
+    receipt = uploaded;
   }
 
-  await db.rpc('cancel_ticket', { p_ticket_id: ticketId, p_refunded: refunded });
-  await logAdminAction(admin.id, refunded ? 'refund_ticket' : 'cancel_ticket', 'ticket', ticketId);
-  // Solo se avisa si la entrada estaba válida: una compra pendiente nunca tuvo entrada.
-  if (ticket.status === 'paid') await sendTicketCancelledMail(ticketId, refunded);
-  revalidatePath(`/admin/events/${eventId}/tickets`);
+  let refunded = false;
+  let partAmount: number | null = null;
+  if (ticket.source === 'purchase' && ticket.mp_payment_id) {
+    if (!isMercadoPagoConfigured()) {
+      return { error: 'Mercado Pago no está conectado: no se puede devolver la plata. La entrada sigue válida.' };
+    }
+    const sync = await syncPayment(ticket.mp_payment_id).catch(() => null);
+    if (!sync) {
+      return { error: 'No pudimos consultar el pago en Mercado Pago. La entrada sigue válida: probá de nuevo.' };
+    }
+    if (MP_REVERSED.has(sync.status)) {
+      await logAdminAction(admin.id, 'refund_ticket', 'ticket', ticketId, {
+        already_refunded_in_mp: true,
+        result: sync.result ?? null,
+      });
+      backToList(eventId, ticketId, view, sync.result === 'cancelled' ? 'ya-devuelta' : sync.result === 'already_used' ? 'devuelta-usada' : 'devuelta-revisar');
+    }
+    const { count: othersValid, error: othersError } = await db
+      .from('tickets')
+      .select('id', { count: 'exact', head: true })
+      .eq('mp_payment_id', ticket.mp_payment_id)
+      .neq('id', ticketId)
+      .in('status', ['paid', 'used']);
+    if (othersError) {
+      return { error: 'No pudimos leer las otras entradas de esta compra. La entrada sigue válida: probá de nuevo.' };
+    }
+    if (othersValid) {
+      partAmount = Number(ticket.amount_paid_uyu);
+      // Sin monto, refundPayment devolvería el pago entero, también el de las otras entradas.
+      if (!(partAmount > 0)) return { error: 'Esta entrada no tiene monto pagado: no se puede devolver su parte.' };
+    }
+    if (!(await refundPayment(ticket.mp_payment_id, partAmount ?? undefined))) {
+      return {
+        error: partAmount
+          ? 'Mercado Pago no aceptó la devolución de lo que pagó esta entrada. La entrada sigue válida.'
+          : 'Mercado Pago no aceptó la devolución. La entrada sigue válida.',
+      };
+    }
+    refunded = true;
+  }
+  const refundDetail = partAmount ? { refund_amount: partAmount } : undefined;
+  const part = partAmount ? '-parte' : '';
+
+  const { data: result, error } = await db.rpc('cancel_ticket', {
+    p_ticket_id: ticketId,
+    p_refunded: refunded,
+    ...(receipt && { p_refund_receipt_path: receipt.path }),
+  });
+  if (error || result !== 'cancelled') {
+    if (receipt) await removeRefundReceipt(receipt.path);
+    if (!refunded) {
+      if (result === 'refund_receipt_required') return { error: 'Subí el comprobante de la devolución para anularla.' };
+      if (result === 'already_used') return { error: 'La entrada ya se usó en puerta: no se puede anular.' };
+      if (result === 'already_cancelled') return { error: 'La entrada ya estaba anulada.' };
+      if (result === 'not_found') return { error: 'No se encontró la entrada.' };
+      return { error: 'No se pudo anular la entrada. Probá de nuevo.' };
+    }
+    // La plata ya se devolvió: queda registrado aunque la entrada no se haya podido anular.
+    await logAdminAction(admin.id, 'refund_ticket', 'ticket', ticketId, { result: result ?? 'error', ...refundDetail });
+    // already_cancelled: el aviso de Mercado Pago (webhook) llegó primero, la anuló y mandó el mail.
+    // Una devolución parcial no la anula sola (el pago sigue aprobado en MP): el aviso lo dice.
+    backToList(
+      eventId,
+      ticketId,
+      view,
+      result === 'already_used' ? 'devuelta-usada' : result === 'already_cancelled' ? `reembolsada${part}` : `devuelta${part}-sin-anular`,
+    );
+  }
+
+  await logAdminAction(
+    admin.id,
+    refunded ? 'refund_ticket' : 'cancel_ticket',
+    'ticket',
+    ticketId,
+    receipt ? { refund_receipt: receipt.kind } : refundDetail,
+  );
+  const mailed = await sendTicketCancelledMail(ticketId, refunded);
+  const done = refunded ? `reembolsada${part}` : receipt ? 'anulada-devolucion' : 'anulada';
+  backToList(eventId, ticketId, view, mailed ? done : `${done}-sin-mail`);
 }
 
 export async function resendTicketMailAction(eventId: string, ticketId: string): Promise<void> {
   const admin = await requireAdmin();
+  // Solo una entrada válida de este evento: el botón se ve solo en esas, pero la acción se
+  // puede llamar directo y el mail dice "ya tenés tu entrada" con el QR.
+  const { data: ticket } = await createAdminClient()
+    .from('tickets')
+    .select('status')
+    .eq('id', ticketId)
+    .eq('event_id', eventId)
+    .maybeSingle();
+  if (ticket?.status !== 'paid') return;
   await sendTicketConfirmedMail(ticketId);
   await logAdminAction(admin.id, 'resend_ticket_mail', 'ticket', ticketId);
   revalidatePath(`/admin/events/${eventId}/tickets`);
+}
+
+// Transferencias: un owner revisa que la plata haya llegado y aprueba o rechaza, con la misma
+// lógica que Entradas a confirmar (src/lib/transfers.ts). Se revalida todo el admin para que
+// baje el contador de pendientes del menú.
+export async function approveTransferAction(ticketId: string): Promise<void> {
+  await approveTransfer(ticketId);
+  revalidatePath('/admin', 'layout');
+}
+
+export async function rejectTransferAction(ticketId: string): Promise<void> {
+  await rejectTransfer(ticketId);
+  revalidatePath('/admin', 'layout');
 }

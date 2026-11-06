@@ -63,6 +63,12 @@ npm run dev
 
 Abrir `http://localhost:3000` → redirige a `/access` → ingresar el password → ve la landing.
 
+Para trabajar sin contraseña ni login de admin, poné `LOCAL_SIN_CLAVES=1` en `.env.local`.
+Solo aplica con `npm run dev` y la base local de Docker (`NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321`);
+nunca en Vercel ni contra una base en la nube (ver `src/lib/auth/local-mode.ts`). `npm run dev`
+escucha solo en `127.0.0.1`: nadie de tu misma red puede entrar al admin sin clave. Para probar
+desde el celular en la misma red, `npx next dev -H 0.0.0.0` sin `LOCAL_SIN_CLAVES`.
+
 ### Scripts
 
 ```bash

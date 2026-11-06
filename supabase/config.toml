@@ -58,7 +58,9 @@ enable_anonymous_sign_ins = false
 minimum_password_length = 8
 
 [auth.email]
-enable_signup = false
+# Prende el login con email + contraseña (admins y compradores). Nadie se registra solo:
+# lo bloquea `[auth] enable_signup = false`; las cuentas las crea el servidor.
+enable_signup = true
 enable_confirmations = false
 
 [analytics]

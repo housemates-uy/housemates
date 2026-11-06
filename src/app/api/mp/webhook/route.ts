@@ -5,7 +5,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // Webhook de Mercado Pago: MP avisa acá cada cambio en un pago.
-// - Se verifica la firma si MP_WEBHOOK_SECRET está configurado.
+// - Se verifica la firma (MP_WEBHOOK_SECRET; en local se puede omitir).
 // - Nunca se usa el contenido del aviso: con el id se consulta el pago a la API de MP
 //   (syncPayment). Por eso un aviso falso no puede aprobar una entrada.
 // - Es idempotente (MP reintenta si no respondemos 200): confirmar dos veces no hace nada.
@@ -22,6 +22,12 @@ export async function POST(req: NextRequest) {
   const dataId = url.searchParams.get('data.id') ?? url.searchParams.get('id') ?? (body.data?.id ? String(body.data.id) : null);
 
   if (!process.env.MP_WEBHOOK_SECRET) {
+    // En producción no se procesa nada sin firma (CLAUDE.md §7.5). MP reintenta, así que
+    // los avisos se procesan cuando se cargue la clave.
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[mp-webhook] falta MP_WEBHOOK_SECRET: aviso rechazado');
+      return NextResponse.json({ error: 'not_configured' }, { status: 500 });
+    }
     console.warn('[mp-webhook] MP_WEBHOOK_SECRET no configurado: no se verifica la firma');
   } else {
     const ok = verifyWebhookSignature({

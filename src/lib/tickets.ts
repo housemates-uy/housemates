@@ -7,8 +7,8 @@ import QRCode from 'qrcode';
 import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { normalizeEmail, isValidEmail } from '@/lib/validation/email';
-import { validateCI } from '@/lib/validation/document';
-import type { TicketSource, TicketStatus } from '@/types/database';
+import { normalizeDocument, validateCI } from '@/lib/validation/document';
+import type { PaymentMethod, TicketSource, TicketStatus } from '@/types/database';
 
 // ---------- Token del QR ----------
 // 128 bits aleatorios en base64url (22 caracteres). No lleva datos ni firma: es una
@@ -17,6 +17,10 @@ import type { TicketSource, TicketStatus } from '@/types/database';
 export function generateQrToken(): string {
   return randomBytes(16).toString('base64url');
 }
+
+// Cookie con la última compra de este navegador: /compra/resultado muestra el link de la
+// entrada solo a quien la compró (el id de la entrada o el payment_id no alcanzan).
+export const PURCHASE_COOKIE = 'hm_compra';
 
 // URL pública del sitio, para armar el link de cada entrada.
 // En Vercel se toma del dominio de producción; en local, localhost.
@@ -42,26 +46,23 @@ export async function qrSvg(text: string): Promise<string> {
 }
 
 // ---------- Datos del comprador ----------
-// La CI se guarda solo con dígitos y con 8 cifras (relleno con 0), así "1.234.567-8"
-// y "12345678" son la misma persona para la regla de una entrada por CI.
-export function normalizeDocument(raw: string): string {
-  return raw.replace(/\D/g, '').padStart(8, '0');
-}
+export { normalizeDocument };
 
 export function normalizeInstagram(raw: string): string {
   return raw.trim().replace(/^@+/, '').replace(/^https?:\/\/(www\.)?instagram\.com\//, '').replace(/\/.*$/, '').toLowerCase();
 }
 
 export const buyerSchema = z.object({
-  name: z.string().trim().min(3, 'Poné nombre y apellido'),
+  name: z.string().trim().min(3, 'Poné nombre y apellido').max(100, 'El nombre es demasiado largo'),
   email: z.string().trim().refine(isValidEmail, 'Email inválido'),
   document: z.string().trim().refine(validateCI, 'Cédula uruguaya inválida'),
-  phone: z.string().trim().max(30).optional().or(z.literal('')),
+  phone: z.string().trim().max(30, 'El celular es demasiado largo (hasta 30 caracteres)').optional().or(z.literal('')),
+  // Opcional, en la compra web (de cada persona) y en las entradas manuales.
   instagram: z
     .string()
-    .trim()
-    .transform(normalizeInstagram)
-    .refine((v) => /^[a-z0-9._]{1,30}$/.test(v), 'Usuario de Instagram inválido'),
+    .nullish()
+    .transform((v) => (v ? normalizeInstagram(v) : ''))
+    .refine((v) => v === '' || /^[a-z0-9._]{1,30}$/.test(v), 'Usuario de Instagram inválido'),
 });
 export type BuyerInput = z.input<typeof buyerSchema>;
 
@@ -73,19 +74,30 @@ const ERROR_MESSAGES: Record<string, string> = {
   tier_inactive: 'Esa tanda no está disponible.',
   duplicate_email: 'Ya hay una entrada para este evento con ese email.',
   duplicate_document: 'Ya hay una entrada para este evento con esa cédula.',
+  discount_invalid: 'Ese código de descuento ya no es válido.',
+  discount_exhausted: 'Ese código de descuento ya no tiene usos disponibles.',
+  presale_required: 'Esa tanda es de preventa: entrá con el link que te mandamos.',
+  tier_not_started: 'Esa tanda todavía no salió a la venta.',
+  access_invalid: 'Tu código de acceso ya no es válido.',
+  access_exhausted: 'Tu código de acceso ya no tiene entradas disponibles.',
 };
 
 export async function createTicket(params: {
   eventId: string;
   tierId: string | null;
   source: TicketSource;
-  status: Extract<TicketStatus, 'pending' | 'paid'>;
+  status: Extract<TicketStatus, 'pending' | 'review' | 'paid'>;
   buyer: z.output<typeof buyerSchema>;
   amount: number;
   holdMinutes?: number;
   adminId?: string | null;
   notes?: string | null;
-}): Promise<{ id: string; qrToken: string } | { error: string }> {
+  paymentMethod?: PaymentMethod;
+  discountCodeId?: string | null;
+  discountUyu?: number;
+  // Tandas de preventa: create_ticket lo compara con el de la tanda (solo compra web).
+  presaleCode?: string | null;
+}): Promise<{ id: string; qrToken: string } | { error: string; code?: string }> {
   const db = createAdminClient();
   const qrToken = generateQrToken();
   const { data, error } = await db.rpc('create_ticket', {
@@ -98,24 +110,88 @@ export async function createTicket(params: {
     p_email_norm: normalizeEmail(params.buyer.email),
     p_document: normalizeDocument(params.buyer.document),
     p_phone: params.buyer.phone || (null as unknown as string),
-    p_instagram: params.buyer.instagram,
+    p_instagram: params.buyer.instagram || (null as unknown as string),
     p_amount: params.amount,
     p_qr_token: qrToken,
     p_hold_minutes: params.holdMinutes,
     p_admin_id: params.adminId ?? undefined,
     p_notes: params.notes ?? undefined,
+    p_payment_method: params.paymentMethod,
+    p_discount_code_id: params.discountCodeId ?? undefined,
+    p_discount_uyu: params.discountUyu ?? 0,
+    p_presale_code: params.presaleCode ?? undefined,
   });
 
   if (error) {
     const known = Object.keys(ERROR_MESSAGES).find((k) => error.message.includes(k));
-    return { error: known ? ERROR_MESSAGES[known] : 'No se pudo crear la entrada. Probá de nuevo.' };
+    return {
+      error: known ? ERROR_MESSAGES[known] : 'No se pudo crear la entrada. Probá de nuevo.',
+      code: known,
+    };
   }
   return { id: data as string, qrToken };
+}
+
+// ---------- Compra de varias entradas (§5.2e) ----------
+// La de quien compra primero y después las de sus amigos, cada una con sus datos. Todo o
+// nada en una transacción (create_order): si una falla no queda ninguna. `person` dice de
+// quién es el problema (1 = quien compra).
+export type OrderPerson = {
+  buyer: z.output<typeof buyerSchema>;
+  amount: number;
+  discountUyu: number;
+  transport: { id: string; price: number } | null;
+};
+
+export async function createOrder(params: {
+  eventId: string;
+  tierId: string;
+  paymentMethod: PaymentMethod;
+  holdMinutes: number;
+  discountCodeId: string | null;
+  presaleCode: string | null;
+  // Código de acceso (§3b): cada entrada gasta un uso.
+  accessCodeId?: string | null;
+  people: OrderPerson[];
+}): Promise<{ ids: string[] } | { error: string; code?: string; person?: number }> {
+  const { data, error } = await createAdminClient().rpc('create_order', {
+    p_event_id: params.eventId,
+    p_tier_id: params.tierId,
+    p_payment_method: params.paymentMethod,
+    p_hold_minutes: params.holdMinutes,
+    p_discount_code_id: params.discountCodeId,
+    p_presale_code: params.presaleCode,
+    p_access_code_id: params.accessCodeId ?? null,
+    p_people: params.people.map((p) => ({
+      name: p.buyer.name,
+      email: p.buyer.email.toLowerCase(),
+      email_norm: normalizeEmail(p.buyer.email),
+      document: normalizeDocument(p.buyer.document),
+      phone: p.buyer.phone || '',
+      instagram: p.buyer.instagram || '',
+      qr_token: generateQrToken(),
+      amount: p.amount,
+      discount_uyu: p.discountUyu,
+      transport_option_id: p.transport?.id ?? null,
+      transport_price: p.transport?.price ?? null,
+    })),
+  });
+  if (error) {
+    const match = error.message.match(/([a-z_]+)#(\d+)/);
+    const code = match?.[1];
+    return {
+      error: (code && ERROR_MESSAGES[code]) || 'No se pudo crear la compra. Probá de nuevo.',
+      code,
+      person: match ? Number(match[2]) : undefined,
+    };
+  }
+  return { ids: data as string[] };
 }
 
 // ---------- Textos para mostrar ----------
 export const STATUS_LABELS: Record<TicketStatus, string> = {
   pending: 'Pago pendiente',
+  review: 'Transferencia a validar',
   paid: 'Válida',
   used: 'Usada',
   cancelled: 'Anulada',
@@ -125,10 +201,28 @@ export const STATUS_LABELS: Record<TicketStatus, string> = {
 export const SOURCE_LABELS: Record<TicketSource, string> = {
   purchase: 'Compra web',
   manual: 'Venta manual',
-  invitation: 'Invitación',
+  invitation: 'Cortesía',
 };
 
 export function formatDocument(doc: string): string {
   const d = normalizeDocument(doc);
   return `${d[0]}.${d.slice(1, 4)}.${d.slice(4, 7)}-${d[7]}`;
+}
+
+// La entrada, su imagen y los mails la llevan parcial ("•••• 298-0"): cualquiera con el link
+// la ve. La completa la ve solo el portero en el escáner. Espacio de no corte: no se parte.
+export function maskDocument(doc: string): string {
+  const d = normalizeDocument(doc);
+  return `•••• ${d.slice(4, 7)}-${d[7]}`;
+}
+
+// Celular agrupado con espacios ("099 123 456", "+598 99 123 456"). En los CSV hace falta:
+// Excel abre "099123456" como número y se come el 0. Lo que no es solo dígitos queda igual.
+export function formatPhone(raw: string): string {
+  const value = raw.trim();
+  if (!/^\+?\d+$/.test(value)) return value;
+  const d = value.replace(/\D/g, '');
+  if (d.length === 11 && d.startsWith('598')) return `+598 ${d.slice(3, 5)} ${d.slice(5, 8)} ${d.slice(8)}`;
+  if (d.length === 8) return `${d.slice(0, 4)} ${d.slice(4)}`;
+  return `${value.startsWith('+') ? '+' : ''}${d.match(/\d{1,3}/g)!.join(' ')}`;
 }

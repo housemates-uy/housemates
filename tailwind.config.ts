@@ -14,7 +14,7 @@ const config: Config = {
         alert: '#FF3B30',
       },
       fontFamily: {
-        sans: ['"Neue Montreal"', '"Helvetica Neue"', 'Helvetica', 'Arial', 'sans-serif'],
+        sans: ['"Neue Montreal"', '"General Sans"', '"Helvetica Neue"', 'Helvetica', 'Arial', 'sans-serif'],
       },
       borderRadius: {
         chip: '6px',

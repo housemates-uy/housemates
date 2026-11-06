@@ -20,7 +20,7 @@ export function StatCard({
     <Card className={className}>
       <p className="text-[13px] text-bone/50">{label}</p>
       <p className="mt-2 text-3xl font-bold tracking-tight text-bone">{value}</p>
-      {sub && <p className="mt-1 text-xs text-bone/45">{sub}</p>}
+      {sub && <p className="mt-1 text-xs text-bone/55">{sub}</p>}
     </Card>
   );
 }
