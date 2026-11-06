@@ -17,7 +17,7 @@ export const metadata: Metadata = {
     'Cómo comprar tu entrada, cómo pagar, qué llevar el día de la fiesta y la barra: lo que más nos preguntan.',
 };
 
-// Detrás de la contraseña o un código, como el lugar (§3): sin acceso va a /access y vuelve acá.
+// Detrás del código de acceso, como el lugar (§3): sin acceso va a /access y vuelve acá.
 // Dinámica: depende de la cookie de cada persona.
 export const dynamic = 'force-dynamic';
 

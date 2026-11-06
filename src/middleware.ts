@@ -3,9 +3,8 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { isLocalNoAuth } from '@/lib/auth/local-mode';
 
 // Protege el admin y /scan, y mantiene viva la sesión de Supabase (admins y cuentas de
-// compradores). La contraseña para comprar (que se prende y apaga desde /admin/config) la
-// chequea la página /entradas con hasGateAccess(), porque el middleware no puede saber si está
-// prendida sin consultar la base. Las páginas de /cuenta piden la sesión ellas mismas.
+// compradores). El código de acceso para comprar lo chequea la página /entradas con
+// hasGateAccess(), porque el middleware no puede validarlo sin consultar la base. Las páginas de /cuenta piden la sesión ellas mismas.
 // Qué puede usar cada rol (el de barra, solo /scan) lo decide src/lib/auth/admin.ts.
 const ADMIN_PUBLIC = ['/admin/login'];
 const SCAN_PATH = '/scan';

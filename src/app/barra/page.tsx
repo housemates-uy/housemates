@@ -19,7 +19,7 @@ export const dynamic = 'force-dynamic';
 
 // Carta de la barra del próximo evento. Se usa también durante la fiesta, con poca luz:
 // letra grande, botones grandes y el total siempre visible abajo.
-// No pide la contraseña del gate (esa es solo para comprar entradas) ni cuenta, pero sí la
+// No pide el código de acceso (ese es solo para comprar entradas) ni cuenta, pero sí la
 // cookie que deja el QR de la fiesta o el link de las historias (src/lib/bar-access.ts): sin
 // ella no se muestra la carta.
 export default async function BarraPage() {

@@ -9,7 +9,7 @@ import { Eyebrow } from '@/components/ui/eyebrow';
 import { Logo } from '@/components/ui/logo';
 import { TandaStatus } from '@/components/ui/tanda-status';
 import { accessOrderLimit, formatAccessCode, heldInOrder } from '@/lib/access-codes';
-import { getSessionAccessCode, hasGateAccess, hasPasswordAccess } from '@/lib/auth/gate';
+import { getSessionAccessCode, hasGateAccess } from '@/lib/auth/gate';
 import { getCustomer, isAccountsEnabled } from '@/lib/customers';
 import { formatUYU } from '@/lib/events';
 import { getNextEvent } from '@/lib/next-event';
@@ -44,21 +44,19 @@ export default async function EntradasPage({
     getSessionAccessCode(),
     isAccountsEnabled(),
   ]);
-  // Código de acceso (§3b): si entró con uno de este evento, la compra no puede pasar de las
-  // entradas que le quedan, más las que tiene reservadas su compra sin terminar (al reintentar
-  // se liberan); con uno público, de una. Si todas están reservadas en compras de otras
-  // personas y no entró con la contraseña, se le avisa en vez de mostrar el formulario.
-  // Con la contraseña, un código público no limita (la contraseña ya deja comprar para amigos).
-  const passwordAccess = await hasPasswordAccess();
-  const sessionCodeForEvent = sessionCode && sessionCode.eventId === event.id ? sessionCode : null;
-  const codeForEvent = sessionCodeForEvent?.kind === 'public' && passwordAccess ? null : sessionCodeForEvent;
+  // Código de acceso (§3b): la compra no puede pasar de las entradas que le quedan, más las que
+  // tiene reservadas su compra sin terminar (al reintentar se liberan), ni del límite por
+  // persona. Si todas están reservadas en compras de otras personas, se avisa en vez de
+  // mostrar el formulario. Sin código (solo el modo local) se compra con el tope general.
+  const codeForEvent = sessionCode && sessionCode.eventId === event.id ? sessionCode : null;
   const codeLeft = codeForEvent
-    ? codeForEvent.left + (await heldInOrder(codeForEvent.id, cookies().get(PURCHASE_COOKIE)?.value))
+    ? codeForEvent.left +
+      (await heldInOrder(codeForEvent.id, cookies().get(PURCHASE_COOKIE)?.value))
     : 0;
   const accessCode = codeForEvent && codeLeft > 0 ? { ...codeForEvent, left: codeLeft } : null;
-  const codeBusy = !!codeForEvent && codeLeft === 0 && !passwordAccess;
+  const codeBusy = !!codeForEvent && codeLeft === 0;
   const maxPerOrder = accessCode
-    ? Math.min(sale.maxPerOrder, accessOrderLimit(accessCode.kind, accessCode.left))
+    ? Math.min(sale.maxPerOrder, accessOrderLimit(accessCode, accessCode.left))
     : sale.maxPerOrder;
   // Link de preventa: su tanda aparece ya elegida. Si el código no existe, se avisa.
   const presaleTier = event.tandas.find((t) => t.presale);
@@ -71,8 +69,12 @@ export default async function EntradasPage({
     (sale.mpEnabled || sale.transferEnabled) &&
     event.tandas.some((t) => t.purchasable);
   const soldOut =
-    !canBuy && event.salesActive && event.tandas.length > 0 && event.tandas.every((t) => t.state.kind === 'sold_out');
-  const transport = canBuy && event.id ? await getTransportOptions(event.id, { onlyActive: true }) : [];
+    !canBuy &&
+    event.salesActive &&
+    event.tandas.length > 0 &&
+    event.tandas.every((t) => t.state.kind === 'sold_out');
+  const transport =
+    canBuy && event.id ? await getTransportOptions(event.id, { onlyActive: true }) : [];
 
   return (
     // Fondo doodle desenfocado: el manual lo pide para pantallas con texto largo (sección 06).
@@ -107,8 +109,8 @@ export default async function EntradasPage({
                 {event.dateShort}
               </h1>
               <p className="mt-5 text-base text-bone/65">
-                <span className="capitalize">{event.weekday}</span> {event.dateLong} · {event.time} hs ·
-                {' '}{event.format}
+                <span className="capitalize">{event.weekday}</span> {event.dateLong} · {event.time}{' '}
+                hs · {event.format}
                 {event.locationName && <> · {event.locationName}</>}
               </p>
             </>
@@ -120,7 +122,10 @@ export default async function EntradasPage({
         </section>
 
         {presaleInvalid && (
-          <p role="status" className="mt-10 rounded-card border border-bone/15 bg-bone/[0.04] px-4 py-3 text-sm text-bone/75">
+          <p
+            role="status"
+            className="mt-10 rounded-card border border-bone/15 bg-bone/[0.04] px-4 py-3 text-sm text-bone/75"
+          >
             Ese link de preventa no es válido o la preventa ya terminó.
           </p>
         )}
@@ -133,7 +138,9 @@ export default async function EntradasPage({
                   <TandaStatus name={t.name} state={t.state} />
                   <span className="text-xl font-bold">{formatUYU(t.price)}</span>
                 </div>
-                {t.entryUntil && <p className="mt-2 text-xs text-bone/55">Ingreso hasta {t.entryUntil}</p>}
+                {t.entryUntil && (
+                  <p className="mt-2 text-xs text-bone/55">Ingreso hasta {t.entryUntil}</p>
+                )}
               </li>
             ))}
           </ul>
@@ -153,13 +160,19 @@ export default async function EntradasPage({
           <Card className="mt-12 p-4 sm:p-6 md:p-8">
             <h2 className="text-xl font-bold tracking-tight">Comprá tu entrada</h2>
             {accessCode && (
-              <p role="status" className="mt-5 rounded-card border border-violet/40 bg-violet/10 px-4 py-3 text-sm text-bone/85">
-                Entraste con el código <strong className="font-semibold">{formatAccessCode(accessCode.code)}</strong>.{' '}
-                {accessCode.kind === 'public'
+              <p
+                role="status"
+                className="mt-5 rounded-card border border-violet/40 bg-violet/10 px-4 py-3 text-sm text-bone/85"
+              >
+                Entraste con el código{' '}
+                <strong className="font-semibold">{formatAccessCode(accessCode.code)}</strong>.{' '}
+                {accessCode.perBuyer === 1
                   ? 'Con este código podés sacar 1 entrada: si vienen amigos, cada uno saca la suya.'
-                  : accessCode.left === 1
-                    ? 'Te queda 1 entrada.'
-                    : `Te quedan ${accessCode.left} entradas.`}
+                  : accessCode.perBuyer !== null
+                    ? `Con este código podés sacar hasta ${Math.min(accessCode.perBuyer, accessCode.left)} entradas.`
+                    : accessCode.left === 1
+                      ? 'Te queda 1 entrada.'
+                      : `Te quedan ${accessCode.left} entradas.`}
               </p>
             )}
             <div className="mt-7">

@@ -16,6 +16,8 @@
   - **Si solo se pueden cuotas sin interés** (~2,49 % + IVA extra para el vendedor): mostrar **dos cargos por servicio**, uno si paga en 1 cuota y otro, ~3 % más alto, si elige cuotas. Implica elegir "en cuotas / sin cuotas" antes de ir a Mercado Pago y limitar las cuotas en la preferencia según lo elegido.
 - **Textos legales: revisión de un abogado.** `/terminos` y `/privacidad` son un borrador razonable (Ley 17.250 y Ley 18.331), no un texto validado. Antes de vender en serio, que un abogado los revise, y completar los datos marcados `A CONFIRMAR` en el código (también en `/preguntas-frecuentes`): razón social, RUT y domicilio, edad mínima, cierre de puerta, plazos de devolución, plan por lluvia, transporte, conservación de datos, transferencia internacional e inscripción de la base ante la URCDP. Buscar `A CONFIRMAR` en `src/app/`.
 
+- **Links por mail con token para entrar a comprar** (cuando haya base de mails): campañas tipo "se viene la House Mates, tocá acá" con un link personal que da acceso a `/entradas` sin código. Hoy se entra solo con códigos (ADR #041).
+
 ## Mails
 
 Hechos: **compra confirmada** (MP, manual, invitación, transferencia aprobada), **entrada anulada**, **transferencia recibida**, **aviso a los owners** y **transferencia rechazada**, más "Reenviar mail" en el admin. Se mandan desde el Gmail de Tato (`ssouber99@gmail.com`).

@@ -10,8 +10,16 @@ import { cn } from '@/lib/utils';
 import { createAccessCodeAction, type AccessFormState } from './actions';
 
 const KINDS: { value: AccessCodeKind; title: string; body: string }[] = [
-  { value: 'personal', title: 'Personal', body: 'Para una persona y sus amigos: elegís cuántas entradas.' },
-  { value: 'public', title: 'Público', body: 'Para una historia de Instagram: cada compra lleva 1 entrada, sin amigos.' },
+  {
+    value: 'personal',
+    title: 'Personal',
+    body: 'Para una persona y sus amigos: elegís cuántas entradas.',
+  },
+  {
+    value: 'public',
+    title: 'Público',
+    body: 'Para una historia de Instagram: elegís cuántas entradas saca cada persona.',
+  },
 ];
 
 // El código creado llega a la página por la URL (?creado=CODIGO): al refrescar, la página
@@ -41,7 +49,11 @@ export function NewAccessForm({ eventId }: { eventId: string }) {
   }
 
   return (
-    <form ref={formRef} onSubmit={handleSubmit} className="space-y-5 rounded-card border border-bone/10 p-4 sm:p-5">
+    <form
+      ref={formRef}
+      onSubmit={handleSubmit}
+      className="space-y-5 rounded-card border border-bone/10 p-4 sm:p-5"
+    >
       <fieldset className="min-w-0 space-y-2">
         <legend className="mb-2 text-[13px] font-medium text-bone/70">Tipo</legend>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -50,7 +62,9 @@ export function NewAccessForm({ eventId }: { eventId: string }) {
               key={k.value}
               className={cn(
                 'flex cursor-pointer flex-col rounded-card border px-4 py-3 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-bone/60',
-                kind === k.value ? 'border-bone bg-bone/[0.06]' : 'border-bone/15 hover:border-bone/40',
+                kind === k.value
+                  ? 'border-bone bg-bone/[0.06]'
+                  : 'border-bone/15 hover:border-bone/40',
               )}
             >
               <input
@@ -74,12 +88,49 @@ export function NewAccessForm({ eventId }: { eventId: string }) {
       >
         <Input name="label" required maxLength={120} autoComplete="off" />
       </Field>
+      {isPublic && (
+        <div className="grid gap-5 sm:grid-cols-2">
+          <Field
+            label="Entradas por persona"
+            hint="Por dispositivo y por compra. Con 1, si vienen amigos cada uno saca la suya"
+            error={fieldError('per_buyer')}
+          >
+            <Input
+              name="per_buyer"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={20}
+              step={1}
+              defaultValue={1}
+              required
+            />
+          </Field>
+          <Field
+            label="Código propio (opcional)"
+            hint="Ej: HOUSEMATES. De 6 a 16 letras o números. Vacío = se sortea uno"
+            error={fieldError('custom_code')}
+          >
+            <Input
+              name="custom_code"
+              maxLength={20}
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+            />
+          </Field>
+        </div>
+      )}
       <div className="grid gap-5 sm:grid-cols-2">
         {/* key: al cambiar de tipo, el campo arranca de nuevo (1 en el personal, vacío en el público). */}
         <Field
           key={kind}
           label={isPublic ? 'Tope de entradas (opcional)' : '¿Cuántas entradas?'}
-          hint={isPublic ? 'Vacío = sin tope. Cada compra gasta 1' : 'Cada entrada que se compra gasta una'}
+          hint={
+            isPublic
+              ? 'Vacío = sin tope. Cada entrada gasta 1'
+              : 'Cada entrada que se compra gasta una'
+          }
           error={fieldError('max_uses')}
         >
           <Input
@@ -93,7 +144,11 @@ export function NewAccessForm({ eventId }: { eventId: string }) {
             required={!isPublic}
           />
         </Field>
-        <Field label="Vence (opcional)" hint="Hora de Montevideo. Vacío = no vence" error={fieldError('valid_until')}>
+        <Field
+          label="Vence (opcional)"
+          hint="Hora de Montevideo. Vacío = no vence"
+          error={fieldError('valid_until')}
+        >
           <Input name="valid_until" type="datetime-local" />
         </Field>
       </div>

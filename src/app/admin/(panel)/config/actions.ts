@@ -7,41 +7,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 
-// Sin espacios al principio ni al final: quien la copia de un mensaje suele arrastrar uno, y
-// /api/gate también recorta lo que escribe la persona.
-const passwordSchema = z.string().trim().min(6, 'Mínimo 6 caracteres')
-
-export async function updateGatePasswordAction(
-  password: string
-): Promise<{ error: string } | { ok: true }> {
-  const admin = await requireOwner()
-
-  const parsed = passwordSchema.safeParse(password)
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0].message }
-  }
-
-  const db = createAdminClient()
-  const { error } = await db.from('site_config').upsert(
-    {
-      key: 'gate_password',
-      value: parsed.data,
-      updated_by: admin.id,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'key' }
-  )
-
-  if (error) return { error: 'Error al guardar. Intentá de nuevo.' }
-
-  // Sin la contraseña en el detalle. entity_id es uuid: la clave va en la acción.
-  await logAdminAction(admin.id, 'update_gate_password', 'site_config')
-
-  revalidatePath('/admin/config')
-  return { ok: true }
-}
-
-// Configuración de la venta: contraseña para comprar, medios de pago, datos para transferir y
+// Configuración de la venta: medios de pago, datos para transferir y
 // máximo de entradas por compra.
 // Ver src/lib/sale-config.ts y docs/LOGICA_DE_NEGOCIO.md → "Compra web".
 export type SaleConfigState = { error: string } | null
@@ -67,12 +33,11 @@ export async function saveSaleConfigAction(
   const { data: current } = await db
     .from('site_config')
     .select('key, value')
-    .in('key', ['gate_enabled', 'pay_mp_enabled', 'pay_transfer_enabled', 'transfer_details', 'max_tickets_per_order'])
+    .in('key', ['pay_mp_enabled', 'pay_transfer_enabled', 'transfer_details', 'max_tickets_per_order'])
   const before = Object.fromEntries((current ?? []).map((r) => [r.key, r.value]))
 
   const now = new Date().toISOString()
   const rows = [
-    { key: 'gate_enabled', value: formData.get('gate_enabled') === 'on' ? '1' : '0' },
     { key: 'pay_mp_enabled', value: formData.get('pay_mp_enabled') === 'on' ? '1' : '0' },
     { key: 'pay_transfer_enabled', value: transferOn ? '1' : '0' },
     { key: 'transfer_details', value: transferDetails },

@@ -10,12 +10,12 @@
 
 **HOUSE MATES** es una fiesta privada premium en Montevideo, Uruguay. Este repo es la web oficial:
 
-- Landing pública; la compra de entradas pide una contraseña que los owners rotan (ver ADR #017)
+- Landing pública mínima (fecha, fotos, botón Entradas; el lugar nunca); la compra pide un código de acceso (ver ADR #041)
 - Ticketera integrada a Mercado Pago
 - Panel admin para los owners (gestión de eventos, tickets, whitelist, invitaciones)
 - Scanner QR en puerta el día del evento
 
-**Acceso a la compra:** contraseña rotada desde `/admin/config` + entrada nominativa (una por CI y una por email por evento). La whitelist de emails ya no se usa en el checkout (ADR #017).
+**Acceso a la compra:** código de acceso (público para historias o personal por DM) + entrada nominativa (una por CI y una por email por evento). No hay contraseña general (ADR #041). La whitelist de emails ya no se usa en el checkout (ADR #017).
 
 ---
 
@@ -162,11 +162,12 @@ Default: **no escribir comentarios**. Los buenos nombres explican qué hace el c
 - Agregar emails solo vía input manual en admin (uno o varios separados por coma)
 - Normalización SIEMPRE: lowercase + strip gmail dots/+tag antes de insertar o consultar
 
-### 7.2 Password universal
-- Cookie `hm_access` vive **1 día exactamente** (no más) y guarda la huella de la contraseña: si se rota, deja de valer
-- Protege solo `/entradas` y `/checkout`; la landing es pública
-- El password se cambia desde `/admin/config`, nunca se hardcodea en código
-- Rate limit del gate: 5 intentos / 15 min por IP
+### 7.2 Código de acceso (sin contraseña general, ADR #041)
+- Cookie `hm_access` vive **1 hora desde que se pone el código** (no se renueva) y se cierra al comprar
+- Protege `/entradas`, la descripción y las reglas de la landing, el pie de ayuda y legales, `/preguntas-frecuentes`, `/terminos` y `/privacidad`. El lugar nunca sale en la landing
+- Código público: entradas por persona (compra y dispositivo `hm_device`; por IP no, por los datos móviles) controladas en `create_order`, nunca solo en la UI
+- Rate limit de códigos: 20 intentos fallidos / 15 min por IP (los acertados no cuentan), falla cerrada
+- `LOCAL_SIN_CLAVES` solo en la máquina de quien desarrolla: en Vercel o en producción la web tira error
 
 ### 7.3 Tickets
 - `UNIQUE (event_id, buyer_email)` y `UNIQUE (event_id, buyer_document)` a nivel DB

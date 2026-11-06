@@ -848,3 +848,26 @@ Además, `npm run dev` escucha solo en `127.0.0.1` y el middleware responde 403 
 - Cédula completa en la entrada (#025): expone el documento a cualquiera con el link.
 
 **Consecuencias:** reemplaza a #025. En puerta el portero coteja con lo que muestra el escáner, no con la entrada.
+
+---
+
+## #041 — Se compra solo con código de acceso: sin contraseña general, 1 hora y límite por persona
+
+**Fecha:** 2026-11-06
+**Autor:** Tato + Claude (revisión del PR #14)
+
+**Contexto:** la contraseña general (#017) dejaba comprar sin límite de entradas y la cookie duraba 24 h. Los códigos (§3b) ya existían, pero el público era "1 por compra" (alguien podía hacer varias compras) y el acceso con código no vencía. Además la portada mostraba términos, privacidad y la descripción del evento, que no tienen que ser públicos.
+
+**Decisión:**
+- No hay más contraseña general (`0032_access_only_codes.sql` borra `gate_password` y `gate_enabled`). Para comprar siempre hace falta un código: personal (total de entradas) o público (entradas por persona, `per_buyer`, y total opcional). Un público puede tener un código propio (ej. HOUSEMATES).
+- "Por persona" se controla en `create_order`: por compra y por dispositivo (cookie `hm_device`), más la cédula y el email únicos de siempre.
+- El acceso dura 1 hora desde que se pone el código, no se renueva y se cierra al ir a pagar.
+- La portada no muestra nunca el lugar (franja desenfocada con bloques de relleno); la descripción, las reglas, el pie de legales, Preguntas frecuentes, Términos y Privacidad, solo con código.
+- El límite de intentos de códigos falla cerrado, y `LOCAL_SIN_CLAVES` en Vercel o en producción hace fallar la web.
+
+**Alternativas descartadas:**
+- Limitar por IP (aun con margen): con datos móviles miles de personas de la misma compañía comparten IP y se bloquearía a gente real.
+- Renovar la hora al navegar: deja el acceso abierto mientras la persona tenga la pestaña.
+- Códigos propios para los personales: uno corto se adivina y da varias entradas.
+
+**Consecuencias:** reemplaza a #017 y a lo de la contraseña en #039. Quien quiere comprar otra vez, o después de una hora, vuelve a poner el código. Quien ya compró ve los términos con su código mientras dure la hora. Más adelante: links por mail con token para campañas (BACKLOG).
