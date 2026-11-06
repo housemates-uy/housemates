@@ -8,11 +8,11 @@ import { getIgHandle, igUrl } from '@/lib/site';
 
 // A CONFIRMAR: texto pendiente de revisión de un abogado (ver docs/BACKLOG.md).
 
+// Sin descripción: la metadata sale en el HTML aunque la página redirija a /access (sin
+// código no se dice nada de la venta, §3).
 export const metadata: Metadata = {
   robots: { index: false, follow: false },
   title: 'Política de privacidad',
-  description:
-    'Qué datos pide House Mates, para qué los usa, dónde se guardan y cómo ejercer tus derechos según la Ley 18.331 de Protección de Datos Personales.',
 };
 
 // Detrás del código de acceso, como las preguntas frecuentes (§3): la portada pública no

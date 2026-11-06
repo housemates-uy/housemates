@@ -6,26 +6,12 @@ import { Reveal } from '@/components/ui/reveal';
 import type { NextEvent } from '@/lib/next-event';
 import { cn } from '@/lib/utils';
 
-// El lugar es secreto (§3): en la portada nunca llega del servidor. Lo que se ve desenfocado
-// son bloques de relleno, no letras del lugar: no hay forma de leerlo ni en el HTML.
-const DECOY = ['▆▆▆▆▆', '▆▆▆', '▆▆▆▆▆▆', '▆▆▆▆'];
-
+// El lugar es secreto (§3): en la portada nunca llega del servidor, solo este rótulo.
 function SecretLocation() {
   return (
-    <span className="flex min-w-0 flex-col items-start gap-2.5">
-      <span
-        aria-hidden
-        className="relative isolate inline-flex max-w-full overflow-hidden rounded-full py-1.5 pl-1 pr-3"
-      >
-        <span className="absolute inset-y-0 left-0 -z-10 w-3/4 animate-drift rounded-full bg-[radial-gradient(closest-side,rgba(138,79,255,0.85),rgba(36,71,245,0.35),transparent)] blur-lg motion-reduce:animate-none" />
-        <span className="select-none truncate tracking-[0.1em] text-bone/85 blur-[5px]">
-          {DECOY.join(' ')}
-        </span>
-      </span>
-      <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-label text-bone/60">
-        <Lock size={12} strokeWidth={2} aria-hidden className="shrink-0 text-violet" />
-        Secret location
-      </span>
+    <span className="inline-flex items-center gap-2 uppercase tracking-[0.14em]">
+      <Lock size={14} strokeWidth={2} aria-hidden className="shrink-0 text-violet" />
+      Secret location
     </span>
   );
 }

@@ -37,16 +37,10 @@ const config: Config = {
           from: { opacity: '0', transform: 'translateY(12px)' },
           to: { opacity: '1', transform: 'translateY(0)' },
         },
-        // Ubicación secreta de la portada: el brillo detrás del texto desenfocado se mueve lento.
-        drift: {
-          '0%, 100%': { transform: 'translateX(-18%) scale(1)', opacity: '0.55' },
-          '50%': { transform: 'translateX(18%) scale(1.15)', opacity: '0.9' },
-        },
       },
       animation: {
         shake: 'shake 0.4s ease-in-out',
         'fade-up': 'fade-up 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both',
-        drift: 'drift 9s ease-in-out infinite',
       },
     },
   },

@@ -9,11 +9,11 @@ import { getIgHandle, igUrl } from '@/lib/site';
 
 // A CONFIRMAR: texto pendiente de revisión de un abogado (ver docs/BACKLOG.md).
 
+// Sin descripción: la metadata sale en el HTML aunque la página redirija a /access (sin
+// código no se dice nada de la venta, §3).
 export const metadata: Metadata = {
   robots: { index: false, follow: false },
   title: 'Términos y condiciones',
-  description:
-    'Condiciones de compra de entradas, barra y transporte de House Mates, y política de devoluciones según la Ley 17.250 de Defensa del Consumidor.',
 };
 
 // Detrás del código de acceso, como las preguntas frecuentes (§3): la portada pública no
