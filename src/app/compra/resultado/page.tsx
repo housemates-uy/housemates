@@ -22,7 +22,7 @@ export const dynamic = 'force-dynamic';
 // funciona aunque el webhook todavía no haya llegado (o falle).
 // Con transferencia vuelve con ?transferencia=<id de la entrada>: no hay pago que consultar,
 // se muestra el estado de la validación.
-// No pide la contraseña del gate: si la rotaron mientras pagaba, igual tiene que ver su entrada.
+// No pide el código de acceso: el acceso se cierra al ir a pagar y tiene que ver su entrada igual.
 export default async function CompraResultadoPage({
   searchParams,
 }: {

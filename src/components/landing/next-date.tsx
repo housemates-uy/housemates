@@ -1,25 +1,34 @@
 import Link from 'next/link';
-import { ArrowRight, Lock, MapPin } from 'lucide-react';
+import { ArrowRight, Lock } from 'lucide-react';
 import { buttonVariants } from '@/components/ui/button';
 import { Eyebrow } from '@/components/ui/eyebrow';
 import { Reveal } from '@/components/ui/reveal';
-import { mapsUrl, type NextEvent } from '@/lib/next-event';
+import type { NextEvent } from '@/lib/next-event';
 import { cn } from '@/lib/utils';
 
-// Sin acceso, el lugar ya viene sin nombre ni link desde el servidor: acá va un texto de relleno
-// desenfocado (no es el lugar) y el link para entrar con la contraseña o el código.
-function LockedLocation() {
+// El lugar es secreto (§3): en la portada nunca llega del servidor. Lo que se ve desenfocado
+// son bloques de relleno, no letras del lugar: no hay forma de leerlo ni en el HTML.
+const DECOY = ['▆▆▆▆▆', '▆▆▆', '▆▆▆▆▆▆', '▆▆▆▆'];
+
+function SecretLocation() {
   return (
-    <span className="flex flex-col items-start gap-2">
-      <span aria-hidden className="select-none blur-[5px]">
-        Dirección reservada para la casa
-      </span>
-      <Link
-        href="/access?next=%2F%23fecha"
-        className="inline-flex items-center gap-1.5 font-normal text-bone/70 underline decoration-bone/30 underline-offset-4 transition-colors hover:text-bone hover:decoration-bone"
+    <span className="flex min-w-0 flex-col items-start gap-2.5">
+      <span
+        aria-hidden
+        className="relative isolate inline-flex max-w-full overflow-hidden rounded-full py-1.5 pl-1 pr-3"
       >
-        <Lock size={14} strokeWidth={1.75} aria-hidden className="shrink-0 text-violet" />
-        Se ve al entrar con la contraseña o tu código
+        <span className="absolute inset-y-0 left-0 -z-10 w-3/4 animate-drift rounded-full bg-[radial-gradient(closest-side,rgba(138,79,255,0.85),rgba(36,71,245,0.35),transparent)] blur-lg motion-reduce:animate-none" />
+        <span className="select-none truncate tracking-[0.1em] text-bone/85 blur-[5px]">
+          {DECOY.join(' ')}
+        </span>
+      </span>
+      <span className="sr-only">La ubicación es secreta.</span>
+      <Link
+        href="/entradas"
+        className="inline-flex items-start gap-1.5 text-[13px] font-normal leading-snug text-bone/65 underline decoration-bone/25 underline-offset-4 transition-colors hover:text-bone hover:decoration-bone"
+      >
+        <Lock size={13} strokeWidth={1.75} aria-hidden className="mt-[3px] shrink-0 text-violet" />
+        Ubicación secreta · se revela con tu código
       </Link>
     </span>
   );
@@ -27,31 +36,12 @@ function LockedLocation() {
 
 // Las tandas y los precios se ven recién en /entradas: acá solo la fecha y el botón para ir.
 // Sin evento no hay formato: la fila no va (nunca se inventa).
-export function NextDate({ event, locked }: { event: NextEvent; locked: boolean }) {
+export function NextDate({ event }: { event: NextEvent }) {
   const details: [string, React.ReactNode][] = [
     // Espacio de no corte: "23:59 hs" no se parte en dos renglones.
     ['Cuándo', event.id ? `${event.weekday} ${event.dateLong} · ${event.time} hs` : 'A confirmar'],
     ...(event.format ? [['Formato', event.format] as [string, React.ReactNode]] : []),
-    [
-      'Dónde',
-      event.id && locked ? (
-        <LockedLocation key="d" />
-      ) : event.id && event.locationName ? (
-        <a
-          key="d"
-          href={mapsUrl(event.locationName, event.locationUrl)}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 underline decoration-bone/30 underline-offset-4 transition-colors hover:decoration-bone"
-        >
-          <MapPin size={15} strokeWidth={1.75} aria-hidden className="shrink-0 text-violet" />
-          {event.locationName}
-          <span className="sr-only"> (abre Google Maps)</span>
-        </a>
-      ) : (
-        'A confirmar'
-      ),
-    ],
+    ['Dónde', event.id ? <SecretLocation key="d" /> : 'A confirmar'],
   ];
 
   return (
@@ -64,9 +54,14 @@ export function NextDate({ event, locked }: { event: NextEvent; locked: boolean 
               {event.dateShort}
             </p>
           ) : (
-            <p className="mt-5 text-[clamp(3rem,13vw,8rem)] font-bold leading-[0.9] tracking-[-0.04em]">A confirmar</p>
+            <p className="mt-5 text-[clamp(3rem,13vw,8rem)] font-bold leading-[0.9] tracking-[-0.04em]">
+              A confirmar
+            </p>
           )}
-          <span aria-hidden className="mt-8 block h-px w-24 bg-electric shadow-[0_0_18px_2px_rgba(36,71,245,0.7)]" />
+          <span
+            aria-hidden
+            className="mt-8 block h-px w-24 bg-electric shadow-[0_0_18px_2px_rgba(36,71,245,0.7)]"
+          />
           {event.description && (
             <p className="mt-8 max-w-[46ch] whitespace-pre-line text-base leading-relaxed text-bone/65">
               {event.description}
@@ -74,12 +69,12 @@ export function NextDate({ event, locked }: { event: NextEvent; locked: boolean 
           )}
         </Reveal>
 
-        <Reveal delay={0.1} className="flex flex-col justify-end">
+        <Reveal delay={0.1} className="flex min-w-0 flex-col justify-end">
           <dl className="divide-y divide-bone/10 border-y border-bone/10">
             {details.map(([term, value]) => (
-              <div key={term} className="grid grid-cols-[6.5rem_1fr] gap-4 py-4">
+              <div key={term} className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-4 py-4">
                 <dt className="text-sm text-bone/55">{term}</dt>
-                <dd className="text-sm font-medium first-letter:uppercase">{value}</dd>
+                <dd className="min-w-0 text-sm font-medium first-letter:uppercase">{value}</dd>
               </div>
             ))}
           </dl>
@@ -92,7 +87,9 @@ export function NextDate({ event, locked }: { event: NextEvent; locked: boolean 
             )}
           >
             <span className="flex flex-col items-start leading-none">
-              <span className="text-2xl font-bold tracking-[-0.02em] md:text-[1.75rem]">Entradas</span>
+              <span className="text-2xl font-bold tracking-[-0.02em] md:text-[1.75rem]">
+                Entradas
+              </span>
               <span className="mt-1.5 text-[13px] font-medium text-ink/60">Tandas y precios</span>
             </span>
             <ArrowRight

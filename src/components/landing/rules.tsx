@@ -6,7 +6,7 @@ import { Reveal } from '@/components/ui/reveal';
 import type { LandingContent } from '@/lib/landing';
 import { cn } from '@/lib/utils';
 
-// Sin la contraseña o un código, las reglas no salen del servidor: solo el título y el botón
+// Sin un código de acceso, las reglas no salen del servidor: solo el título y el botón
 // para entrar (vuelve acá, a #reglas).
 export function Rules({ content, locked }: { content: LandingContent; locked: boolean }) {
   return (
@@ -20,7 +20,7 @@ export function Rules({ content, locked }: { content: LandingContent; locked: bo
             <div className="mt-8">
               <p className="flex max-w-[40ch] items-start gap-2.5 text-lg font-medium leading-snug text-bone/75 md:text-xl">
                 <Lock size={18} strokeWidth={1.75} aria-hidden className="mt-1 shrink-0 text-violet" />
-                Las reglas de la casa se ven al entrar con la contraseña o tu código.
+                Las reglas de la casa se ven al entrar con tu código de acceso.
               </p>
               <Link
                 href="/access?next=%2F%23reglas"

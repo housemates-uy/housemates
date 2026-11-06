@@ -33,24 +33,40 @@ const STATUS_TONE: Record<TicketStatus, 'solid' | 'neutral' | 'alert' | 'club'> 
   refunded: 'neutral',
 };
 
-type AccessCode = { code: string; kind: AccessCodeKind; max_uses: number | null; valid_until: string | null };
+type AccessCode = {
+  code: string;
+  kind: AccessCodeKind;
+  max_uses: number | null;
+  per_buyer: number | null;
+  valid_until: string | null;
+};
 
 const entries = (n: number) => (n === 1 ? '1 entrada' : `${n} entradas`);
 
-// Qué permite el código, en una frase: "Sirve para 4 entradas" o, el público, "Cada compra
-// lleva 1 entrada, hasta 50 en total".
+// Qué permite el código, en una frase: "Sirve para 4 entradas" o, el público, "1 entrada por
+// persona, hasta 50 en total".
 function describeCode(c: AccessCode): string {
   if (c.kind === 'personal') return `Sirve para ${entries(c.max_uses ?? 1)}`;
-  return `Cada compra lleva 1 entrada, ${c.max_uses === null ? 'sin tope' : `hasta ${entries(c.max_uses)} en total`}`;
+  return `${entries(c.per_buyer ?? 1)} por persona, ${c.max_uses === null ? 'sin tope' : `hasta ${entries(c.max_uses)} en total`}`;
 }
 
 function whatsappHref(c: AccessCode, eventTitle: string): string {
   const many = c.kind === 'personal' && (c.max_uses ?? 1) > 1;
   const lines = [
     `¡Hola! Este es tu código para comprar ${many ? 'las entradas' : 'tu entrada'} de ${eventTitle}: ${formatAccessCode(c.code)}`,
-    ...(many ? [`Sirve para ${c.max_uses} entradas, cada una con el nombre y la cédula de quien va.`] : []),
-    ...(c.kind === 'public' ? ['Es para una entrada por compra: si vienen amigos, cada uno saca la suya.'] : []),
-    ...(c.valid_until ? [`Vale hasta el ${formatLocal(c.valid_until, "d/MM 'a las' HH:mm")}.`] : []),
+    ...(many
+      ? [`Sirve para ${c.max_uses} entradas, cada una con el nombre y la cédula de quien va.`]
+      : []),
+    ...(c.kind === 'public'
+      ? [
+          c.per_buyer === 1 || c.per_buyer === null
+            ? 'Es una entrada por persona: si vienen amigos, cada uno saca la suya.'
+            : `Cada persona puede sacar hasta ${c.per_buyer} entradas.`,
+        ]
+      : []),
+    ...(c.valid_until
+      ? [`Vale hasta el ${formatLocal(c.valid_until, "d/MM 'a las' HH:mm")}.`]
+      : []),
     `Entrá acá: ${accessLink(c.code)}`,
   ];
   return `https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`;
@@ -75,7 +91,7 @@ export default async function AccessCodesPage({
     db.from('events').select('title').eq('id', params.id).single(),
     db
       .from('access_codes')
-      .select('id, code, label, kind, max_uses, valid_until, active')
+      .select('id, code, label, kind, max_uses, per_buyer, valid_until, active')
       .eq('event_id', params.id)
       .order('created_at', { ascending: false }),
   ]);
@@ -87,7 +103,9 @@ export default async function AccessCodesPage({
   const [uses, referenced, tickets] = await Promise.all([
     Promise.all(ids.map((id) => db.rpc('access_code_uses', { p_code_id: id }))),
     Promise.all(
-      ids.map((id) => db.from('tickets').select('id', { count: 'exact', head: true }).eq('access_code_id', id)),
+      ids.map((id) =>
+        db.from('tickets').select('id', { count: 'exact', head: true }).eq('access_code_id', id),
+      ),
     ),
     ids.length > 0
       ? fetchAll((from, to) =>
@@ -140,15 +158,22 @@ export default async function AccessCodesPage({
               Código {created.kind === 'public' ? 'público' : 'personal'} para{' '}
               <span className="font-medium text-bone">{created.label}</span>
             </p>
-            <Link href={pageHref} aria-label="Cerrar aviso" className="shrink-0 text-bone/50 hover:text-bone">
+            <Link
+              href={pageHref}
+              aria-label="Cerrar aviso"
+              className="shrink-0 text-bone/50 hover:text-bone"
+            >
               ✕
             </Link>
           </div>
-          <p className="select-all text-4xl font-bold tracking-[0.08em] tabular-nums sm:text-5xl">{created.formatted}</p>
+          <p className="select-all text-4xl font-bold tabular-nums tracking-[0.08em] sm:text-5xl">
+            {created.formatted}
+          </p>
           <p className="text-sm text-bone/60">
             {describeCode(created)}
-            {created.valid_until && ` · vale hasta el ${formatLocal(created.valid_until, "d/MM 'a las' HH:mm")}`}. Con el
-            link entra directo a comprar; con el código, lo escribe en la web.
+            {created.valid_until &&
+              ` · vale hasta el ${formatLocal(created.valid_until, "d/MM 'a las' HH:mm")}`}
+            . Con el link entra directo a comprar; con el código, lo escribe en la web.
           </p>
           <ShareButtons code={created.formatted} link={created.link} whatsapp={created.whatsapp} />
         </section>
@@ -158,10 +183,11 @@ export default async function AccessCodesPage({
         <div>
           <h2 className="text-lg font-bold tracking-tight">Nuevo código</h2>
           <p className="mt-1 text-sm text-bone/55">
-            Personal, para quien te escribe por Instagram: un código para sus entradas (las de ella y
-            sus amigas). Público, para una historia: cada compra lleva una sola entrada, con tope o sin
+            Sin código no se puede comprar. Personal, para quien te escribe por Instagram: un código
+            para sus entradas (las de ella y sus amigas). Público, para una historia: cuántas
+            entradas puede sacar cada persona (por dispositivo y conexión), con tope total o sin
             tope. Cada entrada que se compra con el código gasta una y queda marcada con él. Si se
-            anula, se libera.
+            anula, se libera. Quien entra con un código tiene 1 hora para comprar.
           </p>
         </div>
         <NewAccessForm eventId={params.id} />
@@ -185,7 +211,9 @@ export default async function AccessCodesPage({
                     { label: 'Copiar link', copy: c.link, done: 'Link copiado' },
                     {
                       label: c.active ? 'Pausar' : 'Activar',
-                      hint: c.everUsed ? `Ya se usó: ${c.active ? 'se puede pausar' : 'no se puede eliminar'}` : undefined,
+                      hint: c.everUsed
+                        ? `Ya se usó: ${c.active ? 'se puede pausar' : 'no se puede eliminar'}`
+                        : undefined,
                       action: toggle,
                     },
                     ...(c.everUsed
@@ -208,16 +236,18 @@ export default async function AccessCodesPage({
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-bold tracking-wide tabular-nums">{c.formatted}</p>
+                        <p className="font-bold tabular-nums tracking-wide">{c.formatted}</p>
                         <Badge tone={c.status === 'Activo' ? 'club' : 'neutral'}>{c.status}</Badge>
-                        <Badge tone={c.kind === 'public' ? 'casa' : 'neutral'}>{ACCESS_KIND_LABELS[c.kind]}</Badge>
+                        <Badge tone={c.kind === 'public' ? 'casa' : 'neutral'}>
+                          {ACCESS_KIND_LABELS[c.kind]}
+                        </Badge>
                       </div>
                       <p className="mt-1 break-words text-sm text-bone/80">Para {c.label}</p>
                       <p className="mt-0.5 text-xs text-bone/55">
                         {c.max_uses === null
                           ? `${c.used} ${c.used === 1 ? 'usada' : 'usadas'} · sin tope`
                           : `${c.used} de ${c.max_uses} ${c.max_uses === 1 ? 'usada' : 'usadas'}`}
-                        {c.kind === 'public' && ' · 1 por compra'}
+                        {c.kind === 'public' && ` · ${c.per_buyer ?? 1} por persona`}
                         {' · '}
                         {c.valid_until
                           ? `${c.expired ? 'venció' : 'vence'} ${formatLocal(c.valid_until, "d/MM 'a las' HH:mm")}`
@@ -239,15 +269,27 @@ export default async function AccessCodesPage({
                   {c.tickets.length > 0 && (
                     <details className="group rounded-control border border-bone/10">
                       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2.5 text-sm text-bone/75 hover:text-bone [&::-webkit-details-marker]:hidden">
-                        {c.tickets.length === 1 ? 'Ver la entrada comprada' : `Ver las ${c.tickets.length} entradas compradas`}
-                        <ChevronDown size={15} aria-hidden className="shrink-0 transition-transform group-open:rotate-180" />
+                        {c.tickets.length === 1
+                          ? 'Ver la entrada comprada'
+                          : `Ver las ${c.tickets.length} entradas compradas`}
+                        <ChevronDown
+                          size={15}
+                          aria-hidden
+                          className="shrink-0 transition-transform group-open:rotate-180"
+                        />
                       </summary>
                       <ul className="divide-y divide-bone/10 border-t border-bone/10">
                         {c.tickets.map((t) => (
-                          <li key={t.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-3 py-2.5">
+                          <li
+                            key={t.id}
+                            className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-3 py-2.5"
+                          >
                             <p className="min-w-0 break-words text-sm">
                               {t.buyer_name}
-                              <span className="text-xs text-bone/55"> · CI {formatDocument(t.buyer_document)}</span>
+                              <span className="text-xs text-bone/55">
+                                {' '}
+                                · CI {formatDocument(t.buyer_document)}
+                              </span>
                             </p>
                             <Badge tone={STATUS_TONE[t.status]}>{STATUS_LABELS[t.status]}</Badge>
                           </li>

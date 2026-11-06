@@ -13,7 +13,7 @@ Una sola app (Next.js en Vercel + base Postgres en Supabase) con tres partes:
 | Parte | Para quién | Dónde |
 |---|---|---|
 | **Sitio público** | Cualquiera que llega desde Instagram | `/` |
-| **Compra de entradas** | Cualquiera con el link (o quien tiene la contraseña, si está prendida) | `/entradas` |
+| **Compra de entradas** | Quien tiene un código de acceso (§3) | `/entradas` |
 | **Barra** | Quien entra con el QR impreso en la fiesta o el link de las historias compra antes o durante la fiesta: un QR por trago, que se retira solo durante la fiesta (§5.7) | `/barra` |
 | **Admin** | Los socios (owners) y el staff de puerta | `/admin` |
 | **Escáner** | Los barmans con su usuario de barra (solo el escáner de barra), y owners y staff (links a la puerta y la barra) | `/scan` |
@@ -28,19 +28,19 @@ Las entradas son **QR personales**: una por persona, a nombre y cédula, y de un
 
 | Ruta | Qué hace | Archivo |
 |---|---|---|
-| `/` | Landing: próxima fecha (con el formato del evento, p. ej. "Open air", y su descripción si se cargó), la casa, reglas y botón Entradas (sin tandas ni precios). Arriba a la derecha va **solo Entradas**, destacado (más "Mi cuenta" si está prendida); la Barra y el Instagram quedan en el pie. **El lugar y las reglas se ven solo con acceso** (contraseña o código, §3: "Lo que se ve con acceso"). Los textos se cambian en `/admin/landing`. Sin evento publicado, o si la base no responde en 2,5 s, dice "Próxima fecha a confirmar": nunca una fecha ni un lugar inventados (`getNextEvent` devuelve `id: null`) | `src/app/page.tsx` |
-| `/access?next=…` | Pide la contraseña del gate y te manda a `next` | `src/app/access/` |
+| `/` | Landing: próxima fecha (con el formato del evento, p. ej. "Open air", y su descripción si se cargó), la casa, reglas y botón Entradas (sin tandas ni precios). Arriba a la derecha va **solo Entradas**, destacado (más "Mi cuenta" si está prendida); la Barra y el Instagram quedan en el pie. **El lugar nunca se ve en la portada; la descripción del evento y las reglas, solo con código** (§3). Los textos se cambian en `/admin/landing`. Sin evento publicado, o si la base no responde en 2,5 s, dice "Próxima fecha a confirmar": nunca una fecha ni un lugar inventados (`getNextEvent` devuelve `id: null`) | `src/app/page.tsx` |
+| `/access?next=…` | Pide el código de acceso y te manda a `next` | `src/app/access/` |
 | `/ticket/<token>` | La entrada de una persona, con el QR | `src/app/ticket/[token]/page.tsx` |
 | `/compra/resultado` | Adonde vuelve la persona después de pagar en Mercado Pago o de mandar el comprobante. El link a la entrada (y su nombre) se muestra solo a quien la compró: cookie `hm_compra` de este navegador, el `preference_id` de esa compra o la cuenta que la compró. A cualquier otro le dice que la entrada le llega por mail | `src/app/compra/resultado/page.tsx` |
 | `/barra` | **Barra**: carta del próximo evento, elegir tragos, email y pagar con Mercado Pago (§5.7). Solo con la cookie del link o el QR de la barra; sin ella, un aviso y no la carta | `src/app/barra/page.tsx` |
 | `/barra/k/<clave>` | Lo que abre el QR impreso en la fiesta o el link de las historias: deja la cookie `hm_barra` (24 h) y manda a `/barra`. Con una clave vieja o que no existe, a `/barra` sin cookie | `src/app/barra/k/[key]/route.ts` |
 | `/barra/pedido/<token>` | Un pedido de barra: un QR por trago con su estado; se actualiza sola. Adonde vuelve la persona desde Mercado Pago | `src/app/barra/pedido/[token]/` |
 | `/barra/qr/<token>` | Un trago suelto: lo que abre la cámara al escanear un QR de barra (sin datos del comprador). `/imagen` lo baja en PNG | `src/app/barra/qr/[token]/` |
-| `/preguntas-frecuentes`, `/terminos`, `/privacidad` | Ayuda y legales (FAQ en acordeón, términos con devoluciones según Ley 17.250, privacidad según Ley 18.331). Linkeadas desde el pie de la landing. **Preguntas frecuentes pide acceso** (contraseña o código, §3): sin él va a `/access?next=/preguntas-frecuentes` y, al entrar, vuelve ahí. Términos y Privacidad siguen públicas | `src/app/preguntas-frecuentes/`, `src/app/terminos/`, `src/app/privacidad/` · `src/components/legal/` |
+| `/preguntas-frecuentes`, `/terminos`, `/privacidad` | Ayuda y legales (FAQ en acordeón, términos con devoluciones según Ley 17.250, privacidad según Ley 18.331). Linkeadas desde el pie de la landing solo con código. **Las tres piden el código** (§3): sin él van a `/access?next=…` y, al entrar, vuelven ahí. No se indexan | `src/app/preguntas-frecuentes/`, `src/app/terminos/`, `src/app/privacidad/` · `src/components/legal/` |
 | `/auth/confirm` | Links por mail: invitación / recuperar contraseña de un admin, y confirmar email / recuperar contraseña de un comprador (estos traen `&next=/cuenta…`) | `src/app/auth/confirm/` |
 | `/admin/login` | Login del admin | `src/app/admin/login/` |
 
-### Compra (contraseña opcional)
+### Compra (con código de acceso)
 
 | Ruta | Qué hace | Archivo |
 |---|---|---|
@@ -77,7 +77,7 @@ Solo con **Mi cuenta prendida** en `/admin/config`. Apagada, estas rutas llevan 
 | `/admin/scan/<id>` | **Puerta**: scanner de QR, pantalla completa, solo celular | todos; cerrar puerta: owner |
 | `/admin/barra/<id>` | **Escáner de barra**: un QR = un trago, pantalla completa; sin QR, por email | owner y staff (el usuario de barra lo usa desde `/scan`) |
 | `/scan` | **Escáner** (fuera del panel): el usuario de barra ve solo el escáner de barra de la fiesta en curso o la próxima; owners y staff, links a la Puerta y a la Barra de esa fiesta. Sin sesión, al login del admin, que vuelve a `/scan` | usuario de barra, owner y staff |
-| `/admin/config` | Venta (pedir contraseña sí/no, medios de pago, datos para transferir, máximo de entradas por compra), **Mi cuenta** (prender o apagar, §5.6) y contraseña del gate | cambiar: owner |
+| `/admin/config` | Venta (medios de pago, datos para transferir, máximo de entradas por compra) y **Mi cuenta** (prender o apagar, §5.6) | cambiar: owner |
 | `/admin/landing` | **Landing**: título de la portada, La casa (título, texto y créditos opcionales), Reglas (título y lista: agregar, sacar, reordenar, hasta 12) e Instagram del sitio. **Fotos y videos**: maqueta de la portada (compu y celular) y de la grilla de La casa; tocar un lugar para cambiarlo por una foto o un video, editar su texto alternativo o volver a la original. Ver "Landing" abajo | owner (el staff no la ve) |
 | `/admin/events/<id>/accesos` | **Accesos**: códigos de acceso del evento (§3b) | owner (el staff no la ve) |
 | `/admin/account` | Cambiar mi contraseña | todos |
@@ -128,63 +128,57 @@ Solo con **Mi cuenta prendida** en `/admin/config`. Apagada, estas rutas llevan 
 
 | Ruta | Quién la llama | Qué hace |
 |---|---|---|
-| `POST /api/gate` | El form de `/access` | Valida la contraseña y deja una cookie |
+| `POST /api/gate` | El form de `/access` | Valida el código de acceso y deja la cookie (1 hora) |
 | `POST /api/mp/webhook` | Mercado Pago | Avisa cambios de un pago → confirma la entrada, o el pedido de barra si el `external_reference` es `bar:<id>` |
 | `GET /api/cron/keepalive` | Vercel, una vez por día | Consulta mínima para que Supabase (plan gratis) no se pause |
 
-`src/middleware.ts` protege solo `/admin*`, `/api/admin*` y `/scan` (sin sesión, al login; desde `/scan`, con `?next=/scan`), y en `/cuenta*`, `/entradas` y `/compra/resultado` solo refresca la sesión de Supabase (las páginas de `/cuenta` piden la sesión ellas mismas). La contraseña de compra la chequea `/entradas` con `hasGateAccess()`, igual que la landing (lugar y reglas) y Preguntas frecuentes (§3) (el middleware no puede saber si está prendida sin consultar la base).
+`src/middleware.ts` protege solo `/admin*`, `/api/admin*` y `/scan` (sin sesión, al login; desde `/scan`, con `?next=/scan`), y en `/cuenta*`, `/entradas` y `/compra/resultado` solo refresca la sesión de Supabase (las páginas de `/cuenta` piden la sesión ellas mismas). El código de acceso lo chequea `/entradas` con `hasGateAccess()`, igual que la landing (descripción, reglas y pie), Preguntas frecuentes, Términos y Privacidad (§3): el middleware no puede validarlo sin consultar la base.
 
 ---
 
-## 3. La contraseña del gate
+## 3. Acceso a la compra: solo con código
 
-- **Se prende y apaga** desde `/admin/config` → "Pedir contraseña para comprar" (`site_config.gate_enabled`). Arranca **prendida** (migración `0010`) y solo se apaga con un `'0'` explícito: si falta el valor o la base no responde, se pide igual. Apagada, cualquiera con el link compra.
-- Si está prendida, se pide **para comprar** (`/entradas`) y para ver lo que no es para el público (abajo). El resto de la landing es pública.
-- **Lo que se ve con acceso** (ADR #039). Con acceso = `hasGateAccess()`: entró con la contraseña, entró con un código al que le quedan entradas, o la contraseña está apagada (ahí lo ve cualquiera).
-  - **El lugar del evento** ("Dónde" en la landing): sin acceso va un texto de relleno desenfocado (no es el lugar) y "Se ve al entrar con la contraseña o tu código", que lleva a `/access?next=/#fecha` y vuelve a la próxima fecha. El nombre y el link del mapa se sacan **en el servidor** (`src/app/page.tsx`): no están en el HTML ni en lo que reciben los componentes. La entrada y los mails son para quien ya compró y lo siguen mostrando.
-  - **Las reglas** ("Cuidemos la casa"): sin acceso, el título y "Las reglas de la casa se ven al entrar con la contraseña o tu código", con el botón **Entrar** (`/access?next=/#reglas`).
-  - **Preguntas frecuentes** entera (dice el lugar y cómo es la fiesta): sin acceso, `/access?next=/preguntas-frecuentes`.
-  - La landing y Preguntas frecuentes son dinámicas (`force-dynamic`): dependen de la cookie de cada persona, así que nunca se sirve una copia guardada con el lugar a quien no tiene acceso. La landing espera a la base hasta 2,5 s para saber si hay acceso; si no responde, se ve como sin acceso (nunca al revés).
-  - `/barra`, la imagen para compartir (`opengraph-image.png`, solo el logo) y la metadata no dicen el lugar. La descripción del evento sí se ve sin acceso: no escribir ahí el lugar.
-- La cambian los owners desde `/admin/config`. Se le pasa a quien pide comprar por Instagram y se **rota** cada tanto: así alguien que la consiguió no puede volver a entrar ni pasársela a desconocidos indefinidamente.
-- Se guarda y se compara sin espacios en los bordes (el autocompletar del celular a veces agrega uno). Una guardada antes con espacios también anda.
-- Al entrar, se guarda una cookie (`hm_access`, 24 h) con la **huella** de la contraseña. Si la contraseña cambia, la huella ya no coincide y la cookie deja de valer (`hasGateAccess()` en `src/lib/auth/gate.ts`).
-- Si en la base no hay contraseña cargada, se usa la variable `GATE_PASSWORD`.
-- **5 intentos cada 15 minutos por IP** (§8c). El sexto, aunque sea la contraseña correcta, recibe 429 con "Hiciste muchos intentos seguidos...".
-- **Modo local sin claves** (`src/lib/auth/local-mode.ts`): saltea esta contraseña y el login del admin **solo en la máquina de quien desarrolla**. Exige `npm run dev` (en producción `NODE_ENV` es `production`), `LOCAL_SIN_CLAVES=1`, que no sea Vercel (`VERCEL`) y que la base sea la de Docker (`127.0.0.1`/`localhost`). `npm run dev` escucha solo en `127.0.0.1`, así nadie de la misma red entra al admin. En la web publicada nunca aplica. Si el navegador tiene la sesión de un admin real (por ejemplo un usuario de barra, para probar ese rol), el admin usa esa en vez del owner local.
+Decisión de los owners (2026-11-06, migración `0032_access_only_codes.sql`): **no hay más contraseña general.** Para comprar, y para ver lo que no es para el público, hace falta un **código de acceso** (§3b). Los owners lo comparten en las historias de Instagram (código público) o se lo pasan a alguien por DM (código personal).
+
+- **Lo que ve cualquiera** (la portada, `src/app/page.tsx`): la fecha y el formato del próximo evento, la casa (fotos y textos de `/admin/landing`) y el botón Entradas. Nada más.
+- **El lugar es secreto siempre en la portada**, con o sin código: en "Dónde" va una franja desenfocada con un brillo violeta que se mueve, hecha de bloques de relleno (no son letras del lugar), y "Ubicación secreta · se revela con tu código", que lleva a `/entradas`. El nombre y el link del mapa se sacan **en el servidor**: no están en el HTML ni en lo que reciben los componentes. Se ven en `/entradas` (con el código), en la entrada y en los mails de quien ya compró.
+- **Lo que se ve solo con código** (`hasGateAccess()`): `/entradas`, la descripción del evento y las reglas en la portada, los links de ayuda y legales del pie, y las páginas `/preguntas-frecuentes`, `/terminos` y `/privacidad` (sin código van a `/access?next=…`; no se indexan). La idea: que la web pública no muestre nada de la venta.
+- La portada y esas páginas son dinámicas (`force-dynamic`): dependen de la cookie de cada persona, así que nunca se sirve una copia guardada a quien no tiene código. La portada espera a la base hasta 2,5 s para saber si hay acceso; si no responde, se ve como sin acceso (nunca al revés).
+- **El acceso dura 1 hora desde que se pone el código** (`GATE_TTL_SECONDS`, `src/lib/auth/gate-shared.ts`): no se renueva al navegar. La cookie (`hm_access`, cifrada con `GATE_COOKIE_SECRET`, no se puede falsificar) guarda el código y la hora en que se puso. Pasada la hora, se vuelve a pedir.
+- **Se cierra apenas se compra:** al ir a pagar con Mercado Pago o al subir el comprobante (`closeGateSession`). Para otra compra hay que volver a poner el código. Si el pago no salió, vuelve a ponerlo y reintenta: su reserva se libera y no le gasta otro uso.
+- **Límite de intentos:** 20 cada 15 minutos por IP (§8c). Cuenta cada intento, tenga o no forma de código. Si la base no responde, **no deja entrar** (falla cerrada): justo lo que se quiere frenar es probar códigos sin límite.
+- **Modo local sin claves** (`src/lib/auth/local-mode.ts`): saltea el código y el login del admin **solo en la máquina de quien desarrolla**. Exige `npm run dev` (en producción `NODE_ENV` es `production`), `LOCAL_SIN_CLAVES=1`, que no sea Vercel (`VERCEL`) y que la base sea la de Docker (`127.0.0.1`/`localhost`). Ninguna de esas cosas se puede cambiar desde un navegador: son variables del servidor. Además, si `LOCAL_SIN_CLAVES` aparece en Vercel o en un build de producción, la web tira error y no responde (falla cerrada) en vez de ignorarlo. `npm run dev` escucha solo en `127.0.0.1`. Si el navegador tiene la sesión de un admin real, el admin usa esa en vez del owner local.
+- **Más adelante** (`docs/BACKLOG.md`): links por mail con un token personal para entrar a comprar sin código, cuando haya base de mails para campañas.
 
 ## 3b. Códigos de acceso
 
-La venta es selectiva: quien quiere ir les escribe por Instagram y los owners deciden. Si le dicen que sí, le generan un **código de acceso para X entradas** (por ejemplo, para ella y sus amigas) y se lo pasan.
+Sin código no se compra (§3). Hay dos tipos (`access_codes.kind`):
 
-**Dos tipos** (`access_codes.kind`, `0029_access_code_kind.sql`):
-
-| Tipo | Para qué | Entradas por compra | Total |
+| Tipo | Para qué | Entradas por persona | Total |
 |---|---|---|---|
-| **Personal** | Una persona y sus amigos ("Vicky: 4 entradas") | Las que le quedan al código | Obligatorio, 1 a 1000 |
-| **Público** | Una historia de Instagram | **Una sola**, sin amigos | Opcional, 1 a 1000. Vacío = sin tope (`max_uses` en `NULL`): sirve hasta que se pause, venza o termine el evento |
+| **Personal** | Una persona y sus amigos ("Vicky: 3 entradas"), por DM | Las que le quedan al código | Obligatorio, 1 a 1000. Usadas todas, el código deja de funcionar |
+| **Público** | Una historia de Instagram | **`per_buyer`**: 1 a 20, lo eligen los owners (1 = cada uno saca la suya) | Opcional, 1 a 1000. Vacío = sin tope (`max_uses` en `NULL`): sirve hasta que se pause, venza o termine el evento |
 
-- **Con un código público, cada persona saca como mucho una:** cada compra lleva una entrada y, como hay una por email y una por cédula por evento (§4.3), nadie saca dos. Si vienen amigos, cada uno hace su compra (cualquiera con el link puede comprar a nombre de otra persona: es el límite de un código público).
-- **Se controla en el servidor, no solo en la pantalla:** la acción de compra rechaza más de una entrada con un código público y `create_order` también (`access_single#2`), aunque alguien fuerce el pedido. El tope opcional lo cuenta `create_order` como en los personales (`access_exhausted`); sin tope no cuenta.
-- **Se crean** en Admin → evento → **Accesos** (solo owners): tipo, para quién (texto libre, "Sofi @sofi.mates y amigas" o "Historia 20/11"), cuántas entradas (en el público, el tope opcional) y vencimiento opcional. El código son 8 letras y números al azar sin caracteres que se confunden (`K7P2-QX9M`, `src/lib/access-codes.ts`). Se copia el código o el link `/acceso/<código>`, o se manda por WhatsApp (el del público aclara "una entrada por compra").
-- **Se usa:** abriendo el link (`src/app/acceso/[codigo]/route.ts`) o escribiéndolo en `/access`, en la misma caja que la contraseña ("Contraseña o código"). Queda guardado en la cookie de acceso (`hm_access`, 24 h). Con la contraseña de compra prendida, el código da acceso a `/entradas` mientras le queden entradas.
+- **"Por persona" en un código público** (`create_order`, `0032_access_only_codes.sql`): con `per_buyer = N`, se controlan tres cosas a la vez, contando entradas vivas (en revisión, pagas, usadas o reservadas sin vencer):
+  1. **La compra** no lleva más de N (`access_per_buyer`).
+  2. **El dispositivo**: no saca más de N con el código (`access_device`). Es una cookie con un id al azar (`hm_device`, 1 año, sin datos personales) que se crea al poner el código. Borrarla deja comprar otra vez desde el mismo celular; por eso está el control 3.
+  3. **La conexión (IP)**: no saca más de N × 3 (`access_ip`). No es N porque mucha gente comparte IP (el wifi de una facultad, los datos del celular): con N se bloquearía a gente real. La IP no se guarda tal cual, sino su hash (`tickets.access_ip`).
+  - Más la regla de siempre: una entrada por cédula y una por email por evento (§4.3). Igual se puede abusar con muchos emails, cédulas y dispositivos falsos desde muchas conexiones; para eso está la anulación desde el admin.
+- **Se controla en el servidor, no solo en la pantalla:** la acción de compra y `create_order` rechazan lo que no corresponde aunque alguien fuerce el pedido. La compra usa el código de la cookie, nunca uno que mande el formulario.
+- **Se crean** en Admin → evento → **Accesos** (solo owners): tipo, para quién (texto libre, "Sofi @sofi.mates y amigas" o "Historia 20/11"), cuántas entradas (en el público: por persona y el tope opcional) y vencimiento opcional.
+  - **El código** son 8 letras y números al azar sin caracteres que se confunden (`K7P2-QX9M`, `src/lib/access-codes.ts`).
+  - **Uno público puede tener un código propio** (ej. `HOUSEMATES`, de 6 a 16 letras o números). Uno personal siempre se sortea: uno corto se podría adivinar y daría varias entradas. Si el propio ya existe, se avisa.
+  - Se copia el código o el link `/acceso/<código>`, o se manda por WhatsApp.
+- **Se usa:** abriendo el link (`src/app/acceso/[codigo]/route.ts`) o escribiéndolo en `/access` ("Código de acceso"). Da 1 hora de acceso (§3) mientras le queden entradas.
 - **Solo del evento a la venta:** un código sirve únicamente para el próximo evento publicado (el de `/entradas`). Uno de una fecha nueva en borrador, o de la siguiente, no abre la compra de la actual (`findAccessCode`).
-- **Para dejar entrar no cuentan las reservas sin terminar** (`openLeft`): si el pago con Mercado Pago no salió, quien vuelve puede entrar y reintentar aunque su reserva siga viva. En `/entradas` puede comprar lo que le queda al código más lo que tiene reservado la compra sin terminar de ese navegador (cookie `hm_compra`), porque al reintentar se libera.
-- **Quien entró solo con el código compra siempre con él:** `create_order` controla los usos, así no se compra de más sin la contraseña. Si todas sus entradas están reservadas en la compra de otra persona, `/entradas` dice "Tu código está en uso" en vez de mostrar el formulario.
-- **En `/entradas`** aparece "Entraste con el código K7P2-QX9M. Te quedan N entradas", y el selector de cantidad no pasa de esas N (ni del máximo por compra). Con uno público dice "Con este código podés sacar 1 entrada: si vienen amigos, cada uno saca la suya" y no hay selector de cantidad.
-- **Cada entrada comprada con el código gasta un uso** y queda marcada con él (`tickets.access_code_id`). Cuentan las vivas y las reservas vigentes (`access_code_uses`): una compra abandonada devuelve el uso cuando vence la reserva. La compra usa el código de la cookie, nunca uno que mande el formulario.
-- **Todo o nada** (`create_order`, `0021_access_codes.sql`): bloquea la fila del código, así dos compras no se llevan el último uso. Si no alcanza: "Tu código de acceso alcanza para N entradas: bajá la cantidad". Si la misma persona reintenta, toda su compra anterior sin terminar se anula (también la de un amigo que sacó o cambió) y no gasta otro uso.
+- **Para dejar entrar no cuentan las reservas sin terminar** (`openLeft`): si el pago con Mercado Pago no salió, quien vuelve puede entrar y reintentar aunque su reserva siga viva. En `/entradas` puede comprar lo que le queda al código más lo que tiene reservado la compra sin terminar de ese navegador (cookie `hm_compra`), porque al reintentar se libera. Si todas las entradas del código están reservadas en compras de otras personas, `/entradas` dice "Tu código está en uso" en vez de mostrar el formulario.
+- **En `/entradas`** aparece "Entraste con el código K7P2-QX9M" y cuántas puede sacar ("Te quedan N entradas", "podés sacar hasta N" o, con 1 por persona, "si vienen amigos, cada uno saca la suya"). El selector de cantidad no pasa de eso ni del máximo por compra.
+- **Cada entrada comprada con el código gasta un uso** y queda marcada con él (`tickets.access_code_id`, más `access_device` y `access_ip`). Cuentan las vivas y las reservas vigentes (`access_code_uses`): una compra abandonada devuelve el uso cuando vence la reserva.
+- **Todo o nada** (`create_order`): bloquea la fila del código, así dos compras no se llevan el último uso. Si no alcanza: "Tu código de acceso alcanza para N entradas: bajá la cantidad". Si la misma persona reintenta, toda su compra anterior sin terminar se anula y no gasta otro uso.
 - **Deja de servir** si se pausa en el admin, si vence, si se usaron todas sus entradas o si terminó su evento. En `/access` se dice por qué (no existe o venció, ya se usó).
-- **Para una historia de Instagram:** un código público, con tope o sin tope, y un vencimiento corto.
 - **Estados en el admin:** Activo, Pausado (lo pausó un owner), Vencido o Agotado (un público sin tope nunca se agota). El vencimiento se pone en hora de Montevideo y no puede estar en el pasado.
-- **Trazabilidad:** en Accesos, cada código muestra su tipo (Personal o Público), "X de N usadas" (o "X usadas · sin tope · 1 por compra") y se despliegan las entradas compradas con él (nombre, CI y estado). En la pestaña Entradas, cada entrada dice "Código K7P2-QX9M · para …" (solo lo ven los owners). El Historial registra crear (con el tipo y el tope), pausar y activar.
-- **Límite de intentos:** 20 cada 15 minutos por IP para los códigos (un grupo de amigas en el mismo wifi entra con el mismo código; con 8 caracteres al azar no se pueden adivinar). La contraseña sigue en 5 cada 15 minutos.
-- Si la contraseña de compra está apagada, cualquiera compra igual; el código (si entró con el link) solo marca las entradas y respeta sus usos.
-- **Código y contraseña juntos** (`hasPasswordAccess`):
-  - **Código personal:** mientras le queden entradas, la compra va con él aunque la persona tenga la contraseña (o esté apagada): marca las entradas y gasta usos. Con la contraseña, un código personal sin entradas no limita: se compra sin él, hasta el máximo por compra.
-  - **Código público:** con la contraseña no se usa (la contraseña ya deja comprar para amigos): ni limita a una entrada ni gasta usos.
-  - **Sin la contraseña:** siempre con el código.
-  - **Límite conocido:** quien entró con un código público y después consigue la contraseña sigue de a una entrada mientras dure la cookie (24 h), porque `/access` no se muestra a quien ya tiene acceso.
+- **Trazabilidad:** en Accesos, cada código muestra su tipo, "X de N usadas" (o "X usadas · sin tope · N por persona") y se despliegan las entradas compradas con él (nombre, CI y estado). En la pestaña Entradas, cada entrada dice "Código K7P2-QX9M · para …" (solo lo ven los owners). El Historial registra crear (con el tipo, el tope y las entradas por persona), pausar y activar.
+
 
 ---
 
@@ -268,7 +262,7 @@ Código: `src/app/admin/(panel)/events/[id]/tickets/` (`actions.ts` → `createT
 ### 5.2 Compra web
 
 ```
-/entradas (con contraseña)
+/entradas (con código de acceso)
    │ completa el form
    ▼
 startCheckoutAction ── crea entrada `pending` (reserva 20 min)
@@ -312,7 +306,7 @@ Puntos importantes:
   - `amount_paid_uyu` guarda el total.
   - Las cuotas con interés las paga el comprador.
 - **Cómo se muestran las tandas al público:** solo en `/entradas` (la landing no muestra tandas ni precios: tiene un botón Entradas). Cada una dice "Disponible", "Sold out" o "Próximamente" (§5.2d), siempre con el precio (también las agotadas). El "% vendida" no se muestra en la web a propósito.
-  - `/entradas?tanda=<id>` llega con esa tanda ya elegida. El `?tanda=` y el `?preventa=` sobreviven al paso por la contraseña.
+  - `/entradas?tanda=<id>` llega con esa tanda ya elegida. El `?tanda=` y el `?preventa=` sobreviven al paso por `/access`.
 
 Código: `src/app/entradas/actions.ts`, `src/lib/mercadopago.ts`, `src/app/api/mp/webhook/route.ts`, `src/app/compra/resultado/page.tsx`.
 
@@ -361,7 +355,7 @@ Se cargan en el alta y en la edición de los tiers (Admin → evento → Editar)
 **Próximas** ("Sale a la venta", `ticket_tiers.sales_start`). Una tanda activa con fecha de salida en el futuro se ve en `/entradas` con su precio y **"Próximamente · Sale el vie 20.11 · 20:00 hs"**, sin poder elegirse. Sirve para que se vea a cuánto pasa la entrada, sin inventar urgencia. A esa hora pasa sola a "Disponible". `create_ticket` rechaza la compra antes de tiempo (`tier_not_started`), aunque alguien fuerce el formulario.
 
 **Preventa** ("Código de preventa", `ticket_tiers.presale_code`, en mayúsculas, único por evento):
-- La tanda **no se ve** en `/entradas` ni en la landing. Solo aparece con el link `/entradas?preventa=CODIGO`, ya elegida y con el detalle violeta "Preventa". El `?preventa=` sobrevive al paso por la contraseña. Si el código no existe, se avisa "Ese link de preventa no es válido o la preventa ya terminó".
+- La tanda **no se ve** en `/entradas` ni en la landing. Solo aparece con el link `/entradas?preventa=CODIGO`, ya elegida y con el detalle violeta "Preventa". El `?preventa=` sobrevive al paso por `/access`. Si el código no existe, se avisa "Ese link de preventa no es válido o la preventa ya terminó".
 - El código se valida en el servidor: `create_ticket` rechaza la compra de una tanda de preventa sin el código correcto (`presale_required`). Las entradas manuales del admin no lo piden.
 - En Admin → evento → Resumen, sección **Preventa**: el link para copiar y el botón **"Mandar preventa a quienes vinieron antes"** (solo owners).
   - Destinatarios (`presale_audience`): un mail por persona (email normalizado) con una entrada `paid` o `used` de un **evento anterior**: publicado o archivado, que ya empezó y que no es este. No se le manda a quien ya tiene entrada para este evento ni a los emails bloqueados en la whitelist.
@@ -507,7 +501,7 @@ Tragos que se compran por la web y se retiran en la barra con un QR por trago. C
 - **La carta es por evento.** Los owners la cargan en Admin → evento → **Barra**: nombre, precio, descripción opcional y foto opcional. Se ordena con ↑ ↓ (es el orden de `/barra`) y cada trago se activa o desactiva. Uno desactivado no aparece en `/barra`. No se borran.
 - **Foto de cada trago** (`0028_bar_product_images.sql`): se elige al cargar el trago o en **Editar** (Cambiar foto / Sacar la foto). El navegador la achica (lado más largo 1400 px, WebP o JPG) y el servidor la sube con la service key al bucket público `bar`, después de controlar por los primeros bytes que sea JPG, PNG o WebP de hasta 4 MB. En `/barra` se ve cuadrada, recortada al centro, al lado del nombre; si ningún trago tiene foto, la carta va sin fotos, y si solo algunos tienen, los demás muestran un vaso dibujado. La foto vieja se borra del bucket cuando ya no la usa ningún trago (al duplicar un evento la carta nueva usa los mismos archivos). En el Historial queda como "Foto: Nueva" o "Foto: Sacada".
 - **El precio de la carta es el final, igual que en la barra de la fiesta:** la barra no tiene cargo por servicio y la comisión de Mercado Pago la absorbe la fiesta. Lo que cobra Mercado Pago es la suma de los precios de la carta (`createBarPreference` manda el precio de cada trago tal cual). El total lo calcula la base con los precios vigentes al comprar (`create_bar_order`): la app nunca manda un precio. Cada trago comprado guarda nombre y precio del momento, así que editar la carta no cambia los pedidos hechos.
-- **Cuándo se vende:** para el próximo evento (el mismo de la landing, `getNextEvent()`), mientras esté publicado y no haya terminado, antes o durante la fiesta. No depende de "ventas activas" de las entradas ni de la contraseña del gate.
+- **Cuándo se vende:** para el próximo evento (el mismo de la landing, `getNextEvent()`), mientras esté publicado y no haya terminado, antes o durante la fiesta. No depende de "ventas activas" de las entradas ni del código de acceso.
 - **Solo con el QR de la fiesta o el link de las historias** (`0031_bar_access.sql`, `src/lib/bar-access.ts`, ADR #036). Escribir `/barra` a mano no alcanza:
   - **La clave:** cada evento tiene una al azar (`events.bar_key`, 16 caracteres). El link es `/barra/k/<clave>` y es lo que codifica el QR. Al duplicar un evento, la copia recibe otra.
   - **La cookie:** el link deja la cookie `hm_barra` (httpOnly, 24 h, como una historia) con la clave de ese evento y manda a `/barra`.
@@ -597,7 +591,7 @@ Bus opcional que se suma al comprar la entrada (la fiesta es fuera de Montevideo
 | Eliminar desde el admin (qué se puede y qué no) | `event_delete_blocker`, `admin_delete_event`, `admin_delete_bar_product`, `admin_delete_discount_code` — `supabase/migrations/0025_admin_delete.sql` · menú: `src/components/admin/context-menu.tsx` |
 | Duplicar un evento (qué se copia y qué no) | `duplicate_event` — `supabase/migrations/0023_duplicate_event.sql` · `src/app/admin/(panel)/events/[id]/duplicar/` |
 | Textos de la landing e Instagram | `src/lib/landing.ts` · `getLandingContent` en `src/lib/site.ts` · `src/app/admin/(panel)/landing/` |
-| Códigos de acceso (usos, vencimiento, cookie) | `access_codes`, `access_code_uses` (`0021`) · `src/lib/access-codes.ts` · `getSessionAccessCode` / `hasGateAccess` en `src/lib/auth/gate.ts` · `/api/gate`, `/acceso/<código>` |
+| Códigos de acceso (usos, por persona, vencimiento, cookie) | `access_codes`, `access_code_uses` (`0021`, `0032`) · `src/lib/access-codes.ts` · `getSessionAccessCode` / `hasGateAccess` en `src/lib/auth/gate.ts` · `/api/gate`, `/acceso/<código>` |
 | Confirmar pago (idempotente, controla el monto, pagos tarde o repetidos, todo el grupo) | `confirm_order_payment` (`0020`; misma lógica que `confirm_ticket_payment` de `0017`) · `syncPayment` en `src/lib/mercadopago.ts` |
 | Reserva que espera un pago pendiente; devolución o contracargo desde MP | `extend_order_hold` / `reverse_order_payment` (`0020`) |
 | Capacidad del evento | `event_available` y `create_ticket` (`0018_event_capacity.sql`) · `src/lib/next-event.ts` |
@@ -612,7 +606,7 @@ Bus opcional que se suma al comprar la entrada (la fiesta es fuera de Montevideo
 | Límite de intentos por IP | `src/lib/rate-limit.ts` · `rate_limit_hit` / `rate_limit_hits` (`0016`) |
 | Contraseña sí/no, medios de pago, datos para transferir | `src/lib/sale-config.ts` (`site_config`) |
 | Mercado Pago (preferencia, consulta, reembolso, firma) | `src/lib/mercadopago.ts` |
-| Contraseña del gate y rotación | `src/lib/auth/gate.ts`, `src/app/api/gate/route.ts` |
+| Acceso con código (1 hora, se cierra al comprar) | `src/lib/auth/gate.ts`, `src/app/api/gate/route.ts`, `src/app/acceso/[codigo]/route.ts` |
 | Qué rutas se protegen | `src/middleware.ts` |
 | Cuentas de compradores: crear, Mis entradas, confirmar email, recupero | `src/lib/customers.ts` · `customers`, `tickets.customer_id`, `find_auth_user` (`0011`) |
 | Próximo evento y qué tandas se pueden comprar (próximas, preventa oculta sin código) | `src/lib/next-event.ts` |
@@ -634,7 +628,7 @@ Bus opcional que se suma al comprar la entrada (la fiesta es fuera de Montevideo
 | Variable | Para qué |
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Base de datos |
-| `GATE_COOKIE_SECRET`, `GATE_PASSWORD` | Gate (la contraseña real se cambia en `/admin/config`) |
+| `GATE_COOKIE_SECRET` | Cifra la cookie de acceso (`hm_access`) y el hash de la IP de los códigos (§3b) |
 | `CRON_SECRET` | Que solo Vercel pueda llamar al ping diario |
 | `MP_ACCESS_TOKEN` | Mercado Pago. Sin esto, `/entradas` muestra "llega pronto" |
 | `MP_WEBHOOK_SECRET` | Firma de los webhooks (panel de MP → Webhooks). Opcional pero recomendado |
@@ -699,7 +693,7 @@ Las consultas a Supabase se hacen con `cache: 'no-store'` (`src/lib/supabase/adm
 | Compra (`startCheckoutAction`) | 60 **entradas** cada 10 min (una compra de 4 suma 4) | Después de validar el formulario (un error de tipeo no gasta intentos), antes de consultar cuentas, códigos o crear la entrada |
 | "Aplicar" código (`checkDiscountAction`) | 30 cada 10 min | Antes de buscar el código |
 | Pedido de barra | 120 cada 10 min (en la fiesta todos comparten el wifi; un pedido sin pagar no reserva nada) | Con el carrito ya validado, antes de crear el pedido |
-| Contraseña del gate (`/api/gate`) | 5 cada 15 min (fijado en CLAUDE.md §7.2) | Todos los intentos, antes de comparar la contraseña |
+| Código de acceso (`/api/gate` y `/acceso/<código>`) | 20 cada 15 min, **falla cerrada** (si la base no responde, no deja entrar) | Todos los intentos, antes de buscar el código |
 | Login de compradores y de admins | 10 cada 15 min | Antes de llamar a Supabase (Supabase ve la IP de Vercel, no la de quien prueba, así que su propio límite no sirve) |
 | Recuperar contraseña y reenviar confirmación (compradores y admins) | 5 cada 15 min | Cada uno manda un mail y Gmail corta en ~500 por día. Pasado el límite, el recupero responde lo mismo que siempre y no manda nada |
 | `/compra/resultado` | 60 cada 10 min | Antes de consultar el pago a Mercado Pago |

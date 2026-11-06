@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import { hasGateAccess } from '@/lib/auth/gate';
 import { LegalPage, LegalSection } from '@/components/legal/legal-page';
 import { SERVICE_FEE_LABEL } from '@/lib/pricing';
 import { isAccountsEnabled } from '@/lib/customers';
@@ -8,16 +10,20 @@ import { getIgHandle, igUrl } from '@/lib/site';
 // A CONFIRMAR: texto pendiente de revisión de un abogado (ver docs/BACKLOG.md).
 
 export const metadata: Metadata = {
+  robots: { index: false, follow: false },
   title: 'Términos y condiciones',
   description:
     'Condiciones de compra de entradas, barra y transporte de House Mates, y política de devoluciones según la Ley 17.250 de Defensa del Consumidor.',
 };
 
-export const revalidate = 3600;
+// Detrás del código de acceso, como las preguntas frecuentes (§3): la portada pública no
+// muestra nada de la venta.
+export const dynamic = 'force-dynamic';
 
 const UPDATED = { iso: '2026-10-28', label: '28 de octubre de 2026' };
 
 export default async function TermsPage() {
+  if (!(await hasGateAccess())) redirect('/access?next=%2Fterminos');
   // Con "Mi cuenta" apagada (/admin/config) no se habla de cuentas.
   const [handle, accounts] = await Promise.all([getIgHandle(), isAccountsEnabled()]);
   const instagram = (

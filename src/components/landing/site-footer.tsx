@@ -7,7 +7,16 @@ const HELP_LINKS = [
   ['/privacidad', 'Privacidad'],
 ] as const;
 
-export function SiteFooter({ igHandle, igHref }: { igHandle: string; igHref: string }) {
+// Ayuda y legales solo con el código de acceso: la portada pública no muestra nada de la venta.
+export function SiteFooter({
+  igHandle,
+  igHref,
+  unlocked,
+}: {
+  igHandle: string;
+  igHref: string;
+  unlocked: boolean;
+}) {
   return (
     <footer className="border-t border-bone/10">
       <div className="mx-auto flex max-w-page flex-col gap-8 px-5 py-12 md:flex-row md:items-end md:justify-between md:px-10">
@@ -28,17 +37,19 @@ export function SiteFooter({ igHandle, igHref }: { igHandle: string; igHref: str
             Instagram {igHandle}
           </a>
           <p>Montevideo, Uruguay · © {new Date().getFullYear()}</p>
-          <nav aria-label="Ayuda y legales" className="mt-3">
-            <ul className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-bone/55">
-              {HELP_LINKS.map(([href, label]) => (
-                <li key={href}>
-                  <Link href={href} className="transition-colors hover:text-bone">
-                    {label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
+          {unlocked && (
+            <nav aria-label="Ayuda y legales" className="mt-3">
+              <ul className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-bone/55">
+                {HELP_LINKS.map(([href, label]) => (
+                  <li key={href}>
+                    <Link href={href} className="transition-colors hover:text-bone">
+                      {label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          )}
         </div>
       </div>
     </footer>

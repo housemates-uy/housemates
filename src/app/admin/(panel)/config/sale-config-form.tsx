@@ -9,7 +9,6 @@ import { MAX_PER_ORDER_LIMIT } from '@/lib/order-limits';
 import { saveSaleConfigAction, type SaleConfigState } from './actions';
 
 type Values = {
-  gateEnabled: boolean;
   mpEnabled: boolean;
   transferEnabled: boolean;
   transferDetails: string;
@@ -56,12 +55,6 @@ export function SaleConfigForm({
   return (
     <form action={action} className="space-y-6">
       <fieldset disabled={!editable} className="space-y-5">
-        <Toggle
-          name="gate_enabled"
-          label="Pedir contraseña para comprar"
-          hint="Apagado: cualquiera con el link puede comprar. Prendido: pide la contraseña de abajo."
-          defaultChecked={values.gateEnabled}
-        />
         <Toggle
           name="pay_mp_enabled"
           label="Mercado Pago"

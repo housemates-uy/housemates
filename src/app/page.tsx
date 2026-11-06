@@ -28,9 +28,15 @@ export default async function HomePage() {
     isAccountsEnabled(),
     gateAccessOrLocked(),
   ]);
-  // Sin la contraseña o un código, el lugar no sale del servidor: ni en el HTML ni en lo que
-  // reciben los componentes. Las reglas tampoco.
-  const event = access ? nextEvent : { ...nextEvent, locationName: null, locationUrl: null };
+  // El lugar es secreto: en la portada nunca sale del servidor, ni en el HTML ni en lo que
+  // reciben los componentes (se ve en /entradas, con el código, y en la entrada). Sin código
+  // tampoco salen la descripción del evento ni las reglas.
+  const event = {
+    ...nextEvent,
+    locationName: null,
+    locationUrl: null,
+    description: access ? nextEvent.description : null,
+  };
   const igHref = igUrl(igHandle);
 
   return (
@@ -38,11 +44,11 @@ export default async function HomePage() {
       <SiteNav accountsEnabled={accountsOn} />
       <main id="contenido">
         <Hero event={event} title={content.heroTitle} media={content.media} />
-        <NextDate event={event} locked={!access} />
+        <NextDate event={event} />
         <House content={content} />
         <Rules content={content} locked={!access} />
       </main>
-      <SiteFooter igHandle={igHandle} igHref={igHref} />
+      <SiteFooter igHandle={igHandle} igHref={igHref} unlocked={access} />
     </>
   );
 }

@@ -50,6 +50,7 @@ export type Database = {
           kind: string
           label: string
           max_uses: number | null
+          per_buyer: number | null
           valid_until: string | null
         }
         Insert: {
@@ -62,6 +63,7 @@ export type Database = {
           kind?: string
           label: string
           max_uses?: number | null
+          per_buyer?: number | null
           valid_until?: string | null
         }
         Update: {
@@ -74,6 +76,7 @@ export type Database = {
           kind?: string
           label?: string
           max_uses?: number | null
+          per_buyer?: number | null
           valid_until?: string | null
         }
         Relationships: []
@@ -896,6 +899,8 @@ export type Database = {
           mp_payment_id: string | null
           order_id: string | null
           access_code_id: string | null
+          access_device: string | null
+          access_ip: string | null
           mp_preference_id: string | null
           notes: string | null
           paid_at: string | null
@@ -931,6 +936,8 @@ export type Database = {
           mp_payment_id?: string | null
           order_id?: string | null
           access_code_id?: string | null
+          access_device?: string | null
+          access_ip?: string | null
           mp_preference_id?: string | null
           notes?: string | null
           paid_at?: string | null
@@ -966,6 +973,8 @@ export type Database = {
           mp_payment_id?: string | null
           order_id?: string | null
           access_code_id?: string | null
+          access_device?: string | null
+          access_ip?: string | null
           mp_preference_id?: string | null
           notes?: string | null
           paid_at?: string | null
@@ -1263,6 +1272,8 @@ export type Database = {
           p_presale_code: string | null
           p_people: Json
           p_access_code_id?: string | null
+          p_access_device?: string | null
+          p_access_ip?: string | null
         }
         Returns: string[]
       }

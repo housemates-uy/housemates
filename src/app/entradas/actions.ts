@@ -1,7 +1,7 @@
 'use server';
 
 // Compra web. Ver docs/LOGICA_DE_NEGOCIO.md → "Compra web".
-//   1. Acceso (la contraseña, si está prendida en /admin/config) y datos de cada persona:
+//   1. Acceso (el código de acceso de la cookie, §3b) y datos de cada persona:
 //      quien compra puede sumar entradas para sus amigos, cada una nominativa (§5.2e).
 //   2. Tanda + código de descuento + transporte (opcional) + medio de pago → precio final
 //      (src/lib/pricing.ts). El lugar en el bus se reserva apenas se crea la entrada.
@@ -13,8 +13,9 @@
 //      la cuenta de la persona; si eligió contraseña, la cuenta se crea recién ahí.
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { heldInOrder } from '@/lib/access-codes';
-import { getSessionAccessCode, hasGateAccess, hasPasswordAccess } from '@/lib/auth/gate';
+import { ensureDeviceId, hashedClientIp, heldInOrder } from '@/lib/access-codes';
+import { closeGateSession, getSessionAccessCode, hasGateAccess } from '@/lib/auth/gate';
+import { isLocalNoAuth } from '@/lib/auth/local-mode';
 import {
   accountExists,
   ensureProfile,
@@ -93,7 +94,10 @@ const formText = (formData: FormData, name: string) => String(formData.get(name)
 
 type Bus = { id: string; name: string; price: number } | null;
 
-const PUBLIC_CODE_SINGLE = 'Con este código podés sacar 1 entrada: si vienen amigos, cada uno saca la suya.';
+const perBuyerText = (n: number) =>
+  n === 1
+    ? 'Con este código podés sacar 1 entrada: si vienen amigos, cada uno saca la suya.'
+    : `Con este código podés sacar hasta ${n} entradas.`;
 
 // Un error de create_order ('<motivo>#<n>') → mensaje y campo de esa persona.
 function orderError(
@@ -126,8 +130,11 @@ function orderError(
         : ['Tu código de acceso ya no tiene entradas disponibles. Escribinos por Instagram.'];
     case 'access_invalid':
       return ['Tu código de acceso ya no es válido. Pedinos uno nuevo por Instagram.'];
-    case 'access_single':
-      return [PUBLIC_CODE_SINGLE, 'quantity'];
+    case 'access_per_buyer':
+      return [perBuyerText(n - 1), 'quantity'];
+    case 'access_device':
+    case 'access_ip':
+      return [`${err.error} Si es un error, escribinos por Instagram.`];
     case 'transport_full':
       return [
         `${who}No quedan lugares en el bus "${buses[n - 1]?.name ?? ''}". Elegí otra opción o seguí sin transporte.`,
@@ -144,7 +151,7 @@ function orderError(
 
 export async function startCheckoutAction(_prev: CheckoutState, formData: FormData): Promise<CheckoutState> {
   // El acceso se vuelve a chequear acá: la página lo pidió, pero una acción del servidor
-  // se puede llamar directo. Si rotaron la contraseña mientras completaba, vuelve a /access.
+  // se puede llamar directo. Si venció la hora de acceso mientras completaba, vuelve a /access.
   if (!(await hasGateAccess())) {
     const back = new URLSearchParams();
     const presale = formText(formData, 'presale');
@@ -285,21 +292,22 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
     receipt = checked.file;
   }
 
-  // Código de acceso (§3b): el de la cookie, nunca uno que mande el formulario. Si es de este
-  // evento, la compra lo descuenta mientras le queden entradas (contando las que libera el
-  // reintento). Quien entró SOLO con el código compra siempre con él: create_order controla los
-  // usos (y que un código público lleve una sola entrada), así no se compra de más sin la
-  // contraseña. Con la contraseña, un código sin entradas no limita: se compra sin él. Un código
-  // público con la contraseña tampoco: la contraseña ya deja comprar para amigos.
+  // Código de acceso (§3b): el de la cookie, nunca uno que mande el formulario. Sin código no
+  // se compra (salvo el modo local). create_order controla los usos y el límite por persona
+  // (por compra, dispositivo e IP), así no se compra de más llamando a la acción directo.
   const sessionCode = await getSessionAccessCode();
-  const passwordAccess = await hasPasswordAccess();
-  const sessionCodeForEvent = sessionCode && sessionCode.eventId === tier.eventId ? sessionCode : null;
-  const codeForEvent = sessionCodeForEvent?.kind === 'public' && passwordAccess ? null : sessionCodeForEvent;
-  const codeLeft = codeForEvent
-    ? codeForEvent.left + (await heldInOrder(codeForEvent.id, cookies().get(PURCHASE_COOKIE)?.value))
-    : 0;
-  const accessCodeId = codeForEvent && (codeLeft > 0 || !passwordAccess) ? codeForEvent.id : null;
-  if (accessCodeId && codeForEvent?.kind === 'public' && quantity > 1) return fail(PUBLIC_CODE_SINGLE, 'quantity');
+  const accessCode = sessionCode && sessionCode.eventId === tier.eventId ? sessionCode : null;
+  if (!accessCode && !isLocalNoAuth()) {
+    return fail('Tu código de acceso no es de esta fecha. Pedinos uno nuevo por Instagram.');
+  }
+  if (accessCode) {
+    const codeLeft = accessCode.left + (await heldInOrder(accessCode.id, cookies().get(PURCHASE_COOKIE)?.value));
+    if (codeLeft === 0) return fail('Tu código de acceso ya no tiene entradas disponibles. Escribinos por Instagram.');
+    if (accessCode.perBuyer !== null && quantity > accessCode.perBuyer) {
+      return fail(perBuyerText(accessCode.perBuyer), 'quantity');
+    }
+  }
+  const accessCodeId = accessCode?.id ?? null;
 
   // Todas nacen `pending` con reserva. La transferencia pasa a `review` recién con el
   // comprobante subido: si algo se corta en el medio, la reserva vence sola y no quedan
@@ -312,6 +320,8 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
     discountCodeId: code?.id ?? null,
     presaleCode: formText(formData, 'presale') || null,
     accessCodeId,
+    accessDevice: accessCodeId ? ensureDeviceId() : null,
+    accessIp: accessCodeId ? hashedClientIp() : null,
     people: people.map((person, i) => ({
       buyer: person,
       amount: prices[i].total,
@@ -359,6 +369,8 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
       sendTransferReceivedMail(leadId),
       sendTransferAdminAlert(leadId, { content, filename: `comprobante-${buyer.name}.${path.split('.').pop()}` }),
     ]);
+    // Con la compra hecha, el acceso se cierra: para otra hay que volver a poner el código.
+    await closeGateSession();
     redirect(`/compra/resultado?transferencia=${leadId}`);
   }
 
@@ -392,6 +404,9 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
   }
 
   await attachAccount(leadId, buyer, customer, password);
+  // Igual que la transferencia. Si el pago no sale, vuelve a poner el código y reintenta: su
+  // reserva se libera al reintentar (create_order) y no le gasta otro uso.
+  await closeGateSession();
   redirect(initPoint);
 }
 

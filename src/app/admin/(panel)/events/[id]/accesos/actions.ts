@@ -5,7 +5,13 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { logAdminAction, requireOwner } from '@/lib/auth/admin';
-import { ACCESS_KIND_LABELS, formatAccessCode, generateAccessCode } from '@/lib/access-codes';
+import {
+  ACCESS_KIND_LABELS,
+  CUSTOM_CODE,
+  formatAccessCode,
+  generateAccessCode,
+  normalizeAccessCode,
+} from '@/lib/access-codes';
 import { toUTC } from '@/lib/events';
 import { createAdminClient } from '@/lib/supabase/admin';
 
@@ -18,9 +24,21 @@ const maxUses = z.coerce
   .max(1000, 'Hasta 1000');
 
 // Personal: para una persona y sus amigos, con X entradas. Público (historias de Instagram):
-// cada compra lleva una sola entrada; el total es opcional (vacío = sin tope).
+// entradas por persona (1 a 20) y total opcional (vacío = sin tope). El código lo sortea la
+// web o lo eligen los owners (ej. HOUSEMATES): uno propio solo para un público, porque un
+// personal corto se podría adivinar y daría varias entradas.
 const schema = z.object({
   kind: z.enum(['personal', 'public']),
+  custom_code: z
+    .string()
+    .transform(normalizeAccessCode)
+    .refine((v) => v === '' || CUSTOM_CODE.test(v), 'De 6 a 16 letras o números'),
+  per_buyer: z.coerce
+    .number({ invalid_type_error: 'Un número entero entre 1 y 20' })
+    .int('Un número entero entre 1 y 20')
+    .min(1, 'Al menos 1')
+    .max(20, 'Hasta 20')
+    .nullable(),
   label: z.string().trim().min(1, 'Poné para quién es').max(120, 'Hasta 120 caracteres'),
   max_uses: maxUses.nullable(),
   valid_until: z
@@ -39,6 +57,8 @@ export async function createAccessCodeAction(eventId: string, formData: FormData
   const rawMax = String(formData.get('max_uses') ?? '').trim();
   const parsed = schema.safeParse({
     kind,
+    custom_code: kind === 'public' ? String(formData.get('custom_code') ?? '') : '',
+    per_buyer: kind === 'public' ? String(formData.get('per_buyer') ?? '1').trim() || '1' : null,
     label: formData.get('label') ?? '',
     // Un personal siempre lleva cuántas entradas (vacío no pasa); un público vacío es sin tope.
     max_uses: kind === 'public' && rawMax === '' ? null : rawMax,
@@ -51,9 +71,10 @@ export async function createAccessCodeAction(eventId: string, formData: FormData
   const d = parsed.data;
   const db = createAdminClient();
 
-  // El código es único entre todos los eventos: si sale uno que ya existe, se sortea otro.
+  // El código es único entre todos los eventos: si sale uno que ya existe, se sortea otro. Uno
+  // propio que ya existe no se cambia: se avisa.
   for (let attempt = 0; attempt < 5; attempt++) {
-    const code = generateAccessCode();
+    const code = d.custom_code || generateAccessCode();
     const { data, error } = await db
       .from('access_codes')
       .insert({
@@ -62,6 +83,7 @@ export async function createAccessCodeAction(eventId: string, formData: FormData
         kind: d.kind,
         label: d.label,
         max_uses: d.max_uses,
+        per_buyer: d.per_buyer,
         valid_until: d.valid_until,
         created_by_admin_id: admin.id,
       })
@@ -72,11 +94,14 @@ export async function createAccessCodeAction(eventId: string, formData: FormData
         kind: ACCESS_KIND_LABELS[d.kind],
         label: d.label,
         max_uses: d.max_uses ?? 'Sin tope',
+        ...(d.per_buyer !== null && { per_buyer: d.per_buyer }),
+        ...(d.custom_code && { custom: 'Sí' }),
         valid_until: d.valid_until,
       });
       return { ok: true, code };
     }
     if (error.code !== '23505') break;
+    if (d.custom_code) return { error: 'Ese código ya existe. Elegí otro.', field: 'custom_code' };
   }
   return { error: 'No se pudo crear el código. Probá de nuevo.' };
 }

@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import { hasGateAccess } from '@/lib/auth/gate';
 import { LegalPage, LegalSection } from '@/components/legal/legal-page';
 import { isAccountsEnabled } from '@/lib/customers';
 import { getIgHandle, igUrl } from '@/lib/site';
@@ -7,20 +9,28 @@ import { getIgHandle, igUrl } from '@/lib/site';
 // A CONFIRMAR: texto pendiente de revisión de un abogado (ver docs/BACKLOG.md).
 
 export const metadata: Metadata = {
+  robots: { index: false, follow: false },
   title: 'Política de privacidad',
   description:
     'Qué datos pide House Mates, para qué los usa, dónde se guardan y cómo ejercer tus derechos según la Ley 18.331 de Protección de Datos Personales.',
 };
 
-export const revalidate = 3600;
+// Detrás del código de acceso, como las preguntas frecuentes (§3): la portada pública no
+// muestra nada de la venta.
+export const dynamic = 'force-dynamic';
 
 const UPDATED = { iso: '2026-10-28', label: '28 de octubre de 2026' };
 
 const COOKIES = [
   {
     name: 'hm_access',
-    what: 'Recuerda que pusiste la contraseña de compra, cuando la compra la pide.',
-    lasts: '24 horas, o hasta que cambie la contraseña.',
+    what: 'Recuerda que pusiste un código de acceso para comprar.',
+    lasts: '1 hora, o hasta que comprás.',
+  },
+  {
+    name: 'hm_device',
+    what: 'Identifica este dispositivo, sin datos tuyos, para el límite de entradas por persona de cada código.',
+    lasts: '1 año.',
   },
   {
     name: 'sb-…',
@@ -30,6 +40,7 @@ const COOKIES = [
 ];
 
 export default async function PrivacyPage() {
+  if (!(await hasGateAccess())) redirect('/access?next=%2Fprivacidad');
   // Con "Mi cuenta" apagada (/admin/config) no se habla de cuentas.
   const [handle, accounts] = await Promise.all([getIgHandle(), isAccountsEnabled()]);
   const instagram = (
