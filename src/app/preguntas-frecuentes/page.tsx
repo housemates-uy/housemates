@@ -11,10 +11,11 @@ import { SERVICE_FEE_LABEL } from '@/lib/pricing';
 import { getIgHandle, igUrl } from '@/lib/site';
 import { cn } from '@/lib/utils';
 
+// Sin descripción: la metadata sale en el HTML aunque la página redirija a /access (sin
+// código no se dice nada de la venta, §3).
 export const metadata: Metadata = {
+  robots: { index: false, follow: false },
   title: 'Preguntas frecuentes',
-  description:
-    'Cómo comprar tu entrada, cómo pagar, qué llevar el día de la fiesta y la barra: lo que más nos preguntan.',
 };
 
 // Detrás del código de acceso, como el lugar (§3): sin acceso va a /access y vuelve acá.
