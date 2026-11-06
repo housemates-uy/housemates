@@ -141,12 +141,12 @@ Solo con **Mi cuenta prendida** en `/admin/config`. Apagada, estas rutas llevan 
 Decisión de los owners (2026-11-06, migración `0032_access_only_codes.sql`): **no hay más contraseña general.** Para comprar, y para ver lo que no es para el público, hace falta un **código de acceso** (§3b). Los owners lo comparten en las historias de Instagram (código público) o se lo pasan a alguien por DM (código personal).
 
 - **Lo que ve cualquiera** (la portada, `src/app/page.tsx`): la fecha y el formato del próximo evento, la casa (fotos y textos de `/admin/landing`) y el botón Entradas. Nada más.
-- **El lugar es secreto siempre en la portada**, con o sin código: en "Dónde" va una franja desenfocada con un brillo violeta que se mueve, hecha de bloques de relleno (no son letras del lugar), y "Ubicación secreta · se revela con tu código", que lleva a `/entradas`. El nombre y el link del mapa se sacan **en el servidor**: no están en el HTML ni en lo que reciben los componentes. Se ven en `/entradas` (con el código), en la entrada y en los mails de quien ya compró.
+- **El lugar es secreto siempre en la portada**, con o sin código: en "Dónde" va una franja desenfocada con un brillo violeta que se mueve, hecha de bloques de relleno (no son letras del lugar), y debajo "SECRET LOCATION". El nombre y el link del mapa se sacan **en el servidor**: no están en el HTML ni en lo que reciben los componentes. Se ven en `/entradas` (con el código), en la entrada y en los mails de quien ya compró.
 - **Lo que se ve solo con código** (`hasGateAccess()`): `/entradas`, la descripción del evento y las reglas en la portada, los links de ayuda y legales del pie, y las páginas `/preguntas-frecuentes`, `/terminos` y `/privacidad` (sin código van a `/access?next=…`; no se indexan). La idea: que la web pública no muestre nada de la venta.
 - La portada y esas páginas son dinámicas (`force-dynamic`): dependen de la cookie de cada persona, así que nunca se sirve una copia guardada a quien no tiene código. La portada espera a la base hasta 2,5 s para saber si hay acceso; si no responde, se ve como sin acceso (nunca al revés).
 - **El acceso dura 1 hora desde que se pone el código** (`GATE_TTL_SECONDS`, `src/lib/auth/gate-shared.ts`): no se renueva al navegar. La cookie (`hm_access`, cifrada con `GATE_COOKIE_SECRET`, no se puede falsificar) guarda el código y la hora en que se puso. Pasada la hora, se vuelve a pedir.
 - **Se cierra apenas se compra:** al ir a pagar con Mercado Pago o al subir el comprobante (`closeGateSession`). Para otra compra hay que volver a poner el código. Si el pago no salió, vuelve a ponerlo y reintenta: su reserva se libera y no le gasta otro uso.
-- **Límite de intentos:** 20 cada 15 minutos por IP (§8c). Cuenta cada intento, tenga o no forma de código. Si la base no responde, **no deja entrar** (falla cerrada): justo lo que se quiere frenar es probar códigos sin límite.
+- **Límite de intentos:** 20 **fallidos** cada 15 minutos por IP (§8c). Los que aciertan no cuentan: con datos móviles miles de personas comparten IP y, cuando sale una historia, muchas ponen el código bien a la vez. Una IP en el tope no prueba ni uno más, aunque sea el correcto. Si la base no responde, **no deja entrar** (falla cerrada): justo lo que se quiere frenar es probar códigos sin límite.
 - **Modo local sin claves** (`src/lib/auth/local-mode.ts`): saltea el código y el login del admin **solo en la máquina de quien desarrolla**. Exige `npm run dev` (en producción `NODE_ENV` es `production`), `LOCAL_SIN_CLAVES=1`, que no sea Vercel (`VERCEL`) y que la base sea la de Docker (`127.0.0.1`/`localhost`). Ninguna de esas cosas se puede cambiar desde un navegador: son variables del servidor. Además, si `LOCAL_SIN_CLAVES` aparece en Vercel o en un build de producción, la web tira error y no responde (falla cerrada) en vez de ignorarlo. `npm run dev` escucha solo en `127.0.0.1`. Si el navegador tiene la sesión de un admin real, el admin usa esa en vez del owner local.
 - **Más adelante** (`docs/BACKLOG.md`): links por mail con un token personal para entrar a comprar sin código, cuando haya base de mails para campañas.
 
@@ -159,11 +159,11 @@ Sin código no se compra (§3). Hay dos tipos (`access_codes.kind`):
 | **Personal** | Una persona y sus amigos ("Vicky: 3 entradas"), por DM | Las que le quedan al código | Obligatorio, 1 a 1000. Usadas todas, el código deja de funcionar |
 | **Público** | Una historia de Instagram | **`per_buyer`**: 1 a 20, lo eligen los owners (1 = cada uno saca la suya) | Opcional, 1 a 1000. Vacío = sin tope (`max_uses` en `NULL`): sirve hasta que se pause, venza o termine el evento |
 
-- **"Por persona" en un código público** (`create_order`, `0032_access_only_codes.sql`): con `per_buyer = N`, se controlan tres cosas a la vez, contando entradas vivas (en revisión, pagas, usadas o reservadas sin vencer):
+- **"Por persona" en un código público** (`create_order`, `0032_access_only_codes.sql`): con `per_buyer = N`, se controlan dos cosas a la vez, contando entradas vivas (en revisión, pagas, usadas o reservadas sin vencer):
   1. **La compra** no lleva más de N (`access_per_buyer`).
-  2. **El dispositivo**: no saca más de N con el código (`access_device`). Es una cookie con un id al azar (`hm_device`, 1 año, sin datos personales) que se crea al poner el código. Borrarla deja comprar otra vez desde el mismo celular; por eso está el control 3.
-  3. **La conexión (IP)**: no saca más de N × 3 (`access_ip`). No es N porque mucha gente comparte IP (el wifi de una facultad, los datos del celular): con N se bloquearía a gente real. La IP no se guarda tal cual, sino su hash (`tickets.access_ip`).
-  - Más la regla de siempre: una entrada por cédula y una por email por evento (§4.3). Igual se puede abusar con muchos emails, cédulas y dispositivos falsos desde muchas conexiones; para eso está la anulación desde el admin.
+  2. **El dispositivo**: no saca más de N con el código (`access_device`). Es una cookie con un id al azar (`hm_device`, 1 año, sin datos personales) que se crea al poner el código. Borrarla deja comprar otra vez desde el mismo celular, pero sigue valiendo la cédula y el email únicos.
+  - **Por IP no** (decisión de los owners): con datos móviles miles de personas de la misma compañía salen con la misma IP y se bloquearía a gente real.
+  - Más la regla de siempre: una entrada por cédula y una por email por evento (§4.3). Igual se puede abusar con muchos emails, cédulas y dispositivos falsos; para eso está la anulación desde el admin.
 - **Se controla en el servidor, no solo en la pantalla:** la acción de compra y `create_order` rechazan lo que no corresponde aunque alguien fuerce el pedido. La compra usa el código de la cookie, nunca uno que mande el formulario.
 - **Se crean** en Admin → evento → **Accesos** (solo owners): tipo, para quién (texto libre, "Sofi @sofi.mates y amigas" o "Historia 20/11"), cuántas entradas (en el público: por persona y el tope opcional) y vencimiento opcional.
   - **El código** son 8 letras y números al azar sin caracteres que se confunden (`K7P2-QX9M`, `src/lib/access-codes.ts`).
@@ -173,7 +173,7 @@ Sin código no se compra (§3). Hay dos tipos (`access_codes.kind`):
 - **Solo del evento a la venta:** un código sirve únicamente para el próximo evento publicado (el de `/entradas`). Uno de una fecha nueva en borrador, o de la siguiente, no abre la compra de la actual (`findAccessCode`).
 - **Para dejar entrar no cuentan las reservas sin terminar** (`openLeft`): si el pago con Mercado Pago no salió, quien vuelve puede entrar y reintentar aunque su reserva siga viva. En `/entradas` puede comprar lo que le queda al código más lo que tiene reservado la compra sin terminar de ese navegador (cookie `hm_compra`), porque al reintentar se libera. Si todas las entradas del código están reservadas en compras de otras personas, `/entradas` dice "Tu código está en uso" en vez de mostrar el formulario.
 - **En `/entradas`** aparece "Entraste con el código K7P2-QX9M" y cuántas puede sacar ("Te quedan N entradas", "podés sacar hasta N" o, con 1 por persona, "si vienen amigos, cada uno saca la suya"). El selector de cantidad no pasa de eso ni del máximo por compra.
-- **Cada entrada comprada con el código gasta un uso** y queda marcada con él (`tickets.access_code_id`, más `access_device` y `access_ip`). Cuentan las vivas y las reservas vigentes (`access_code_uses`): una compra abandonada devuelve el uso cuando vence la reserva.
+- **Cada entrada comprada con el código gasta un uso** y queda marcada con él (`tickets.access_code_id`, más `access_device`). Cuentan las vivas y las reservas vigentes (`access_code_uses`): una compra abandonada devuelve el uso cuando vence la reserva.
 - **Todo o nada** (`create_order`): bloquea la fila del código, así dos compras no se llevan el último uso. Si no alcanza: "Tu código de acceso alcanza para N entradas: bajá la cantidad". Si la misma persona reintenta, toda su compra anterior sin terminar se anula y no gasta otro uso.
 - **Deja de servir** si se pausa en el admin, si vence, si se usaron todas sus entradas o si terminó su evento. En `/access` se dice por qué (no existe o venció, ya se usó).
 - **Estados en el admin:** Activo, Pausado (lo pausó un owner), Vencido o Agotado (un público sin tope nunca se agota). El vencimiento se pone en hora de Montevideo y no puede estar en el pasado.
@@ -628,7 +628,7 @@ Bus opcional que se suma al comprar la entrada (la fiesta es fuera de Montevideo
 | Variable | Para qué |
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Base de datos |
-| `GATE_COOKIE_SECRET` | Cifra la cookie de acceso (`hm_access`) y el hash de la IP de los códigos (§3b) |
+| `GATE_COOKIE_SECRET` | Cifra la cookie de acceso (`hm_access`) |
 | `CRON_SECRET` | Que solo Vercel pueda llamar al ping diario |
 | `MP_ACCESS_TOKEN` | Mercado Pago. Sin esto, `/entradas` muestra "llega pronto" |
 | `MP_WEBHOOK_SECRET` | Firma de los webhooks (panel de MP → Webhooks). Opcional pero recomendado |
@@ -693,7 +693,7 @@ Las consultas a Supabase se hacen con `cache: 'no-store'` (`src/lib/supabase/adm
 | Compra (`startCheckoutAction`) | 60 **entradas** cada 10 min (una compra de 4 suma 4) | Después de validar el formulario (un error de tipeo no gasta intentos), antes de consultar cuentas, códigos o crear la entrada |
 | "Aplicar" código (`checkDiscountAction`) | 30 cada 10 min | Antes de buscar el código |
 | Pedido de barra | 120 cada 10 min (en la fiesta todos comparten el wifi; un pedido sin pagar no reserva nada) | Con el carrito ya validado, antes de crear el pedido |
-| Código de acceso (`/api/gate` y `/acceso/<código>`) | 20 cada 15 min, **falla cerrada** (si la base no responde, no deja entrar) | Todos los intentos, antes de buscar el código |
+| Código de acceso (`/api/gate` y `/acceso/<código>`) | 20 fallidos cada 15 min, **falla cerrada** (si la base no responde, no deja entrar) | Se mira el tope antes de buscar el código y se suma solo si el código no sirve |
 | Login de compradores y de admins | 10 cada 15 min | Antes de llamar a Supabase (Supabase ve la IP de Vercel, no la de quien prueba, así que su propio límite no sirve) |
 | Recuperar contraseña y reenviar confirmación (compradores y admins) | 5 cada 15 min | Cada uno manda un mail y Gmail corta en ~500 por día. Pasado el límite, el recupero responde lo mismo que siempre y no manda nada |
 | `/compra/resultado` | 60 cada 10 min | Antes de consultar el pago a Mercado Pago |

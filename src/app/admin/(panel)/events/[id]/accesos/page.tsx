@@ -185,7 +185,7 @@ export default async function AccessCodesPage({
           <p className="mt-1 text-sm text-bone/55">
             Sin código no se puede comprar. Personal, para quien te escribe por Instagram: un código
             para sus entradas (las de ella y sus amigas). Público, para una historia: cuántas
-            entradas puede sacar cada persona (por dispositivo y conexión), con tope total o sin
+            entradas puede sacar cada persona (por dispositivo), con tope total o sin
             tope. Cada entrada que se compra con el código gasta una y queda marcada con él. Si se
             anula, se libera. Quien entra con un código tiene 1 hora para comprar.
           </p>

@@ -13,7 +13,7 @@
 //      la cuenta de la persona; si eligió contraseña, la cuenta se crea recién ahí.
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { ensureDeviceId, hashedClientIp, heldInOrder } from '@/lib/access-codes';
+import { ensureDeviceId, heldInOrder } from '@/lib/access-codes';
 import { closeGateSession, getSessionAccessCode, hasGateAccess } from '@/lib/auth/gate';
 import { isLocalNoAuth } from '@/lib/auth/local-mode';
 import {
@@ -133,7 +133,6 @@ function orderError(
     case 'access_per_buyer':
       return [perBuyerText(n - 1), 'quantity'];
     case 'access_device':
-    case 'access_ip':
       return [`${err.error} Si es un error, escribinos por Instagram.`];
     case 'transport_full':
       return [
@@ -294,7 +293,7 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
 
   // Código de acceso (§3b): el de la cookie, nunca uno que mande el formulario. Sin código no
   // se compra (salvo el modo local). create_order controla los usos y el límite por persona
-  // (por compra, dispositivo e IP), así no se compra de más llamando a la acción directo.
+  // (por compra y dispositivo), así no se compra de más llamando a la acción directo.
   const sessionCode = await getSessionAccessCode();
   const accessCode = sessionCode && sessionCode.eventId === tier.eventId ? sessionCode : null;
   if (!accessCode && !isLocalNoAuth()) {
@@ -321,7 +320,6 @@ export async function startCheckoutAction(_prev: CheckoutState, formData: FormDa
     presaleCode: formText(formData, 'presale') || null,
     accessCodeId,
     accessDevice: accessCodeId ? ensureDeviceId() : null,
-    accessIp: accessCodeId ? hashedClientIp() : null,
     people: people.map((person, i) => ({
       buyer: person,
       amount: prices[i].total,

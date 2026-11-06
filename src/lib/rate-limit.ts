@@ -18,9 +18,10 @@ const LIMITS = {
   checkout: { windowSeconds: 10 * 60, max: 60 },
   discount: { windowSeconds: 10 * 60, max: 30 },
   bar_checkout: { windowSeconds: 10 * 60, max: 120 },
-  // Códigos de acceso (§3b). Cuenta cada intento, sirva o no. 20 y no 5 porque un grupo de
-  // amigas en el mismo wifi entra con el mismo código. Los generados (8 caracteres al azar)
-  // no se adivinan; uno propio corto sí podría: por eso el límite no se saltea nunca.
+  // Códigos de acceso (§3b). Cuenta solo los intentos FALLIDOS (isBlocked + allowAttempt al
+  // fallar): con datos móviles miles de personas comparten IP y, cuando sale una historia,
+  // muchas ponen el código bien a la vez. Probar códigos al azar sí suma. Los generados (8
+  // caracteres al azar) no se adivinan; uno propio corto sí podría: el límite no se saltea.
   access_code: { windowSeconds: 15 * 60, max: 20 },
   // Login de compradores y de admins: Supabase ve la IP de Vercel, no la de quien prueba.
   login: { windowSeconds: 15 * 60, max: 10 },
@@ -34,7 +35,8 @@ export type RateLimitAction = keyof typeof LIMITS;
 
 const FAIL_CLOSED = new Set<RateLimitAction>(['access_code']);
 
-export const TOO_MANY_ATTEMPTS = 'Hiciste muchos intentos seguidos. Esperá unos minutos y probá de nuevo.';
+export const TOO_MANY_ATTEMPTS =
+  'Hiciste muchos intentos seguidos. Esperá unos minutos y probá de nuevo.';
 
 // En Vercel, x-forwarded-for lo pone la plataforma (no se puede falsear desde el navegador).
 function clientIp(): string {
@@ -43,6 +45,27 @@ function clientIp(): string {
 }
 
 const LOOPBACK = new Set(['::1', '127.0.0.1', '::ffff:127.0.0.1']);
+
+// Solo mira si la IP ya llegó al tope, sin sumar un intento. Para los límites que cuentan
+// fallos: se mira antes y se suma con allowAttempt recién si el intento falla.
+export async function isBlocked(action: RateLimitAction): Promise<boolean> {
+  const { windowSeconds, max } = LIMITS[action];
+  try {
+    const ip = clientIp();
+    if (process.env.NODE_ENV !== 'production' && LOOPBACK.has(ip)) return false;
+    const { data, error } = await createAdminClient().rpc('rate_limit_blocked', {
+      p_key: ip,
+      p_action: action,
+      p_window_seconds: windowSeconds,
+      p_max: max,
+    });
+    if (error) throw new Error(error.message);
+    return data === true;
+  } catch (err) {
+    console.error('[rate-limit] no se pudo leer el límite', action, (err as Error)?.message);
+    return FAIL_CLOSED.has(action);
+  }
+}
 
 // true = puede seguir. weight: cuántos intentos suma (en la compra, una por entrada).
 export async function allowAttempt(action: RateLimitAction, weight = 1): Promise<boolean> {

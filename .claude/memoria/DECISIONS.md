@@ -860,13 +860,13 @@ Además, `npm run dev` escucha solo en `127.0.0.1` y el middleware responde 403 
 
 **Decisión:**
 - No hay más contraseña general (`0032_access_only_codes.sql` borra `gate_password` y `gate_enabled`). Para comprar siempre hace falta un código: personal (total de entradas) o público (entradas por persona, `per_buyer`, y total opcional). Un público puede tener un código propio (ej. HOUSEMATES).
-- "Por persona" se controla en `create_order`: por compra, por dispositivo (cookie `hm_device`) y por IP con margen × 3, más la cédula y el email únicos de siempre.
+- "Por persona" se controla en `create_order`: por compra y por dispositivo (cookie `hm_device`), más la cédula y el email únicos de siempre.
 - El acceso dura 1 hora desde que se pone el código, no se renueva y se cierra al ir a pagar.
 - La portada no muestra nunca el lugar (franja desenfocada con bloques de relleno); la descripción, las reglas, el pie de legales, Preguntas frecuentes, Términos y Privacidad, solo con código.
 - El límite de intentos de códigos falla cerrado, y `LOCAL_SIN_CLAVES` en Vercel o en producción hace fallar la web.
 
 **Alternativas descartadas:**
-- Limitar a 1 entrada por IP: bloquea a gente real que comparte IP (wifi de facultad, datos del celular).
+- Limitar por IP (aun con margen): con datos móviles miles de personas de la misma compañía comparten IP y se bloquearía a gente real.
 - Renovar la hora al navegar: deja el acceso abierto mientras la persona tenga la pestaña.
 - Códigos propios para los personales: uno corto se adivina y da varias entradas.
 

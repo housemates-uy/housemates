@@ -165,8 +165,8 @@ Default: **no escribir comentarios**. Los buenos nombres explican qué hace el c
 ### 7.2 Código de acceso (sin contraseña general, ADR #041)
 - Cookie `hm_access` vive **1 hora desde que se pone el código** (no se renueva) y se cierra al comprar
 - Protege `/entradas`, la descripción y las reglas de la landing, el pie de ayuda y legales, `/preguntas-frecuentes`, `/terminos` y `/privacidad`. El lugar nunca sale en la landing
-- Código público: entradas por persona (compra, dispositivo `hm_device`, IP × 3) controladas en `create_order`, nunca solo en la UI
-- Rate limit de códigos: 20 intentos / 15 min por IP, falla cerrada
+- Código público: entradas por persona (compra y dispositivo `hm_device`; por IP no, por los datos móviles) controladas en `create_order`, nunca solo en la UI
+- Rate limit de códigos: 20 intentos fallidos / 15 min por IP (los acertados no cuentan), falla cerrada
 - `LOCAL_SIN_CLAVES` solo en la máquina de quien desarrolla: en Vercel o en producción la web tira error
 
 ### 7.3 Tickets

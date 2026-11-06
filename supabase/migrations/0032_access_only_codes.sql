@@ -7,13 +7,12 @@
 --   - personal: para una persona y sus amigos, con un total de entradas (ej. 3).
 --   - público (el de las historias): `per_buyer` entradas por persona (1 o más) y un total
 --     opcional.
--- "Por persona" se controla en la base, no solo en la pantalla, con tres cosas a la vez:
+-- "Por persona" se controla en la base, no solo en la pantalla, con dos cosas a la vez:
 --   1. la compra no lleva más de `per_buyer` entradas;
---   2. el mismo dispositivo (cookie hm_device) no saca más de `per_buyer` con el código;
---   3. la misma IP no saca más de `per_buyer` × 3 (mucha gente comparte IP: el wifi de una
---      facultad o los datos del celular; con tope 1 se bloquearía a gente real).
+--   2. el mismo dispositivo (cookie hm_device) no saca más de `per_buyer` con el código.
 -- Más la regla de siempre: una entrada por cédula y una por email por evento.
--- La IP no se guarda tal cual: se guarda su hash (src/lib/access-codes.ts → hashIp).
+-- Por IP no: con datos móviles miles de personas de la misma compañía salen con la misma IP
+-- y se bloquearía a gente real (decisión de los owners, 2026-11-06).
 
 ALTER TABLE access_codes
   ADD COLUMN IF NOT EXISTS per_buyer integer CHECK (per_buyer BETWEEN 1 AND 20);
@@ -23,9 +22,25 @@ ALTER TABLE access_codes
   ADD CONSTRAINT access_codes_public_per_buyer CHECK (kind = 'personal' OR per_buyer IS NOT NULL);
 
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS access_device text;
-ALTER TABLE tickets ADD COLUMN IF NOT EXISTS access_ip text;
 CREATE INDEX IF NOT EXISTS idx_tickets_access_device ON tickets(access_code_id, access_device) WHERE access_code_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_tickets_access_ip ON tickets(access_code_id, access_ip) WHERE access_code_id IS NOT NULL;
+
+-- ------------------------------------------------------------
+-- Límite de intentos que cuenta solo los fallidos (códigos de acceso)
+-- ------------------------------------------------------------
+-- Mira si la clave ya llegó al tope sin sumar un intento. Se usa antes de buscar el código;
+-- si el código no sirve, se suma con rate_limit_hit (0016). Ver src/lib/rate-limit.ts.
+CREATE OR REPLACE FUNCTION rate_limit_blocked(
+  p_key             text,
+  p_action          text,
+  p_window_seconds  int,
+  p_max             int
+) RETURNS boolean
+LANGUAGE sql STABLE AS $$
+  SELECT count(*) >= p_max FROM rate_limit_hits
+  WHERE action = p_action AND key = p_key
+    AND created_at >= now() - make_interval(secs => p_window_seconds);
+$$;
+REVOKE EXECUTE ON FUNCTION rate_limit_blocked FROM anon, authenticated, public;
 
 -- La contraseña general ya no existe: se borra la guardada y el interruptor.
 DELETE FROM site_config WHERE key IN ('gate_password', 'gate_enabled');
@@ -33,11 +48,11 @@ DELETE FROM site_config WHERE key IN ('gate_password', 'gate_enabled');
 -- ------------------------------------------------------------
 -- create_order con límite por persona
 -- ------------------------------------------------------------
--- Igual que 0029, más p_access_device y p_access_ip. Los conteos son de entradas vivas
+-- Igual que 0029, más p_access_device. Los conteos son de entradas vivas
 -- (en revisión, pagas, usadas o reservadas sin vencer) y se hacen después de crear las de
 -- esta compra: si la persona reintenta, su compra anterior sin terminar ya se anuló arriba y
 -- no se le cuenta dos veces. Errores: 'access_per_buyer#<primera que sobra>',
--- 'access_device#1', 'access_ip#1'.
+-- 'access_device#1'.
 DROP FUNCTION IF EXISTS create_order(uuid, uuid, payment_method, integer, uuid, text, jsonb, uuid);
 
 CREATE OR REPLACE FUNCTION create_order(
@@ -49,8 +64,7 @@ CREATE OR REPLACE FUNCTION create_order(
   p_presale_code     text,
   p_people           jsonb,
   p_access_code_id   uuid DEFAULT NULL,
-  p_access_device    text DEFAULT NULL,
-  p_access_ip        text DEFAULT NULL
+  p_access_device    text DEFAULT NULL
 ) RETURNS uuid[]
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -128,8 +142,7 @@ BEGIN
   UPDATE tickets
   SET order_id = v_ids[1],
       access_code_id = p_access_code_id,
-      access_device = CASE WHEN p_access_code_id IS NULL THEN NULL ELSE p_access_device END,
-      access_ip = CASE WHEN p_access_code_id IS NULL THEN NULL ELSE p_access_ip END
+      access_device = CASE WHEN p_access_code_id IS NULL THEN NULL ELSE p_access_device END
   WHERE id = ANY(v_ids);
 
   IF p_access_code_id IS NOT NULL THEN
@@ -141,9 +154,9 @@ BEGIN
     END IF;
 
     IF v_code.per_buyer IS NOT NULL THEN
-      -- Sin dispositivo o sin IP (no debería pasar: la acción siempre los manda) no se
-      -- compra con un código que limita por persona.
-      IF p_access_device IS NULL OR p_access_ip IS NULL THEN
+      -- Sin dispositivo (no debería pasar: la acción siempre lo manda) no se compra con un
+      -- código que limita por persona.
+      IF p_access_device IS NULL THEN
         RAISE EXCEPTION 'access_device#1';
       END IF;
       SELECT count(*) INTO v_used FROM tickets
@@ -151,12 +164,6 @@ BEGIN
         AND (status IN ('review', 'paid', 'used') OR (status = 'pending' AND reserved_until > now()));
       IF v_used > v_code.per_buyer THEN
         RAISE EXCEPTION 'access_device#1';
-      END IF;
-      SELECT count(*) INTO v_used FROM tickets
-      WHERE access_code_id = p_access_code_id AND access_ip = p_access_ip
-        AND (status IN ('review', 'paid', 'used') OR (status = 'pending' AND reserved_until > now()));
-      IF v_used > v_code.per_buyer * 3 THEN
-        RAISE EXCEPTION 'access_ip#1';
       END IF;
     END IF;
   END IF;

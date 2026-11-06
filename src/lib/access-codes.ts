@@ -6,10 +6,10 @@
 //   - personal: para una persona y sus amigos, con X entradas.
 //   - público (una historia de Instagram): `perBuyer` entradas por persona (1 o más) y un
 //     total opcional (sin tope = hasta que se pause, venza o termine el evento).
-// "Por persona" lo controla create_order (migración 0032): por compra, por dispositivo
-// (cookie hm_device) y por IP (× 3, porque mucha gente comparte IP).
-import { createHash, randomInt, randomUUID } from 'crypto';
-import { cookies, headers } from 'next/headers';
+// "Por persona" lo controla create_order (migración 0032): por compra y por dispositivo
+// (cookie hm_device). Por IP no: con datos móviles mucha gente comparte la misma.
+import { randomInt, randomUUID } from 'crypto';
+import { cookies } from 'next/headers';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { appUrl } from '@/lib/tickets';
 
@@ -75,7 +75,7 @@ export function accessOrderLimit(code: { perBuyer: number | null }, left: number
 
 // Dispositivo de quien compra con un código (§3b): un id al azar en una cookie de un año.
 // Se crea al entrar con el código. Borrarla deja comprar otra vez desde el mismo celular,
-// pero el tope por IP y el de cédula y email siguen.
+// pero el de cédula y email sigue.
 export const DEVICE_COOKIE = 'hm_device';
 
 export function ensureDeviceId(): string {
@@ -91,17 +91,6 @@ export function ensureDeviceId(): string {
     maxAge: 60 * 60 * 24 * 365,
   });
   return id;
-}
-
-// La IP no se guarda tal cual: su hash con el secreto de la cookie de acceso. Alcanza para
-// comparar compras entre sí y no deja leer la IP de nadie en la base.
-export function hashedClientIp(): string {
-  const h = headers();
-  const ip = h.get('x-forwarded-for')?.split(',')[0]?.trim() || h.get('x-real-ip')?.trim() || 'unknown';
-  return createHash('sha256')
-    .update(`${process.env.GATE_COOKIE_SECRET ?? ''}:${ip}`)
-    .digest('hex')
-    .slice(0, 32);
 }
 
 // Un código que sirve para entrar a comprar: existe, está activo, no venció y es del evento que

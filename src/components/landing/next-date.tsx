@@ -22,14 +22,10 @@ function SecretLocation() {
           {DECOY.join(' ')}
         </span>
       </span>
-      <span className="sr-only">La ubicación es secreta.</span>
-      <Link
-        href="/entradas"
-        className="inline-flex items-start gap-1.5 text-[13px] font-normal leading-snug text-bone/65 underline decoration-bone/25 underline-offset-4 transition-colors hover:text-bone hover:decoration-bone"
-      >
-        <Lock size={13} strokeWidth={1.75} aria-hidden className="mt-[3px] shrink-0 text-violet" />
-        Ubicación secreta · se revela con tu código
-      </Link>
+      <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-label text-bone/60">
+        <Lock size={12} strokeWidth={2} aria-hidden className="shrink-0 text-violet" />
+        Secret location
+      </span>
     </span>
   );
 }

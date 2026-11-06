@@ -900,7 +900,6 @@ export type Database = {
           order_id: string | null
           access_code_id: string | null
           access_device: string | null
-          access_ip: string | null
           mp_preference_id: string | null
           notes: string | null
           paid_at: string | null
@@ -937,7 +936,6 @@ export type Database = {
           order_id?: string | null
           access_code_id?: string | null
           access_device?: string | null
-          access_ip?: string | null
           mp_preference_id?: string | null
           notes?: string | null
           paid_at?: string | null
@@ -974,7 +972,6 @@ export type Database = {
           order_id?: string | null
           access_code_id?: string | null
           access_device?: string | null
-          access_ip?: string | null
           mp_preference_id?: string | null
           notes?: string | null
           paid_at?: string | null
@@ -1273,7 +1270,6 @@ export type Database = {
           p_people: Json
           p_access_code_id?: string | null
           p_access_device?: string | null
-          p_access_ip?: string | null
         }
         Returns: string[]
       }
@@ -1315,6 +1311,10 @@ export type Database = {
         Returns: string
       }
       tier_available: { Args: { p_tier_id: string }; Returns: number }
+      rate_limit_blocked: {
+        Args: { p_action: string; p_key: string; p_max: number; p_window_seconds: number }
+        Returns: boolean
+      }
       rate_limit_hit: {
         Args: { p_action: string; p_key: string; p_max: number; p_window_seconds: number }
         Returns: boolean

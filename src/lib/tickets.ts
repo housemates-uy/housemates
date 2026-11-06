@@ -82,7 +82,6 @@ const ERROR_MESSAGES: Record<string, string> = {
   access_exhausted: 'Tu código de acceso ya no tiene entradas disponibles.',
   access_per_buyer: 'Con este código no se pueden sacar tantas entradas en una compra.',
   access_device: 'Ya sacaste las entradas que permite este código desde este dispositivo.',
-  access_ip: 'Desde esta conexión ya se sacaron las entradas que permite este código.',
 };
 
 export async function createTicket(params: {
@@ -155,9 +154,8 @@ export async function createOrder(params: {
   presaleCode: string | null;
   // Código de acceso (§3b): cada entrada gasta un uso.
   accessCodeId?: string | null;
-  // Para el límite por persona del código (§3b): cookie hm_device y hash de la IP.
+  // Para el límite por persona del código (§3b): cookie hm_device.
   accessDevice?: string | null;
-  accessIp?: string | null;
   people: OrderPerson[];
 }): Promise<{ ids: string[] } | { error: string; code?: string; person?: number }> {
   const { data, error } = await createAdminClient().rpc('create_order', {
@@ -169,7 +167,6 @@ export async function createOrder(params: {
     p_presale_code: params.presaleCode,
     p_access_code_id: params.accessCodeId ?? null,
     p_access_device: params.accessDevice ?? null,
-    p_access_ip: params.accessIp ?? null,
     p_people: params.people.map((p) => ({
       name: p.buyer.name,
       email: p.buyer.email.toLowerCase(),
